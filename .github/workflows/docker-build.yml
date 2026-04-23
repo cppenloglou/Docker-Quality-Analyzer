@@ -1,0 +1,13 @@
+name: Docker Build
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-api-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t docker-platform-api:latest ./backend

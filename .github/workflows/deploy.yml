@@ -1,0 +1,18 @@
+name: Deploy (manual, disabled by default)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_deploy:
+        description: "Set true to run deployment steps"
+        required: true
+        default: "false"
+
+jobs:
+  deploy:
+    if: ${{ github.event.inputs.run_deploy == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder deployment
+        run: echo "Deployment hook is disabled unless explicitly triggered."
