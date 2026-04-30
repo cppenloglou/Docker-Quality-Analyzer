@@ -11,6 +11,11 @@ __pycache__/
 .venv/
 venv/
 
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
 # Coverage
 .coverage
 .coverage.*

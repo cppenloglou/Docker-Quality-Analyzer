@@ -27,6 +27,7 @@ __pycache__/
 htmlcov/
 .venv/
 venv/
+*.egg-info/
 
 # Node
 node_modules/
