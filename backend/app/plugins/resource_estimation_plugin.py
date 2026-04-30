@@ -90,14 +90,20 @@ class ResourceEstimationPlugin(BasePlugin):
 
 
 def _parse_memory(value: str) -> int:
+    import re
     value = value.strip().lower()
     try:
-        if value.endswith("g") or value.endswith("gb"):
-            return int(float(value.rstrip("gb")) * 1024)
-        if value.endswith("m") or value.endswith("mb"):
-            return int(float(value.rstrip("mb")))
-        if value.endswith("k") or value.endswith("kb"):
-            return max(1, int(float(value.rstrip("kb")) / 1024))
-        return int(float(value) / (1024 * 1024))
+        match = re.match(r"^([0-9]*\.?[0-9]+)\s*(gb|g|mb|m|kb|k|b)?$", value)
+        if not match:
+            return 128
+        num = float(match.group(1))
+        unit = match.group(2) or "b"
+        if unit in ("g", "gb"):
+            return int(num * 1024)
+        if unit in ("m", "mb"):
+            return int(num)
+        if unit in ("k", "kb"):
+            return max(1, int(num / 1024))
+        return max(1, int(num / (1024 * 1024)))
     except (ValueError, TypeError):
         return 128

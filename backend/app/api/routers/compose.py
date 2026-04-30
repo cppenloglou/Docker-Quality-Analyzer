@@ -27,13 +27,19 @@ class ComposeStopRequest(BaseModel):
     remove_volumes: bool = False
 
 
+MAX_COMPOSE_BYTES = 2 * 1024 * 1024
+
+
 @router.post("/analyze", response_model=AnalysisEnqueueResponse)
 async def analyze_compose(
     file: UploadFile = File(...),
     current_user: UserModel = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> AnalysisEnqueueResponse:
-    content = (await file.read()).decode("utf-8")
+    raw = await file.read()
+    if len(raw) > MAX_COMPOSE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum 2 MB for compose analysis.")
+    content = raw.decode("utf-8")
     filename = file.filename or "compose.yml"
     service = AnalysisService(session)
     job_id = await service.enqueue_job(

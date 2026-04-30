@@ -1,6 +1,5 @@
 import asyncio
 import json
-import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,12 +19,11 @@ from app.infrastructure.events.bus import publish_event, redis_client
 settings = get_settings()
 DEPLOY_STATE_TTL_SECONDS = 60 * 60 * 6
 METRICS_INTERVAL_SECONDS = 2
-METRICS_MAX_RUNTIME_SECONDS = 60 * 60
 
 
 async def run_dockerfile_analysis(ctx, payload: dict) -> dict:
     async with SessionLocal() as session:
-        return await _run_with_payload(session, payload, ["hadolint", "security_scanner", "resource_estimation"])
+        return await _run_with_payload(session, payload, ["hadolint", "security_scanner", "resource_estimation"], job_type="dockerfile")
 
 
 async def run_compose_analysis(ctx, payload: dict) -> dict:
@@ -34,6 +32,7 @@ async def run_compose_analysis(ctx, payload: dict) -> dict:
             session,
             payload,
             ["compose_validator", "compose_runnability", "security_scanner", "resource_estimation"],
+            job_type="compose",
         )
 
 
@@ -85,8 +84,8 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
         primary_container_id = ""
         container_ids: list[str] = []
         if run_stack:
-            _compose_up(deploy_spec)
-            container_ids = _compose_ps_ids(deploy_spec)
+            await _compose_up(deploy_spec)
+            container_ids = await _compose_ps_ids(deploy_spec)
             if container_ids:
                 primary_container_id = container_ids[0]
                 await _set_deploy_state(
@@ -139,7 +138,7 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
         return {"status": "no_active_deploy"}
 
     await _set_stop_requested(user_id, job_id)
-    _compose_down(state, remove_volumes)
+    await _compose_down(state, remove_volumes)
 
     container_id = str(state.get("container_id") or state.get("project_name") or "")
     await publish_event(
@@ -158,13 +157,13 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
     return {"status": "stopped"}
 
 
-async def _run_with_payload(session: AsyncSession, payload: dict, plugins: list[str]) -> dict:
+async def _run_with_payload(session: AsyncSession, payload: dict, plugins: list[str], job_type: str = "dockerfile") -> dict:
     user_id = uuid.UUID(payload["user_id"])
     job_id = uuid.UUID(payload["job_id"])
     content = payload.get("content", "")
     context = {
-        "dockerfile_content": content,
-        "compose_content": content,
+        "dockerfile_content": content if job_type == "dockerfile" else "",
+        "compose_content": content if job_type == "compose" else "",
         "filename": payload.get("filename", ""),
     }
     service = AnalysisService(session)
@@ -213,19 +212,10 @@ def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) ->
     raise RuntimeError("No deployable compose content found for this job.")
 
 
-def _compose_up(spec: dict[str, Any]) -> None:
+async def _compose_up(spec: dict[str, Any]) -> None:
     command = _compose_base_cmd(spec) + ["up", "-d"]
-    try:
-        subprocess.run(
-            command,
-            check=True,
-            cwd=str(spec["project_dir"]),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        stderr = exc.stderr or ""
+    stdout, stderr, returncode = await _run_subprocess(command, cwd=str(spec["project_dir"]))
+    if returncode != 0:
         if "port is already allocated" in stderr.lower():
             sanitized_file = _build_no_ports_compose(spec)
             fallback_command = [
@@ -237,19 +227,11 @@ def _compose_up(spec: dict[str, Any]) -> None:
                 "up",
                 "-d",
             ]
-            try:
-                subprocess.run(
-                    fallback_command,
-                    check=True,
-                    cwd=str(spec["project_dir"]),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except subprocess.CalledProcessError:
-                raise
+            _, fallback_err, fallback_rc = await _run_subprocess(fallback_command, cwd=str(spec["project_dir"]))
+            if fallback_rc != 0:
+                raise RuntimeError(f"docker-compose up failed (fallback): {fallback_err}")
             return
-        raise
+        raise RuntimeError(f"docker-compose up failed: {stderr}")
 
 
 def _build_no_ports_compose(spec: dict[str, Any]) -> str:
@@ -272,34 +254,34 @@ def _build_no_ports_compose(spec: dict[str, Any]) -> str:
     return str(sanitized_path.resolve())
 
 
-def _compose_ps_ids(spec: dict[str, Any]) -> list[str]:
+async def _compose_ps_ids(spec: dict[str, Any]) -> list[str]:
     command = _compose_base_cmd(spec) + ["ps", "-q"]
-    result = subprocess.run(
-        command,
-        check=True,
-        cwd=str(spec["project_dir"]),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    stdout, _, _ = await _run_subprocess(command, cwd=str(spec["project_dir"]))
+    return [line.strip() for line in stdout.splitlines() if line.strip()]
 
 
-def _compose_down(spec: dict[str, Any], remove_volumes: bool) -> None:
+async def _compose_down(spec: dict[str, Any], remove_volumes: bool) -> None:
     command = _compose_base_cmd(spec) + ["down"]
     if remove_volumes:
         command.append("-v")
-    try:
-        subprocess.run(
-            command,
-            check=True,
-            cwd=str(spec["project_dir"]),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except subprocess.CalledProcessError:
-        raise
+    _, stderr, returncode = await _run_subprocess(command, cwd=str(spec["project_dir"]))
+    if returncode != 0:
+        raise RuntimeError(f"docker-compose down failed: {stderr}")
+
+
+async def _run_subprocess(command: list[str], cwd: str | None = None) -> tuple[str, str, int]:
+    proc = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    return (
+        stdout_bytes.decode("utf-8", errors="ignore"),
+        stderr_bytes.decode("utf-8", errors="ignore"),
+        proc.returncode or 0,
+    )
 
 
 async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -> None:

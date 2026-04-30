@@ -1,0 +1,15 @@
+# Intentionally broken YAML syntax
+# Expect: analysis fails with parse error
+services:
+  app:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    environment:
+      - KEY=value
+      - BROKEN: [this is not valid yaml
+      missing_colon value_here
+    depends_on
+      - db
+  db:
+    image postgres:16

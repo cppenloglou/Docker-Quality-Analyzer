@@ -11,10 +11,13 @@ import {
   HardDrive,
   Info,
   Layers,
+  Loader2,
   Play,
   Shield,
+  Square,
 } from "lucide-react";
 
+import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
 import { Card } from "../components/ui/card";
@@ -28,11 +31,13 @@ import {
 } from "../components/ui/tabs";
 import {
   ApiError,
+  compose as composeApi,
   jobs as jobsApi,
   type AnalysisResult,
   type Issue,
   type Job,
 } from "../utils/api";
+import { pushNotification } from "../utils/notifications";
 
 interface UploadedFile {
   name: string;
@@ -72,7 +77,13 @@ export function ResultsDashboard() {
     return stored ? (JSON.parse(stored) as UploadedFile) : null;
   });
   const [loading, setLoading] = useState(true);
+  const ready = useMinLoader(!loading);
   const [error, setError] = useState<string | null>(null);
+  const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping">(() => {
+    const stored = sessionStorage.getItem("dqa:containerStatus");
+    if (stored === "stopping") return "stopping";
+    return "stopped";
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +140,42 @@ export function ResultsDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryJobId]);
 
+  useEffect(() => {
+    if (!job || (job.type !== "compose" && job.type !== "project")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await composeApi.deployStatus(job.id);
+        if (cancelled) return;
+        if (!status.active) {
+          setContainerStatus("stopped");
+          sessionStorage.removeItem("dqa:containerStatus");
+        } else if (containerStatus === "stopping") {
+          for (let i = 0; i < 30; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            if (cancelled) return;
+            try {
+              const poll = await composeApi.deployStatus(job.id);
+              if (!poll.active) {
+                setContainerStatus("stopped");
+                sessionStorage.removeItem("dqa:containerStatus");
+                toast.success("Containers stopped");
+                return;
+              }
+            } catch { break; }
+          }
+          setContainerStatus("stopped");
+          sessionStorage.removeItem("dqa:containerStatus");
+        } else {
+          setContainerStatus("running");
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [job]);
+
   const result = useMemo<AnalysisResult | null>(() => {
     if (!job?.result) return null;
     return isAnalysisResult(job.result) ? job.result : null;
@@ -165,8 +212,42 @@ export function ResultsDashboard() {
   }, [job]);
 
   const handleRunContainers = () => {
-    if (composeRunnable && job) {
+    if (containerStatus === "running" && job) {
       navigate(`/execution?jobId=${job.id}`);
+    } else if (composeRunnable && job) {
+      navigate(`/execution?jobId=${job.id}`);
+    }
+  };
+
+  const handleStopContainers = async () => {
+    if (!job || containerStatus !== "running") return;
+    setContainerStatus("stopping");
+    sessionStorage.setItem("dqa:containerStatus", "stopping");
+    pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for shutdown...");
+    try {
+      await composeApi.stopDeploy({ job_id: job.id });
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const status = await composeApi.deployStatus(job.id);
+          if (!status.active) {
+            setContainerStatus("stopped");
+            sessionStorage.removeItem("dqa:containerStatus");
+            toast.success("Containers stopped");
+            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped");
+            return;
+          }
+        } catch {
+          break;
+        }
+      }
+      setContainerStatus("stopped");
+      sessionStorage.removeItem("dqa:containerStatus");
+    } catch {
+      setContainerStatus("running");
+      sessionStorage.removeItem("dqa:containerStatus");
+      toast.error("Failed to stop containers");
+      pushNotification("error", "Stop Failed", "Failed to stop containers");
     }
   };
 
@@ -185,13 +266,10 @@ export function ResultsDashboard() {
     toast.success("Report downloaded");
   };
 
-  if (loading) {
+  if (!ready) {
     return (
       <Layout>
-        <div className="max-w-4xl mx-auto py-16 flex flex-col items-center text-slate-400">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mb-4" />
-          <p>Loading analysis results...</p>
-        </div>
+        <DockerLoader message="Loading analysis results..." fullScreen={false} />
       </Layout>
     );
   }
@@ -295,7 +373,7 @@ export function ResultsDashboard() {
                 <Download className="w-4 h-4 mr-2" />
                 Export Report
               </Button>
-              {(isComposeJob || isProjectJob) && (
+              {(isComposeJob || isProjectJob) && containerStatus === "stopped" && (
                 <Button
                   onClick={handleRunContainers}
                   disabled={!composeRunnable}
@@ -308,6 +386,31 @@ export function ResultsDashboard() {
                 >
                   <Play className="w-4 h-4 mr-2" />
                   Run Containers
+                </Button>
+              )}
+              {(isComposeJob || isProjectJob) && containerStatus === "running" && (
+                <>
+                  <Button
+                    onClick={handleRunContainers}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    🏃🏿 Inspect your Containers
+                    <Loader2 className="w-3 h-3 ml-2 animate-spin" />
+                  </Button>
+                  <Button
+                    onClick={handleStopContainers}
+                    variant="outline"
+                    className="border-red-700 text-red-300 hover:bg-red-600/20"
+                  >
+                    <Square className="w-4 h-4 mr-2" />
+                    Stop
+                  </Button>
+                </>
+              )}
+              {(isComposeJob || isProjectJob) && containerStatus === "stopping" && (
+                <Button disabled className="bg-slate-700">
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Stopping...
                 </Button>
               )}
             </div>

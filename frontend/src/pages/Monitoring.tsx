@@ -7,7 +7,6 @@ import {
   Cpu,
   Database,
   HardDrive,
-  Loader2,
   MemoryStick,
   Network,
   PlugZap,
@@ -26,6 +25,7 @@ import {
 import { Layout } from "../components/Layout";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { DockerLoader } from "../components/DockerLoader";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -250,10 +250,7 @@ export function Monitoring() {
   if (!user?.id) {
     return (
       <Layout>
-        <div className="max-w-3xl mx-auto py-16 flex flex-col items-center text-slate-400">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-4" />
-          <p>Loading user context...</p>
-        </div>
+        <DockerLoader message="Loading monitoring..." fullScreen={false} />
       </Layout>
     );
   }

@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
+  Activity,
   ChevronRight,
   Clock,
   FileCode,
   FileText,
   FolderArchive,
-  Loader2,
 } from "lucide-react";
 
+import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { ApiError, jobs as jobsApi, type Job } from "../utils/api";
+import { ApiError, compose as composeApi, jobs as jobsApi, type Job } from "../utils/api";
 
 interface HistoryItem {
   id: string;
@@ -75,7 +76,27 @@ export function History() {
   const navigate = useNavigate();
   const [jobList, setJobList] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const ready = useMinLoader(!loading);
   const [error, setError] = useState<string | null>(null);
+  const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
+  const jobListRef = useRef<Job[]>([]);
+
+  const pollRunningStatus = useCallback(async (jobs: Job[]) => {
+    const composeJobs = jobs.filter(
+      (j) => (j.type === "compose" || j.type === "project") && j.status === "done",
+    );
+    if (composeJobs.length === 0) return;
+    const activeIds = new Set<string>();
+    await Promise.all(
+      composeJobs.map(async (j) => {
+        try {
+          const status = await composeApi.deployStatus(j.id);
+          if (status.active) activeIds.add(j.id);
+        } catch { /* ignore */ }
+      }),
+    );
+    setRunningJobs(activeIds);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +105,8 @@ export function History() {
         const data = await jobsApi.history();
         if (!cancelled) {
           setJobList(data);
+          jobListRef.current = data;
+          await pollRunningStatus(data);
         }
       } catch (err) {
         if (cancelled) return;
@@ -102,7 +125,15 @@ export function History() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pollRunningStatus]);
+
+  useEffect(() => {
+    if (jobList.length === 0) return;
+    const interval = setInterval(() => {
+      pollRunningStatus(jobListRef.current);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [jobList, pollRunningStatus]);
 
   const historyItems = useMemo<HistoryItem[]>(
     () =>
@@ -194,20 +225,17 @@ export function History() {
           </Card>
         </div>
 
-        {loading && (
-          <div className="flex items-center justify-center py-12 text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
-            Loading your job history...
-          </div>
+        {!ready && (
+          <DockerLoader message="Loading your job history..." fullScreen={false} />
         )}
 
-        {!loading && error && (
+        {ready && error && (
           <Card className="p-6 bg-red-950/20 border-red-800 text-red-300 mb-6">
             {error}
           </Card>
         )}
 
-        {!loading && !error && historyItems.length === 0 && (
+        {ready && !error && historyItems.length === 0 && (
           <Card className="p-12 bg-slate-900 border-slate-800 text-center">
             <FileCode className="w-16 h-16 text-slate-700 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">
@@ -225,7 +253,7 @@ export function History() {
           </Card>
         )}
 
-        {!loading && historyItems.length > 0 && (
+        {ready && historyItems.length > 0 && (
           <div className="space-y-3">
             {historyItems.map((item) => (
               <Card
@@ -256,6 +284,12 @@ export function History() {
                         <Badge className={statusColor(item.status)}>
                           {item.status}
                         </Badge>
+                        {runningJobs.has(item.id) && (
+                          <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            Containers Running
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-4 text-sm flex-wrap">

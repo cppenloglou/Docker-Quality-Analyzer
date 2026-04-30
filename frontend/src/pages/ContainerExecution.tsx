@@ -12,6 +12,7 @@ import {
   Square,
 } from "lucide-react";
 
+import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
 import { Card } from "../components/ui/card";
@@ -28,6 +29,7 @@ import {
   type RunnabilityMeta,
 } from "../utils/api";
 import { clearState, loadState, saveState } from "../utils/monitoringState";
+import { pushNotification } from "../utils/notifications";
 
 interface TimelineEntry {
   id: string;
@@ -78,6 +80,7 @@ export function ContainerExecution() {
   const [job, setJob] = useState<Job | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const ready = useMinLoader(!loading);
 
   const [deploying, setDeploying] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -212,6 +215,7 @@ export function ContainerExecution() {
         tone: "success",
       });
       toast.success("Deploy request accepted");
+      pushNotification("info", "Deploy Started", `Compose stack deploy queued for job ${job.id.slice(0, 8)}`);
 
       const socket = ws.connectJob(job.id);
       socketRef.current = socket;
@@ -248,6 +252,7 @@ export function ContainerExecution() {
               "done",
               ids.length > 0 ? `${ids.length} container(s) started` : "Container started",
             );
+            pushNotification("success", "Containers Running", `${ids.length || 1} container(s) are now running`);
           } else if (parsed.event_name === "container.metrics") {
             setTimelineStatus("metrics", "running", "Metrics streaming");
           } else if (parsed.event_name === "container.stopped") {
@@ -257,6 +262,7 @@ export function ContainerExecution() {
             setDeployJobId(null);
             if (stateKey) clearState(stateKey);
             toast.success("Compose stack stopped");
+            pushNotification("warning", "Containers Stopped", "All containers have been stopped");
           } else if (parsed.event_name === "user.analysis.failed") {
             setTimelineStatus(
               "start",
@@ -303,6 +309,7 @@ export function ContainerExecution() {
     setStopping(true);
     setStackRunning(false);
     setContainerIds([]);
+    sessionStorage.setItem("dqa:containerStatus", "stopping");
     pushLog({ message: `Stop requested for deploy ${job.id}`, tone: "warning" });
     try {
       const response = await composeApi.stopDeploy({ job_id: job.id });
@@ -312,24 +319,24 @@ export function ContainerExecution() {
       });
       setTimelineStatus("metrics", "done", "Stop signal sent");
       toast.success("Stop request accepted");
+      pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for containers to shut down...");
 
-      const pollUntilStopped = async () => {
-        for (let i = 0; i < 30; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          try {
-            const status = await composeApi.deployStatus(job.id);
-            if (!status.active) {
-              setDeployJobId(null);
-              if (stateKey) clearState(stateKey);
-              pushLog({ message: "Stack confirmed stopped", tone: "success" });
-              return;
-            }
-          } catch {
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const status = await composeApi.deployStatus(job.id);
+          if (!status.active) {
+            setDeployJobId(null);
+            if (stateKey) clearState(stateKey);
+            sessionStorage.removeItem("dqa:containerStatus");
+            pushLog({ message: "Stack confirmed stopped", tone: "success" });
+            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped");
             break;
           }
+        } catch {
+          break;
         }
-      };
-      pollUntilStopped();
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to stop deployment";
       pushLog({ message, tone: "error" });
@@ -340,13 +347,10 @@ export function ContainerExecution() {
     }
   };
 
-  if (loading) {
+  if (!ready) {
     return (
       <Layout>
-        <div className="max-w-3xl mx-auto py-16 flex flex-col items-center text-slate-400">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-4" />
-          <p>Loading deployment context...</p>
-        </div>
+        <DockerLoader message="Loading deployment context..." fullScreen={false} />
       </Layout>
     );
   }
@@ -410,12 +414,12 @@ export function ContainerExecution() {
                     : "Trigger deploy"
                 }
               >
-                {deploying ? (
+                {deploying || stopping ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <Play className="w-4 h-4 mr-2" />
                 )}
-                {stackRunning ? "Running" : "Deploy"}
+                {stopping ? "Stopping..." : stackRunning ? "Running" : "Deploy"}
               </Button>
               <Button
                 onClick={handleStop}

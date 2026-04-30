@@ -38,6 +38,10 @@ async def upload_project(
     extract_dir = upload_root / f"{archive_path.stem}-{uuid.uuid4().hex[:8]}"
     extract_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive_path, "r") as zf:
+        for member in zf.namelist():
+            member_path = (extract_dir / member).resolve()
+            if not str(member_path).startswith(str(extract_dir.resolve())):
+                raise HTTPException(status_code=400, detail="Archive contains path traversal entries.")
         zf.extractall(extract_dir)
 
     dockerfiles = [str(path.relative_to(extract_dir)) for path in extract_dir.rglob("Dockerfile")]

@@ -1,12 +1,9 @@
 import { createBrowserRouter } from "react-router-dom";
 import App from "./App";
+import { DockerLoader } from "./components/DockerLoader";
 import { RequireAuth } from "./components/RequireAuth";
 
-const routeHydrateFallbackElement = (
-  <div className="min-h-screen bg-slate-950 text-slate-300 grid place-items-center">
-    Loading...
-  </div>
-);
+const routeHydrateFallbackElement = <DockerLoader message="Loading page..." />;
 
 export const router = createBrowserRouter([
   {

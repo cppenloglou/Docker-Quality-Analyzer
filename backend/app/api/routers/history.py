@@ -79,15 +79,4 @@ async def get_job_history(
     current_user: UserModel = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[JobRead]:
-    jobs = await JobRepository(session).list_jobs(current_user.id)
-    return [
-        JobRead(
-            id=item.id,
-            type=item.type.value,
-            status=item.status.value,
-            input_metadata=item.input_metadata,
-            result=item.result,
-            created_at=item.created_at,
-        )
-        for item in jobs
-    ]
+    return await list_jobs(current_user=current_user, session=session)

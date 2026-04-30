@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import docker
@@ -34,9 +35,16 @@ class DockerGateway:
         return inspect.get("NetworkSettings", {}).get("IPAddress", "")
 
     async def inspect_container_metrics(self, container_id: str) -> dict[str, Any]:
+        container, stats, inspect = await asyncio.to_thread(self._fetch_stats_sync, container_id)
+        return self._build_metrics(container_id, stats, inspect)
+
+    def _fetch_stats_sync(self, container_id: str) -> tuple:
         container = self.client.containers.get(container_id)
         stats = container.stats(stream=False)
         inspect = container.attrs
+        return container, stats, inspect
+
+    def _build_metrics(self, container_id: str, stats: dict, inspect: dict) -> dict[str, Any]:
         mem_usage = stats.get("memory_stats", {}).get("usage", 0)
         mem_limit = stats.get("memory_stats", {}).get("limit", 1) or 1
         mem_stats = stats.get("memory_stats", {}).get("stats", {})
@@ -46,7 +54,10 @@ class DockerGateway:
         system_delta = stats.get("cpu_stats", {}).get("system_cpu_usage", 0) - stats.get("precpu_stats", {}).get(
             "system_cpu_usage", 0
         )
-        cpu_percent = (cpu_delta / system_delta * 100.0) if system_delta > 0 else 0.0
+        online_cpus = stats.get("cpu_stats", {}).get("online_cpus", 0) or len(
+            stats.get("cpu_stats", {}).get("cpu_usage", {}).get("percpu_usage", []) or []
+        ) or 1
+        cpu_percent = (cpu_delta / system_delta * online_cpus * 100.0) if system_delta > 0 else 0.0
 
         net_raw = stats.get("networks", {}) or {}
         net_totals = {
@@ -86,20 +97,17 @@ class DockerGateway:
 
         cpu_stats = stats.get("cpu_stats", {}) or {}
         throttling = cpu_stats.get("throttling_data", {}) or {}
-        memory_percent = round((mem_usage / mem_limit) * 100.0, 2) if mem_limit > 0 else 0.0
+        memory_percent = (mem_usage / mem_limit * 100.0) if mem_limit > 0 else 0.0
         mounts = inspect.get("Mounts", []) or []
         state = inspect.get("State", {}) or {}
 
         return {
-            # legacy keys
-            "cpu_percent": round(cpu_percent, 2),
+            "cpu_percent": cpu_percent,
             "memory_bytes": mem_usage,
             "memory_percent": memory_percent,
-            "network_rx": net_raw,
-            "uptime_seconds": 0,
             # rich payload
             "cpu": {
-                "percent": round(cpu_percent, 2),
+                "percent": cpu_percent,
                 "total_usage": int(cpu_stats.get("cpu_usage", {}).get("total_usage", 0) or 0),
                 "system_usage": int(cpu_stats.get("system_cpu_usage", 0) or 0),
                 "online_cpus": int(cpu_stats.get("online_cpus", 0) or 0),

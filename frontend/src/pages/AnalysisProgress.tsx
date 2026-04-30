@@ -8,6 +8,7 @@ import { Card } from "../components/ui/card";
 import { Progress } from "../components/ui/progress";
 import { Button } from "../components/ui/button";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
+import { pushNotification } from "../utils/notifications";
 import {
   ApiError,
   compose as composeApi,
@@ -117,6 +118,7 @@ export function AnalysisProgress() {
       // sessionStorage may be blocked; safe to ignore
     }
     toast.success("Analysis complete");
+    pushNotification("success", "Analysis Complete", `Job ${latestJob.id.slice(0, 8)} finished successfully`);
     closeSocket();
     setTimeout(() => {
       navigate(`/results?jobId=${latestJob.id}`);
@@ -127,6 +129,7 @@ export function AnalysisProgress() {
     setJobStatus("failed");
     failAllRemaining(message);
     toast.error(message);
+    pushNotification("error", "Analysis Failed", message);
     closeSocket();
   };
 
