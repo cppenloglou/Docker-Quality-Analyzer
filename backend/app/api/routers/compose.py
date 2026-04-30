@@ -21,6 +21,11 @@ class ComposeDeployRequest(BaseModel):
     run_stack: bool = False
 
 
+class ComposeStopRequest(BaseModel):
+    job_id: uuid.UUID
+    remove_volumes: bool = False
+
+
 @router.post("/analyze", response_model=AnalysisEnqueueResponse)
 async def analyze_compose(
     file: UploadFile = File(...),
@@ -28,11 +33,16 @@ async def analyze_compose(
     session: AsyncSession = Depends(get_db_session),
 ) -> AnalysisEnqueueResponse:
     content = (await file.read()).decode("utf-8")
+    filename = file.filename or "compose.yml"
     service = AnalysisService(session)
-    job_id = await service.enqueue_job(current_user.id, JobType.compose, {"filename": file.filename or "compose.yml"})
+    job_id = await service.enqueue_job(
+        current_user.id,
+        JobType.compose,
+        {"filename": filename, "compose_content": content},
+    )
     await enqueue_job(
         "run_compose_analysis",
-        {"user_id": str(current_user.id), "job_id": str(job_id), "content": content, "filename": file.filename},
+        {"user_id": str(current_user.id), "job_id": str(job_id), "content": content, "filename": filename},
     )
     return AnalysisEnqueueResponse(job_id=uuid.UUID(str(job_id)), status="queued")
 
@@ -73,6 +83,29 @@ async def deploy_compose(
             "job_id": str(payload.job_id),
             "push_public_images": payload.push_public_images,
             "run_stack": payload.run_stack,
+        },
+    )
+    return AnalysisEnqueueResponse(job_id=payload.job_id, status="queued")
+
+
+@router.post("/deploy/stop", response_model=AnalysisEnqueueResponse)
+async def stop_compose_deploy(
+    payload: ComposeStopRequest,
+    current_user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> AnalysisEnqueueResponse:
+    repository = JobRepository(session)
+    job = await repository.get_job(payload.job_id, current_user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.type not in {JobType.compose, JobType.project}:
+        raise HTTPException(status_code=400, detail="Stop deploy is supported only for compose or project jobs.")
+    await enqueue_job(
+        "run_compose_stop",
+        {
+            "user_id": str(current_user.id),
+            "job_id": str(payload.job_id),
+            "remove_volumes": payload.remove_volumes,
         },
     )
     return AnalysisEnqueueResponse(job_id=payload.job_id, status="queued")

@@ -1,0 +1,35 @@
+# Expect: runnability precheck blocks the deploy with multiple reasons.
+# Violations included: build context, latest tag, bind mount, env_file,
+# unresolved ${VAR}, privileged mode, host network mode, external volume.
+services:
+  web:
+    build: ./web
+    image: myorg/web:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - ./html:/usr/share/nginx/html
+    env_file: ./.env
+    environment:
+      API_URL: ${API_URL}
+
+  api:
+    image: node
+    network_mode: host
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    volumes:
+      - type: bind
+        source: ./api
+        target: /app
+
+volumes:
+  shared-data:
+    external: true
+
+networks:
+  corp-net:
+    external: true

@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Layout } from "../components/Layout";
 import { DragDropUpload } from "../components/DragDropUpload";
 import { QuickDemo } from "../components/QuickDemo";
@@ -12,21 +13,37 @@ import {
 } from "lucide-react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { detectFileKind, type DockerFileKind } from "../utils/fileType";
 
 export function Landing() {
   const navigate = useNavigate();
 
-  const handleFileSelect = (file: File) => {
-    // Store file in sessionStorage for the next page
+  const handleFileSelect = (file: File, hint?: DockerFileKind) => {
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast.error(`Could not read ${file.name}.`);
+    };
     reader.onload = (e) => {
-      const content = e.target?.result as string;
+      const content = (e.target?.result as string) ?? "";
+      const detection = detectFileKind(file.name, content, hint);
+
+      if (detection.kind === "unknown") {
+        toast.error("Unsupported file", { description: detection.reason });
+        return;
+      }
+
+      if (hint && hint !== detection.kind && detection.confidence === "high") {
+        toast.message("Detected a different file type", {
+          description: `You picked "${hint}" but the contents look like "${detection.kind}". Using ${detection.kind}.`,
+        });
+      }
+
       sessionStorage.setItem(
         "uploadedFile",
         JSON.stringify({
           name: file.name,
           content,
-          type: file.name.includes("compose") ? "docker-compose" : "dockerfile",
+          type: detection.kind,
         }),
       );
       navigate("/upload");

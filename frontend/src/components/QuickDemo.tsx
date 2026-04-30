@@ -2,7 +2,7 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { FileCode, Zap } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { SAMPLE_DOCKERFILE, SAMPLE_DOCKER_COMPOSE } from "../utils/mockData";
+import { SAMPLE_DOCKERFILE, SAMPLE_DOCKER_COMPOSE } from "../utils/samples";
 
 export function QuickDemo() {
   const navigate = useNavigate();

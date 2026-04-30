@@ -1,5 +1,20 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Cpu,
+  Download,
+  HardDrive,
+  Info,
+  Layers,
+  Play,
+  Shield,
+} from "lucide-react";
+
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
 import { Card } from "../components/ui/card";
@@ -12,39 +27,12 @@ import {
   TabsTrigger,
 } from "../components/ui/tabs";
 import {
-  AlertCircle,
-  AlertTriangle,
-  Info,
-  Shield,
-  CheckCircle2,
-  ArrowLeft,
-  Play,
-  Download,
-} from "lucide-react";
-import { getJob } from "../utils/api";
-
-interface Issue {
-  line: number;
-  code: string;
-  severity: string;
-  message: string;
-  suggestion: string;
-}
-
-interface Results {
-  score: number;
-  grade: string;
-  errors: Issue[];
-  warnings: Issue[];
-  suggestions: Issue[];
-  securityIssues: Issue[];
-  meta?: {
-    runnability?: {
-      runnable: boolean;
-      reasons: string[];
-    };
-  };
-}
+  ApiError,
+  jobs as jobsApi,
+  type AnalysisResult,
+  type Issue,
+  type Job,
+} from "../utils/api";
 
 interface UploadedFile {
   name: string;
@@ -52,103 +40,269 @@ interface UploadedFile {
   content: string;
 }
 
+function scoreColor(score: number) {
+  if (score >= 80) return "text-green-400";
+  if (score >= 60) return "text-yellow-400";
+  return "text-red-400";
+}
+
+function gradeColor(grade: string) {
+  if (grade === "A") return "bg-green-500/20 text-green-400 border-green-500/30";
+  if (grade === "B") return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+  return "bg-red-500/20 text-red-400 border-red-500/30";
+}
+
+function isAnalysisResult(value: unknown): value is AnalysisResult {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    Array.isArray((value as { errors?: unknown }).errors) &&
+    Array.isArray((value as { warnings?: unknown }).warnings)
+  );
+}
+
 export function ResultsDashboard() {
   const navigate = useNavigate();
-  const [results, setResults] = useState<Results | null>(() => {
-    const storedResults = sessionStorage.getItem("analysisResults");
-    return storedResults ? JSON.parse(storedResults) : null;
+  const [searchParams] = useSearchParams();
+  const queryJobId = searchParams.get("jobId");
+
+  const [job, setJob] = useState<Job | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(() => {
+    const stored = sessionStorage.getItem("uploadedFile");
+    return stored ? (JSON.parse(stored) as UploadedFile) : null;
   });
-  const [fileData] = useState<UploadedFile | null>(() => {
-    const storedFile = sessionStorage.getItem("uploadedFile");
-    return storedFile ? JSON.parse(storedFile) : null;
-  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const jobId = sessionStorage.getItem("analysisJobId");
-    if (!results && jobId) {
-      getJob(jobId)
-        .then((job) => {
-          if (job.result) {
-            setResults(job.result as Results);
-            sessionStorage.setItem("analysisResults", JSON.stringify(job.result));
-          }
-        })
-        .catch(() => navigate("/history"));
+    let cancelled = false;
+    const targetJobId =
+      queryJobId || sessionStorage.getItem("analysisJobId") || null;
+
+    if (!targetJobId) {
+      setLoading(false);
+      setError("No analysis job to display.");
       return;
     }
-    if (!results || !fileData) {
-      navigate("/");
-    }
-  }, [fileData, navigate, results]);
 
-  if (!results || !fileData) return null;
+    (async () => {
+      try {
+        const fetched = await jobsApi.get(targetJobId);
+        if (cancelled) return;
+        setJob(fetched);
+        sessionStorage.setItem("analysisJobId", fetched.id);
+        if (fetched.result) {
+          sessionStorage.setItem(
+            "analysisResults",
+            JSON.stringify(fetched.result),
+          );
+        }
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-green-400";
-    if (score >= 60) return "text-yellow-400";
-    return "text-red-400";
-  };
+        const metaFilename =
+          (fetched.input_metadata?.filename as string | undefined) ??
+          "uploaded file";
+        if (!uploadedFile) {
+          setUploadedFile({
+            name: metaFilename,
+            type: fetched.type === "compose" ? "docker-compose" : fetched.type,
+            content: "",
+          });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Failed to load job.";
+        setError(message);
+        toast.error(message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-  const getGradeColor = (grade: string) => {
-    if (grade === "A")
-      return "bg-green-500/20 text-green-400 border-green-500/30";
-    if (grade === "B")
-      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
-    return "bg-red-500/20 text-red-400 border-red-500/30";
-  };
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryJobId]);
 
-  const highlightedLines = [
-    ...results.errors.map((e) => e.line),
-    ...results.warnings.map((w) => w.line),
-    ...results.securityIssues.map((s) => s.line),
-  ];
+  const result = useMemo<AnalysisResult | null>(() => {
+    if (!job?.result) return null;
+    return isAnalysisResult(job.result) ? job.result : null;
+  }, [job]);
 
-  const isComposeFile = fileData.type === "docker-compose";
-  const runnability = results.meta?.runnability;
-  const composeRunnable = isComposeFile && runnability?.runnable === true;
+  const failureMessage = useMemo(() => {
+    if (!job || isAnalysisResult(job.result)) return null;
+    const r = job.result as { message?: string } | null;
+    return r?.message ?? null;
+  }, [job]);
+
+  const highlightedLines = useMemo(() => {
+    if (!result) return [] as number[];
+    return [
+      ...result.errors.map((e) => e.line),
+      ...result.warnings.map((w) => w.line),
+      ...result.securityIssues.map((s) => s.line),
+    ];
+  }, [result]);
+
+  const isComposeJob = job?.type === "compose";
+  const isProjectJob = job?.type === "project";
+  const runnability = result?.meta?.runnability;
+  const estimate = result?.meta?.estimate;
+  const composeRunnable =
+    (isComposeJob || isProjectJob) && runnability?.runnable === true;
+
+  const detectedFiles = useMemo(() => {
+    const meta = job?.input_metadata ?? {};
+    return {
+      dockerfiles: (meta.dockerfiles as string[] | undefined) ?? [],
+      composeFiles: (meta.compose_files as string[] | undefined) ?? [],
+    };
+  }, [job]);
 
   const handleRunContainers = () => {
-    if (composeRunnable) {
-      navigate("/execution");
+    if (composeRunnable && job) {
+      navigate(`/execution?jobId=${job.id}`);
     }
   };
+
+  const handleExport = () => {
+    if (!job) return;
+    const payload = JSON.stringify(job, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `analysis-${job.id}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    toast.success("Report downloaded");
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto py-16 flex flex-col items-center text-slate-400">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent mb-4" />
+          <p>Loading analysis results...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!job) {
+    return (
+      <Layout>
+        <div className="max-w-3xl mx-auto">
+          <Card className="p-6 bg-red-950/20 border-red-800 text-red-300">
+            <p className="mb-4">{error ?? "Analysis job not found."}</p>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => navigate("/history")}>
+                Go to History
+              </Button>
+              <Button
+                onClick={() => navigate("/")}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Back to Home
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (failureMessage) {
+    return (
+      <Layout>
+        <div className="max-w-3xl mx-auto">
+          <Button
+            variant="ghost"
+            onClick={() => navigate("/history")}
+            className="text-slate-400 hover:text-white mb-4"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to History
+          </Button>
+          <Card className="p-6 bg-red-950/20 border-red-800">
+            <h2 className="text-xl font-semibold text-red-300 mb-2">
+              Analysis failed
+            </h2>
+            <p className="text-red-200 mb-4">{failureMessage}</p>
+            <Button onClick={handleExport} variant="outline">
+              <Download className="w-4 h-4 mr-2" /> Export Job JSON
+            </Button>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!result) {
+    return (
+      <Layout>
+        <div className="max-w-3xl mx-auto">
+          <Card className="p-6 bg-slate-900 border-slate-800 text-slate-300">
+            <p className="mb-4">
+              Job {job.id} is {job.status}. Results are not yet available.
+            </p>
+            <Button onClick={() => navigate(`/analysis?jobId=${job.id}`)}>
+              Watch progress
+            </Button>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <Button
             variant="ghost"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/history")}
             className="text-slate-400 hover:text-white mb-4"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
+            Back to History
           </Button>
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-white mb-2">
                 Analysis Results
               </h1>
-              <p className="text-slate-400">{fileData.name}</p>
+              <p className="text-slate-400">
+                {(job.input_metadata?.filename as string | undefined) ??
+                  uploadedFile?.name ??
+                  job.id}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">Job ID: {job.id}</p>
             </div>
             <div className="flex gap-3">
               <Button
                 variant="outline"
+                onClick={handleExport}
                 className="border-slate-700 text-slate-300 hover:bg-slate-800"
               >
                 <Download className="w-4 h-4 mr-2" />
                 Export Report
               </Button>
-              {isComposeFile && (
+              {(isComposeJob || isProjectJob) && (
                 <Button
                   onClick={handleRunContainers}
                   disabled={!composeRunnable}
                   title={
                     composeRunnable
                       ? "Deploy and run analyzed compose stack"
-                      : "Upload the full project to deploy this compose stack."
+                      : "Compose stack cannot be deployed as-is. See runnability reasons."
                   }
                   className="bg-blue-600 hover:bg-blue-700"
                 >
@@ -160,22 +314,17 @@ export function ResultsDashboard() {
           </div>
         </div>
 
-        {/* Score Card */}
         <Card className="p-6 bg-slate-900 border-slate-800 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             <div className="md:col-span-2 flex items-center gap-4">
               <div className="text-center">
-                <div
-                  className={`text-6xl font-bold ${getScoreColor(results.score)}`}
-                >
-                  {results.score}
+                <div className={`text-6xl font-bold ${scoreColor(result.score)}`}>
+                  {result.score}
                 </div>
                 <div className="text-slate-400 text-sm mt-1">Quality Score</div>
               </div>
-              <Badge
-                className={`text-2xl px-4 py-2 ${getGradeColor(results.grade)}`}
-              >
-                Grade {results.grade}
+              <Badge className={`text-2xl px-4 py-2 ${gradeColor(result.grade)}`}>
+                Grade {result.grade}
               </Badge>
             </div>
 
@@ -185,7 +334,7 @@ export function ResultsDashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {results.errors.length}
+                  {result.errors.length}
                 </div>
                 <div className="text-sm text-slate-400">Errors</div>
               </div>
@@ -197,7 +346,7 @@ export function ResultsDashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {results.warnings.length}
+                  {result.warnings.length}
                 </div>
                 <div className="text-sm text-slate-400">Warnings</div>
               </div>
@@ -209,7 +358,7 @@ export function ResultsDashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {results.securityIssues.length}
+                  {result.securityIssues.length}
                 </div>
                 <div className="text-sm text-slate-400">Security</div>
               </div>
@@ -217,7 +366,44 @@ export function ResultsDashboard() {
           </div>
         </Card>
 
-        {isComposeFile && (
+        {estimate && (
+          <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Resource Estimate
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
+                <Layers className="w-5 h-5 text-blue-400" />
+                <div>
+                  <div className="text-xs text-slate-400">Estimated layers</div>
+                  <div className="text-lg text-white font-semibold">
+                    {estimate.estimated_layers ?? "-"}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
+                <HardDrive className="w-5 h-5 text-purple-400" />
+                <div>
+                  <div className="text-xs text-slate-400">Estimated memory</div>
+                  <div className="text-lg text-white font-semibold">
+                    {estimate.estimated_memory_mb ?? "-"} MB
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
+                <Cpu className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <div className="text-xs text-slate-400">Estimated CPU</div>
+                  <div className="text-lg text-white font-semibold">
+                    {estimate.estimated_cpu_millicores ?? "-"} m
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {(isComposeJob || isProjectJob) && (
           <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -225,7 +411,7 @@ export function ResultsDashboard() {
                   Deploy Runnability
                 </h3>
                 <p className="text-sm text-slate-400">
-                  Standalone compose deployment is gated by strict precheck rules.
+                  Strict precheck rules decide whether the stack can be deployed.
                 </p>
               </div>
               <Badge
@@ -235,82 +421,139 @@ export function ResultsDashboard() {
                     : "bg-amber-500/20 text-amber-400 border-amber-500/30"
                 }
               >
-                {composeRunnable ? "Runnable" : "Not runnable from compose alone"}
+                {composeRunnable ? "Runnable" : "Blocked"}
               </Badge>
             </div>
             {!composeRunnable && (
+              <ul className="mt-4 space-y-2 text-sm text-slate-300 list-disc list-inside">
+                {(runnability?.reasons ?? [
+                  "No runnability metadata found.",
+                ]).map((reason, idx) => (
+                  <li key={idx}>{reason}</li>
+                ))}
+              </ul>
+            )}
+            {runnability?.rules && (
               <details className="mt-4">
-                <summary className="cursor-pointer text-sm text-amber-300">
-                  View runnability blockers
+                <summary className="cursor-pointer text-xs text-slate-400">
+                  Inspect runnability rules
                 </summary>
-                <ul className="mt-3 space-y-2 text-sm text-slate-300 list-disc list-inside">
-                  {(runnability?.reasons || [
-                    "No runnability metadata found. Upload full project for deploy.",
-                  ]).map((reason, idx) => (
-                    <li key={idx}>{reason}</li>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                  {Object.entries(runnability.rules).map(([rule, passed]) => (
+                    <div
+                      key={rule}
+                      className={`flex items-center gap-2 p-2 rounded border ${
+                        passed
+                          ? "border-green-500/30 bg-green-500/5 text-green-300"
+                          : "border-amber-500/30 bg-amber-500/5 text-amber-300"
+                      }`}
+                    >
+                      <span className="font-mono truncate">{rule}</span>
+                      <span className="ml-auto">{passed ? "pass" : "fail"}</span>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </details>
             )}
           </Card>
         )}
 
-        {/* Tabs for Issues */}
+        {isProjectJob &&
+          (detectedFiles.dockerfiles.length > 0 ||
+            detectedFiles.composeFiles.length > 0) && (
+            <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
+              <h3 className="text-lg font-semibold text-white mb-3">
+                Detected files in archive
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-slate-400 mb-2">Dockerfiles</div>
+                  {detectedFiles.dockerfiles.length === 0 ? (
+                    <p className="text-slate-500 italic">None found</p>
+                  ) : (
+                    <ul className="space-y-1 text-slate-300 font-mono">
+                      {detectedFiles.dockerfiles.map((path) => (
+                        <li key={path} className="truncate">
+                          {path}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="text-slate-400 mb-2">Compose files</div>
+                  {detectedFiles.composeFiles.length === 0 ? (
+                    <p className="text-slate-500 italic">None found</p>
+                  ) : (
+                    <ul className="space-y-1 text-slate-300 font-mono">
+                      {detectedFiles.composeFiles.map((path) => (
+                        <li key={path} className="truncate">
+                          {path}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
         <Tabs defaultValue="all" className="mb-6">
           <TabsList className="bg-slate-900 border border-slate-800">
             <TabsTrigger value="all">All Issues</TabsTrigger>
             <TabsTrigger value="errors">
-              Errors ({results.errors.length})
+              Errors ({result.errors.length})
             </TabsTrigger>
             <TabsTrigger value="warnings">
-              Warnings ({results.warnings.length})
+              Warnings ({result.warnings.length})
             </TabsTrigger>
             <TabsTrigger value="security">
-              Security ({results.securityIssues.length})
+              Security ({result.securityIssues.length})
             </TabsTrigger>
             <TabsTrigger value="suggestions">
-              Suggestions ({results.suggestions.length})
+              Suggestions ({result.suggestions.length})
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="all" className="mt-6 space-y-3">
             {renderIssues([
-              ...results.errors,
-              ...results.warnings,
-              ...results.securityIssues,
-              ...results.suggestions,
+              ...result.errors,
+              ...result.warnings,
+              ...result.securityIssues,
+              ...result.suggestions,
             ])}
           </TabsContent>
-
           <TabsContent value="errors" className="mt-6 space-y-3">
-            {renderIssues(results.errors)}
+            {renderIssues(result.errors)}
           </TabsContent>
-
           <TabsContent value="warnings" className="mt-6 space-y-3">
-            {renderIssues(results.warnings)}
+            {renderIssues(result.warnings)}
           </TabsContent>
-
           <TabsContent value="security" className="mt-6 space-y-3">
-            {renderIssues(results.securityIssues)}
+            {renderIssues(result.securityIssues)}
           </TabsContent>
-
           <TabsContent value="suggestions" className="mt-6 space-y-3">
-            {renderIssues(results.suggestions)}
+            {renderIssues(result.suggestions)}
           </TabsContent>
         </Tabs>
 
-        {/* Code Preview with Highlights */}
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Code with Highlighted Issues
-          </h3>
-          <CodePreview
-            code={fileData.content}
-            language={fileData.type === "docker-compose" ? "yaml" : "docker"}
-            highlightedLines={highlightedLines}
-            maxHeight="500px"
-          />
-        </div>
+        {uploadedFile?.content && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Uploaded file preview
+            </h3>
+            <CodePreview
+              code={uploadedFile.content}
+              language={
+                job.type === "compose" || job.type === "project"
+                  ? "yaml"
+                  : "docker"
+              }
+              highlightedLines={highlightedLines}
+              maxHeight="500px"
+            />
+          </div>
+        )}
       </div>
     </Layout>
   );
@@ -376,12 +619,24 @@ function renderIssues(issues: Issue[]) {
 
           <h4 className="text-white font-medium mb-2">{issue.message}</h4>
 
-          <div className="bg-slate-950 border border-slate-800 rounded p-3 mt-3">
-            <div className="text-sm text-green-400 mb-1">
-              💡 Recommended Fix:
+          {(issue.suggestion || issue.doc_url) && (
+            <div className="bg-slate-950 border border-slate-800 rounded p-3 mt-3">
+              <div className="text-sm text-green-400 mb-1">Recommended Fix</div>
+              {issue.suggestion ? (
+                <p className="text-sm text-slate-300">{issue.suggestion}</p>
+              ) : null}
+              {issue.doc_url ? (
+                <a
+                  href={issue.doc_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex text-sm text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline mt-2"
+                >
+                  Rule documentation
+                </a>
+              ) : null}
             </div>
-            <p className="text-sm text-slate-300">{issue.suggestion}</p>
-          </div>
+          )}
         </div>
       </div>
     </Card>

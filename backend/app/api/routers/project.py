@@ -51,7 +51,12 @@ async def upload_project(
     job_id = await service.enqueue_job(
         current_user.id,
         JobType.project,
-        {"filename": file.filename, "dockerfiles": dockerfiles, "compose_files": compose_files},
+        {
+            "filename": file.filename,
+            "dockerfiles": dockerfiles,
+            "compose_files": compose_files,
+            "project_path": str(extract_dir),
+        },
     )
     await enqueue_job(
         "run_project_analysis",

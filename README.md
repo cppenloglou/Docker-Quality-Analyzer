@@ -1,21 +1,109 @@
-# docker-platform-api
+# Docker Quality Analyzer
 
-Multi-tenant Docker analysis platform with:
+A multi-tenant platform for analyzing, scoring, and deploying Docker artifacts. Upload your `Dockerfile`, `docker-compose.yml`, or full project archives to get instant feedback on best practices, security issues, and deployment readiness.
 
-- FastAPI backend (`backend/`) using modular-monolith + hexagonal structure
-- React frontend (`frontend/`) with authenticated user flows and live job history
-- Redis event bus + arq workers for async analysis/deploy pipelines
-- PostgreSQL persistence for users, jobs, projects, containers, images, API keys
+## 🌟 Core Features
 
-## Local development
+- **Dockerfile Analysis**: Deep inspection using Hadolint and custom rules to detect security flaws, bad practices, and generate a quality score.
+- **Compose Runnability**: Pre-flight checks for `docker-compose.yml` files to ensure they are safe and ready to deploy (detects bind mounts, privileged mode, host networking, etc.).
+- **Project Archives**: Upload full `.zip` projects. The platform automatically detects Dockerfiles and Compose stacks, analyzes them, and prepares them for deployment.
+- **Live Container Execution**: Deploy runnable Compose stacks directly from the UI to the underlying Docker daemon.
+- **Real-time Monitoring**: Stream live container logs and view real-time CPU/Memory usage charts via WebSockets.
+- **API Keys**: Generate API keys for programmatic access and CI/CD integration.
+- **Analysis History**: Keep track of all your past analyses and deployments.
+
+## 🏗️ Tech Stack & Architecture
+
+- **Backend**: FastAPI (`backend/`) using modular-monolith + hexagonal architecture.
+- **Frontend**: React SPA (`frontend/`) with Tailwind CSS, Recharts for monitoring, and real-time WebSocket integration.
+- **Workers**: Redis event bus + arq workers for asynchronous analysis and deployment pipelines.
+- **Database**: PostgreSQL for persistence (users, jobs, projects, containers, images, API keys).
+- **Proxy**: Nginx for serving the frontend and proxying API/WebSocket traffic.
+- **Docker-in-Docker (DinD)**: We utilize a `dind` service to securely isolate the building and execution of user-submitted Dockerfiles and Compose stacks from the host system. The worker service communicates with this isolated daemon via TCP.
+
+## 🔄 Workflows
+
+### 1. Dockerfile Analysis
+1. User uploads a `Dockerfile` via the UI or API.
+2. The API creates an analysis job and queues it via Redis.
+3. The arq worker picks up the job and runs Hadolint and custom security/best-practice checks.
+4. Real-time events (`user.analysis.started`, `user.analysis.completed`) are streamed back to the client via WebSockets.
+5. The UI displays the final score, resource estimates, and detailed issue reports.
+
+### 2. Compose Analysis & Deployment
+1. User uploads a `docker-compose.yml`.
+2. The system analyzes it for "runnability" (checking for blocked features like bind mounts or privileged mode).
+3. If deemed runnable, the user can click **Deploy now**.
+4. The worker connects to the DinD daemon, pulls/builds the required images, and starts the containers.
+5. Live deployment events (`docker.image.pushed`, `container.started`) are streamed to the UI.
+6. Once running, users can view live CPU/Memory metrics and container logs.
+
+### 3. Project Archive Analysis
+1. User uploads a `.zip` containing a full project.
+2. The backend extracts the archive and intelligently detects `Dockerfile`s and `docker-compose.yml` files.
+3. It performs analysis on all detected artifacts.
+4. If a runnable Compose stack is found, the entire project context is sent to the DinD daemon for building and deployment.
+
+## 🚀 Quick Start (Docker Compose)
+
+Run the entire platform locally using Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-Services:
+### Services started:
 
-- API: `http://localhost:8000`
-- Frontend (dev mode): `cd frontend && npm install && npm run dev`
-- Postgres: `localhost:5432`
-- Redis: `localhost:6379`
+| Service  | Purpose                                 | Exposed port |
+| -------- | --------------------------------------- | ------------ |
+| frontend | React SPA served by nginx + API proxy   | `3000`       |
+| api      | FastAPI HTTP + WebSocket API            | `8000`       |
+| worker   | arq worker for analysis and deploy jobs | n/a          |
+| dind     | Isolated Docker daemon for user workloads| n/a          |
+| redis    | Event bus + task queue                  | `6379`       |
+| postgres | Primary database                        | `5432`       |
+
+Open the app at `http://localhost:3000`. The frontend container proxies `/api`, `/auth`, `/health`, `/metrics`, `/docs`, `/redoc`, `/openapi.json` and `/ws/*` (with WebSocket upgrade) to the `api` service, so browser clients only need to talk to port 3000.
+
+### One-time setup
+
+```bash
+cp backend/.env.example backend/.env   # adjust JWT secret, DB, upload size if desired
+```
+
+### Handy commands
+
+```bash
+docker compose logs -f frontend api worker   # tail live logs
+docker compose exec api alembic upgrade head # run DB migrations manually
+docker compose down -v                       # stop + wipe volumes
+```
+
+## 🎮 Examples & Demo
+
+We provide drop-in test artifacts to help you explore the platform's capabilities. Check out the [`examples/README.md`](examples/README.md) for a full walkthrough of:
+- Analyzing clean vs. problematic Dockerfiles
+- Testing runnable vs. blocked Compose files
+- Uploading full project archives
+- Using the programmatic API
+
+## 💻 Local Development (Without Docker)
+
+```bash
+# Backend
+cd backend && python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+PYTHONPATH=. uvicorn app.main:app --reload --port 8000
+
+# Frontend (in another terminal)
+cd frontend && npm install && npm run dev
+```
+
+During dev the Vite server listens on `http://localhost:5173`; since `VITE_API_BASE_URL` is unset it defaults to `http://localhost:8000` and the backend's permissive CORS policy allows it.
+
+## 🔌 Ports Reference
+
+- `http://localhost:3000` - App UI (production-style, via nginx)
+- `http://localhost:3000/docs` - Swagger UI (proxied to api)
+- `http://localhost:3000/metrics` - Prometheus metrics (proxied to api)
+- `http://localhost:8000` - Direct backend (useful for curl, CI, debugging)

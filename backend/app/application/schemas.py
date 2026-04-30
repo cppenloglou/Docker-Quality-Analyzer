@@ -28,6 +28,10 @@ class TokenResponse(BaseModel):
     user: UserRead
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 class ApiKeyRead(BaseModel):
     id: uuid.UUID
     key_prefix: str
@@ -51,6 +55,7 @@ class Issue(BaseModel):
     severity: Literal["error", "warning", "info"]
     message: str
     suggestion: str = ""
+    doc_url: str | None = None
 
 
 class AnalysisOutput(BaseModel):

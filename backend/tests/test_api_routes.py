@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.api.deps import get_current_user
 from app.application.schemas import TokenResponse, UserRead
+from app.core.security import create_token
 from app.infrastructure.db.models import AnalysisJobModel, ApiKeyModel, JobStatus, JobType
 from app.infrastructure.db.session import get_db_session
 from tests.conftest import auth_header_for, make_user
@@ -195,6 +196,46 @@ def test_compose_deploy_returns_200_for_runnable_compose(client, monkeypatch, ap
     assert response.status_code == 200
     assert response.json()["status"] == "queued"
     assert calls and calls[0]["task"] == "run_compose_deploy"
+
+
+def test_compose_stop_enqueues_stop_job(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user()
+    job_id = uuid.uuid4()
+    runnable_job = AnalysisJobModel(
+        id=job_id,
+        user_id=user.id,
+        type=JobType.compose,
+        status=JobStatus.done,
+        input_metadata={},
+        result={"meta": {"runnability": {"runnable": True, "reasons": []}}},
+    )
+
+    class RunnableJobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            return runnable_job
+
+    calls: list[dict] = []
+
+    async def fake_enqueue(task_name: str, payload: dict):
+        calls.append({"task": task_name, "payload": payload})
+
+    monkeypatch.setattr("app.api.routers.compose.JobRepository", RunnableJobRepo)
+    monkeypatch.setattr("app.api.routers.compose.enqueue_job", fake_enqueue)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/compose/deploy/stop",
+        json={"job_id": str(job_id), "remove_volumes": False},
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert calls and calls[0]["task"] == "run_compose_stop"
 
 
 def test_get_job_enforces_user_scope_and_returns_404_for_other_user(client, monkeypatch, app, fake_db_session_dependency):
@@ -499,3 +540,118 @@ def test_project_upload_rejects_oversized_archive(client, monkeypatch, app, fake
     app.dependency_overrides.clear()
     assert response.status_code == 413
     assert "too large" in response.json()["detail"]
+
+
+def test_auth_refresh_issues_new_tokens(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="refresh@example.com")
+    refresh_token = create_token(str(user.id), "refresh", 60)
+
+    class StubUserRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_by_id(self, requested_user_id):
+            assert requested_user_id == user.id
+            return user
+
+    monkeypatch.setattr("app.application.services.auth_service.UserRepository", StubUserRepo)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+
+    response = client.post("/auth/refresh", json={"refresh_token": refresh_token})
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["token_type"] == "bearer"
+    assert payload["access_token"]
+    assert payload["refresh_token"]
+    assert payload["user"]["email"] == "refresh@example.com"
+
+
+def test_auth_refresh_rejects_access_token(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="refresh@example.com")
+    access_token = create_token(str(user.id), "access", 60)
+
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+
+    response = client.post("/auth/refresh", json={"refresh_token": access_token})
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid token type."
+
+
+def test_auth_me_returns_current_user(client, app, fake_db_session_dependency):
+    user = make_user(email="me@example.com")
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.get("/auth/me", headers=auth_header_for(user.id))
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == str(user.id)
+    assert payload["email"] == "me@example.com"
+
+
+def test_job_events_returns_job_state(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="events@example.com")
+    job_id = uuid.uuid4()
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, requested_job_id, requested_user_id):
+            assert requested_job_id == job_id
+            assert requested_user_id == user.id
+            return AnalysisJobModel(
+                id=job_id,
+                user_id=user.id,
+                type=JobType.dockerfile,
+                status=JobStatus.done,
+                input_metadata={"filename": "Dockerfile"},
+                result={"score": 91, "grade": "A"},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+
+    monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.get(
+        f"/api/v1/users/me/jobs/{job_id}/events",
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == str(job_id)
+    assert payload["status"] == "done"
+    assert payload["result"]["score"] == 91
+
+
+def test_job_events_returns_404_for_missing_job(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="events@example.com")
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            return None
+
+    monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.get(
+        f"/api/v1/users/me/jobs/{uuid.uuid4()}/events",
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 404

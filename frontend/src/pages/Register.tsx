@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { useAuth } from "../auth/AuthProvider";
+import { ApiError } from "../utils/api";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 
@@ -19,9 +21,17 @@ export function Register() {
     setError(null);
     try {
       await registerWithPassword(email, password);
+      toast.success("Account created");
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed.");
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Registration failed.";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }

@@ -1,341 +1,613 @@
-import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import {
+  Activity,
+  ArrowLeft,
+  CheckCircle2,
+  Container,
+  ExternalLink,
+  Loader2,
+  Play,
+  PackageSearch,
+  Rocket,
+  ShieldAlert,
+  Square,
+  Upload,
+} from "lucide-react";
+
 import { Layout } from "../components/Layout";
-import { TerminalLog } from "../components/TerminalLog";
+import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import {
-  Play,
-  Square,
-  ArrowLeft,
-  Container,
-  CheckCircle2,
-  Loader2,
-} from "lucide-react";
-import { deployCompose } from "../utils/api";
+  ApiError,
+  compose as composeApi,
+  jobs as jobsApi,
+  ws,
+  type AnalysisResult,
+  type DomainEvent,
+  type Job,
+  type RunnabilityMeta,
+} from "../utils/api";
+import { clearState, loadState, saveState } from "../utils/monitoringState";
 
-interface Service {
-  name: string;
-  image: string;
-  status: "stopped" | "starting" | "running" | "error";
-  ports?: string[];
+interface TimelineEntry {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "done" | "error";
+  detail?: string;
+}
+
+const BASE_TIMELINE: TimelineEntry[] = [
+  { id: "precheck", label: "Runnability precheck", status: "running" },
+  { id: "enqueue", label: "Deploy job accepted", status: "pending" },
+  { id: "push", label: "Images pushed / available", status: "pending" },
+  { id: "start", label: "Container started", status: "pending" },
+  { id: "metrics", label: "Metrics streaming", status: "pending" },
+];
+const EXECUTION_STATE_TTL_MS = 1000 * 60 * 60 * 6;
+
+interface ExecutionPersistedState {
+  containerId: string | null;
+  deployJobId: string | null;
+  timeline: TimelineEntry[];
+  logs: TerminalLogEntry[];
+}
+
+function ensureAnalysis(
+  job: Job | null,
+): AnalysisResult | null {
+  if (!job?.result) return null;
+  if (typeof job.result !== "object") return null;
+  if (Array.isArray((job.result as AnalysisResult).errors)) {
+    return job.result as AnalysisResult;
+  }
+  return null;
 }
 
 export function ContainerExecution() {
   const navigate = useNavigate();
-  const [services, setServices] = useState<Service[]>([
-    {
-      name: "web",
-      image: "nginx:alpine",
-      status: "stopped",
-      ports: ["8080:80"],
-    },
-    {
-      name: "api",
-      image: "node:18-alpine",
-      status: "stopped",
-      ports: ["3000:3000"],
-    },
-    {
-      name: "db",
-      image: "postgres:15-alpine",
-      status: "stopped",
-      ports: ["5432:5432"],
-    },
-  ]);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [selectedService, setSelectedService] = useState<string>("web");
-  const deployBlockedReasons = useMemo(() => {
-    const fileData = sessionStorage.getItem("uploadedFile");
-    if (!fileData) return [];
-    try {
-      const parsedFile = JSON.parse(fileData) as { type?: string };
-      const parsedResult = JSON.parse(
-        sessionStorage.getItem("analysisResults") || "{}",
-      ) as { meta?: { runnability?: { runnable?: boolean; reasons?: string[] } } };
-      if (
-        parsedFile.type === "docker-compose" &&
-        parsedResult.meta?.runnability?.runnable !== true
-      ) {
-        return parsedResult.meta?.runnability?.reasons || [
-          "Compose deployment is blocked for standalone file analysis.",
-        ];
+  const [searchParams] = useSearchParams();
+  const queryJobId = searchParams.get("jobId");
+  const jobIdFromSession =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("analysisJobId")
+      : null;
+  const analysisJobId = queryJobId ?? jobIdFromSession ?? null;
+  const stateKey = analysisJobId ? `dqa:execution:${analysisJobId}` : null;
+  const persisted =
+    stateKey != null
+      ? loadState<ExecutionPersistedState>(stateKey, EXECUTION_STATE_TTL_MS)
+      : null;
+
+  const [job, setJob] = useState<Job | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [pushPublicImages, setPushPublicImages] = useState(false);
+  const [runStack, setRunStack] = useState(true);
+  const [deploying, setDeploying] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [deployJobId, setDeployJobId] = useState<string | null>(
+    persisted?.deployJobId ?? null,
+  );
+  const [containerId, setContainerId] = useState<string | null>(
+    persisted?.containerId ?? null,
+  );
+  const [timeline, setTimeline] = useState<TimelineEntry[]>(
+    persisted?.timeline && persisted.timeline.length > 0
+      ? persisted.timeline
+      : BASE_TIMELINE.map((entry) => ({ ...entry })),
+  );
+  const [logs, setLogs] = useState<TerminalLogEntry[]>(persisted?.logs ?? []);
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const analysis = useMemo(() => ensureAnalysis(job), [job]);
+  const runnability: RunnabilityMeta | undefined = analysis?.meta?.runnability;
+  const runnable = runnability?.runnable === true;
+
+  const pushLog = (entry: TerminalLogEntry) =>
+    setLogs((prev) => [...prev, entry]);
+
+  const setTimelineStatus = (
+    id: string,
+    status: TimelineEntry["status"],
+    detail?: string,
+  ) =>
+    setTimeline((prev) =>
+      prev.map((entry) => (entry.id === id ? { ...entry, status, detail } : entry)),
+    );
+
+  const closeSocket = () => {
+    if (socketRef.current) {
+      try {
+        socketRef.current.close();
+      } catch {
+        // noop
       }
-      return [];
-    } catch {
-      return [
-        "Unable to verify compose runnability. Upload full project for deployment.",
-      ];
+      socketRef.current = null;
     }
+  };
+
+  useEffect(() => {
+    if (!analysisJobId) {
+      setLoadError("No analysis job available. Upload a compose file first.");
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const fetched = await jobsApi.get(analysisJobId);
+        if (cancelled) return;
+        setJob(fetched);
+        if (fetched.type !== "compose" && fetched.type !== "project") {
+          setLoadError(
+            `Job ${fetched.id} is a ${fetched.type} job and cannot be deployed.`,
+          );
+          setTimelineStatus("precheck", "error", "Not a deployable job");
+          return;
+        }
+        const ok =
+          ensureAnalysis(fetched)?.meta?.runnability?.runnable === true;
+        setTimelineStatus(
+          "precheck",
+          ok ? "done" : "error",
+          ok
+            ? "Compose stack passes runnability rules"
+            : "Compose stack blocked by runnability rules",
+        );
+      } catch (err) {
+        if (cancelled) return;
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Failed to load analysis job.";
+        setLoadError(message);
+        setTimelineStatus("precheck", "error", message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisJobId]);
+
+  useEffect(() => {
+    return () => {
+      closeSocket();
+    };
   }, []);
 
   useEffect(() => {
-    const fileData = sessionStorage.getItem("uploadedFile");
-    if (!fileData) {
-      navigate("/");
-    }
-  }, [navigate]);
+    if (!stateKey) return;
+    saveState(stateKey, {
+      containerId,
+      deployJobId,
+      timeline,
+      logs: logs.slice(-200),
+    });
+  }, [containerId, deployJobId, timeline, logs, stateKey]);
 
-  const handleRunAll = () => {
-    if (deployBlockedReasons.length > 0) {
-      setLogs((prev) => [
-        ...prev,
-        "[blocked] Deploy denied by runnability precheck.",
-      ]);
+  const handleDeploy = async () => {
+    if (!job) return;
+    if (!runnable && job.type === "compose") {
+      toast.error("Compose stack is not runnable from a standalone file.");
       return;
     }
-    const jobId = sessionStorage.getItem("analysisJobId");
-    if (jobId) {
-      deployCompose({
-        job_id: jobId,
-        push_public_images: true,
-        run_stack: true,
-      }).catch(() => undefined);
-    }
-    setLogs((prev) => [...prev, "> docker-compose up -d"]);
-    setLogs((prev) => [
-      ...prev,
-      'Creating network "app_default" with the default driver',
-    ]);
+    setDeploying(true);
+    setTimelineStatus("enqueue", "running", "Submitting deploy request...");
+    try {
+      const response = await composeApi.deploy({
+        job_id: job.id,
+        push_public_images: pushPublicImages,
+        run_stack: runStack,
+      });
+      setDeployJobId(response.job_id);
+      setTimelineStatus(
+        "enqueue",
+        "done",
+        `Accepted as deploy ${response.job_id}`,
+      );
+      pushLog({
+        message: `Deploy queued: ${response.job_id} (status ${response.status})`,
+        tone: "success",
+      });
+      toast.success("Deploy request accepted");
 
-    services.forEach((service, index) => {
-      setTimeout(() => {
-        setServices((prev) =>
-          prev.map((s) =>
-            s.name === service.name ? { ...s, status: "starting" } : s,
-          ),
-        );
-        setLogs((prev) => [...prev, `Creating ${service.name}...`]);
-
-        setTimeout(() => {
-          setServices((prev) =>
-            prev.map((s) =>
-              s.name === service.name ? { ...s, status: "running" } : s,
-            ),
-          );
-          setLogs((prev) => [
-            ...prev,
-            `✓ ${service.name} started successfully`,
-          ]);
-          if (service.name === "web") {
-            sessionStorage.setItem("activeContainerId", `${service.name}-container`);
+      const socket = ws.connectJob(job.id);
+      socketRef.current = socket;
+      socket.onopen = () => {
+        pushLog({
+          message: `Streaming events for job ${job.id}`,
+          tone: "info",
+        });
+      };
+      socket.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data as string) as DomainEvent;
+          pushLog({
+            message: `${parsed.event_name} ${
+              parsed.payload ? JSON.stringify(parsed.payload) : ""
+            }`,
+            timestamp: parsed.timestamp,
+            tone:
+              parsed.event_name === "user.analysis.failed"
+                ? "error"
+                : parsed.event_name === "container.metrics"
+                  ? "info"
+                  : "success",
+          });
+          if (parsed.event_name === "docker.image.pushed") {
+            setTimelineStatus(
+              "push",
+              "done",
+              String(
+                (parsed.payload as { registry_ref?: string })?.registry_ref ??
+                  "image pushed",
+              ),
+            );
+          } else if (parsed.event_name === "container.started") {
+            const cid = String(
+              (parsed.payload as { container_id?: string })?.container_id ??
+                "",
+            );
+            setContainerId(cid || null);
+            setTimelineStatus(
+              "start",
+              "done",
+              cid ? `Container ${cid}` : "Container started",
+            );
+          } else if (parsed.event_name === "container.metrics") {
+            setTimelineStatus("metrics", "running", "Metrics streaming");
+          } else if (parsed.event_name === "container.stopped") {
+            setTimelineStatus("metrics", "done", "Stack stopped");
+            setContainerId(null);
+            setDeployJobId(null);
+            if (stateKey) clearState(stateKey);
+            toast.success("Compose stack stopped");
+          } else if (parsed.event_name === "user.analysis.failed") {
+            setTimelineStatus(
+              "start",
+              "error",
+              String(
+                (parsed.payload as { message?: string })?.message ?? "failed",
+              ),
+            );
+            toast.error("Deploy workflow reported a failure");
           }
-        }, 1500);
-      }, index * 2000);
-    });
+        } catch {
+          pushLog({ message: String(event.data), tone: "info" });
+        }
+      };
+      socket.onerror = () =>
+        pushLog({ message: "Event stream error", tone: "error" });
+      socket.onclose = () =>
+        pushLog({ message: "Event stream closed", tone: "warning" });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setTimelineStatus("enqueue", "error", err.message);
+        if (err.status === 409 && err.reasons && err.reasons.length) {
+          toast.error(`Deploy blocked: ${err.message}`);
+          pushLog({
+            message: `Blocked reasons:\n${err.reasons.map((r) => `  - ${r}`).join("\n")}`,
+            tone: "error",
+          });
+        } else {
+          toast.error(err.message);
+        }
+      } else {
+        const message = err instanceof Error ? err.message : "Deploy failed";
+        toast.error(message);
+        setTimelineStatus("enqueue", "error", message);
+      }
+    } finally {
+      setDeploying(false);
+    }
   };
 
-  const handleStopAll = () => {
-    setLogs((prev) => [...prev, "> docker-compose down"]);
-    setServices((prev) => prev.map((s) => ({ ...s, status: "stopped" })));
-    setLogs((prev) => [...prev, "Stopping containers..."]);
-    setLogs((prev) => [...prev, "✓ All containers stopped"]);
+  const handleStop = async () => {
+    if (!job || stopping) return;
+    setStopping(true);
+    pushLog({ message: `Stop requested for deploy ${job.id}`, tone: "warning" });
+    try {
+      const response = await composeApi.stopDeploy({ job_id: job.id });
+      pushLog({
+        message: `Stop queued: ${response.job_id} (status ${response.status})`,
+        tone: "success",
+      });
+      setTimelineStatus("metrics", "done", "Stop signal sent");
+      toast.success("Stop request accepted");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to stop deployment";
+      pushLog({ message, tone: "error" });
+      toast.error(message);
+    } finally {
+      setStopping(false);
+    }
   };
 
-  const handleServiceClick = (serviceName: string) => {
-    setSelectedService(serviceName);
-    // Simulate fetching logs for the service
-    setLogs([
-      `Showing logs for ${serviceName}...`,
-      `[${serviceName}] Container started`,
-      `[${serviceName}] Initializing application...`,
-      `[${serviceName}] Listening on port ${services.find((s) => s.name === serviceName)?.ports?.[0]?.split(":")[1] || "8080"}`,
-      `[${serviceName}] Ready to accept connections`,
-    ]);
+  const goMonitoring = () => {
+    if (job && containerId) {
+      navigate(`/monitoring/${job.id}/${containerId}`);
+    }
   };
 
-  const isAnyRunning = services.some(
-    (s) => s.status === "running" || s.status === "starting",
-  );
+  if (loading) {
+    return (
+      <Layout>
+        <div className="max-w-3xl mx-auto py-16 flex flex-col items-center text-slate-400">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-4" />
+          <p>Loading deployment context...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (loadError && !job) {
+    return (
+      <Layout>
+        <div className="max-w-3xl mx-auto">
+          <Button
+            variant="ghost"
+            onClick={() => navigate("/history")}
+            className="text-slate-400 hover:text-white mb-4"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" /> Back to History
+          </Button>
+          <Card className="p-6 bg-red-950/20 border-red-800 text-red-300">
+            <p className="mb-4">{loadError}</p>
+            <Button onClick={() => navigate("/")}>Back to Home</Button>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  const yamlSnapshot =
+    (job?.input_metadata?.content as string | undefined) ??
+    (job?.input_metadata?.filename as string | undefined);
 
   return (
     <Layout>
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
+      <div className="max-w-5xl mx-auto">
         <div className="mb-8">
           <Button
             variant="ghost"
-            onClick={() => navigate("/results")}
+            onClick={() => navigate(`/results?jobId=${job?.id ?? ""}`)}
             className="text-slate-400 hover:text-white mb-4"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Results
+            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Results
           </Button>
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-white mb-2">
-                Container Execution
+                Deploy Compose Stack
               </h1>
               <p className="text-slate-400">
-                Run and monitor your Docker Compose services
+                Trigger the backend deploy workflow and watch live events.
               </p>
+              {job && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Analysis job: {job.id} ({job.type})
+                </p>
+              )}
             </div>
             <div className="flex gap-3">
-              {isAnyRunning ? (
-                <Button
-                  onClick={handleStopAll}
-                  variant="outline"
-                  className="border-red-700 text-red-400 hover:bg-red-900/20"
-                >
-                  <Square className="w-4 h-4 mr-2" />
-                  Stop All
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleRunAll}
-                  disabled={deployBlockedReasons.length > 0}
-                  title={
-                    deployBlockedReasons.length > 0
-                      ? "Upload the full project to deploy this compose stack."
-                      : "Run compose deployment flow"
-                  }
-                  className="bg-green-600 hover:bg-green-700"
-                >
+              <Button
+                onClick={handleDeploy}
+                disabled={
+                  !job ||
+                  deploying ||
+                  (job.type === "compose" && !runnable) ||
+                  !!deployJobId
+                }
+                className="bg-green-600 hover:bg-green-700"
+                title={
+                  !runnable && job?.type === "compose"
+                    ? "Compose stack is not runnable. Upload the full project instead."
+                    : "Trigger deploy"
+                }
+              >
+                {deploying ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
                   <Play className="w-4 h-4 mr-2" />
-                  Run All Containers
+                )}
+                {deployJobId ? "Deploy in flight" : "Deploy now"}
+              </Button>
+              {deployJobId && (
+                <Button
+                  onClick={handleStop}
+                  disabled={stopping}
+                  variant="outline"
+                  className="border-red-700 text-red-300 hover:bg-red-600/20"
+                >
+                  {stopping ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Square className="w-4 h-4 mr-2" />
+                  )}
+                  Stop stack
+                </Button>
+              )}
+              {containerId && (
+                <Button
+                  onClick={goMonitoring}
+                  variant="outline"
+                  className="border-blue-600 text-blue-400 hover:bg-blue-500/10"
+                >
+                  <Activity className="w-4 h-4 mr-2" />
+                  Watch metrics
                 </Button>
               )}
             </div>
           </div>
         </div>
 
-        {deployBlockedReasons.length > 0 && (
-          <Card className="p-4 bg-amber-500/10 border-amber-500/30 mb-6">
-            <p className="text-amber-300 text-sm font-medium mb-2">
-              Deploy blocked for standalone compose analysis:
+        <div className="grid gap-6 md:grid-cols-3 mb-6">
+          <Card className="p-5 bg-slate-900 border-slate-800 md:col-span-2">
+            <h2 className="text-lg font-semibold text-white mb-3">
+              Deploy options
+            </h2>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-blue-500"
+                  checked={pushPublicImages}
+                  onChange={(e) => setPushPublicImages(e.target.checked)}
+                />
+                <div>
+                  <div className="text-slate-200 text-sm font-medium flex items-center gap-2">
+                    <Upload className="w-4 h-4" /> Push public images
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Publish images referenced by the compose stack to the
+                    configured registry.
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-blue-500"
+                  checked={runStack}
+                  onChange={(e) => setRunStack(e.target.checked)}
+                />
+                <div>
+                  <div className="text-slate-200 text-sm font-medium flex items-center gap-2">
+                    <Rocket className="w-4 h-4" /> Run stack
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Bring up the compose stack and stream container metrics.
+                  </p>
+                </div>
+              </label>
+            </div>
+          </Card>
+
+          <Card className="p-5 bg-slate-900 border-slate-800">
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-400" /> Runnability
+            </h2>
+            {job?.type === "project" ? (
+              <p className="text-sm text-slate-300">
+                Project deploys skip the standalone runnability gate.
+              </p>
+            ) : runnable ? (
+              <p className="text-sm text-emerald-300">
+                Compose stack passes all runnability rules.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-amber-300 mb-2">
+                  Deploy is blocked until these rules pass:
+                </p>
+                <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
+                  {(runnability?.reasons ?? ["No runnability metadata."]).map(
+                    (reason, idx) => (
+                      <li key={idx}>{reason}</li>
+                    ),
+                  )}
+                </ul>
+              </>
+            )}
+          </Card>
+        </div>
+
+        <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <Container className="w-5 h-5 text-blue-400" /> Deploy timeline
+          </h2>
+          <div className="space-y-2">
+            {timeline.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-start gap-3 p-3 rounded border border-slate-800 bg-slate-950"
+              >
+                <div className="pt-0.5">
+                  {entry.status === "done" && (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  )}
+                  {entry.status === "running" && (
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                  )}
+                  {entry.status === "pending" && (
+                    <Container className="w-5 h-5 text-slate-600" />
+                  )}
+                  {entry.status === "error" && (
+                    <ShieldAlert className="w-5 h-5 text-red-400" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div
+                    className={`text-sm font-medium ${
+                      entry.status === "done"
+                        ? "text-emerald-300"
+                        : entry.status === "running"
+                          ? "text-blue-300"
+                          : entry.status === "error"
+                            ? "text-red-300"
+                            : "text-slate-400"
+                    }`}
+                  >
+                    {entry.label}
+                  </div>
+                  {entry.detail && (
+                    <div className="text-xs text-slate-400 mt-0.5 break-all">
+                      {entry.detail}
+                    </div>
+                  )}
+                </div>
+                {entry.id === "start" && containerId && (
+                  <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 font-mono text-xs">
+                    {containerId}
+                  </Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <TerminalLog
+          logs={logs}
+          title="Deploy event stream"
+          emptyLabel="Deploy has not started yet."
+          maxHeight="360px"
+        />
+
+        {yamlSnapshot && typeof yamlSnapshot === "string" && (
+          <Card className="mt-6 p-5 bg-slate-900 border-slate-800">
+            <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+              <PackageSearch className="w-5 h-5 text-slate-300" /> Input summary
+            </h3>
+            <p className="text-sm text-slate-400 font-mono break-all">
+              {yamlSnapshot}
             </p>
-            <ul className="text-sm text-slate-300 list-disc list-inside space-y-1">
-              {deployBlockedReasons.map((reason, idx) => (
-                <li key={idx}>{reason}</li>
-              ))}
-            </ul>
           </Card>
         )}
 
-        {/* Services Grid */}
-        <div className="grid md:grid-cols-3 gap-4 mb-6">
-          {services.map((service) => (
-            <Card
-              key={service.name}
-              onClick={() => handleServiceClick(service.name)}
-              className={`p-4 bg-slate-900 border-slate-800 cursor-pointer transition-all hover:border-blue-500 ${
-                selectedService === service.name
-                  ? "border-blue-500 bg-slate-900/80"
-                  : ""
-              }`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Container className="w-5 h-5 text-blue-400" />
-                  <h3 className="font-semibold text-white">{service.name}</h3>
-                </div>
-                {service.status === "running" && (
-                  <CheckCircle2 className="w-5 h-5 text-green-400" />
-                )}
-                {service.status === "starting" && (
-                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-sm text-slate-400 font-mono">
-                  {service.image}
-                </div>
-
-                <Badge
-                  className={
-                    service.status === "running"
-                      ? "bg-green-500/20 text-green-400 border-green-500/30"
-                      : service.status === "starting"
-                        ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                        : "bg-slate-700/20 text-slate-400 border-slate-700/30"
-                  }
-                >
-                  {service.status === "running"
-                    ? "● Running"
-                    : service.status === "starting"
-                      ? "◐ Starting"
-                      : "○ Stopped"}
-                </Badge>
-
-                {service.ports && service.ports.length > 0 && (
-                  <div className="text-xs text-slate-500 mt-2">
-                    Ports: {service.ports.join(", ")}
-                  </div>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
-
-        {/* Container Logs */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">
-              Container Logs - {selectedService}
-            </h3>
+        {containerId && (
+          <Card className="mt-6 p-4 bg-blue-500/10 border-blue-500/30 flex items-center justify-between">
+            <p className="text-sm text-blue-200">
+              Container <span className="font-mono">{containerId}</span> is up.
+              Open live metrics to inspect CPU and memory.
+            </p>
             <Button
-              variant="outline"
               size="sm"
-              onClick={() => setLogs([])}
-              className="border-slate-700 text-slate-400 hover:bg-slate-800"
+              onClick={goMonitoring}
+              className="bg-blue-600 hover:bg-blue-700"
             >
-              Clear Logs
+              <ExternalLink className="w-4 h-4 mr-2" /> Open monitoring
             </Button>
-          </div>
-          <TerminalLog
-            logs={logs}
-            title={`${selectedService} logs`}
-            maxHeight="400px"
-          />
-        </div>
-
-        {/* Docker Compose Configuration Preview */}
-        <Card className="p-6 bg-slate-900 border-slate-800">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Detected Services
-          </h3>
-          <div className="bg-slate-950 rounded-lg p-4 font-mono text-sm">
-            <div className="text-slate-400">
-              <div className="text-blue-400">version: '3.8'</div>
-              <div className="text-blue-400 mt-2">services:</div>
-              {services.map((service, index) => (
-                <div key={index} className="ml-4 mt-2">
-                  <div className="text-green-400"> {service.name}:</div>
-                  <div className="ml-4 text-slate-300">
-                    {" "}
-                    image: {service.image}
-                  </div>
-                  {service.ports && (
-                    <>
-                      <div className="ml-4 text-slate-300"> ports:</div>
-                      {service.ports.map((port, portIndex) => (
-                        <div key={portIndex} className="ml-8 text-slate-300">
-                          {" "}
-                          - "{port}"
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        {/* Info Box */}
-        <Card className="mt-6 p-4 bg-blue-500/10 border-blue-500/30">
-          <div className="flex gap-3">
-            <div className="text-blue-400 mt-1">ℹ️</div>
-            <div>
-              <p className="text-blue-300 text-sm">
-                <strong>Note:</strong> This is a simulation of container
-                execution with a live deploy trigger to the backend workflow.
-              </p>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
     </Layout>
   );
