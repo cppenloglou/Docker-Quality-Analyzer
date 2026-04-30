@@ -82,16 +82,6 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
             deploy_spec = _resolve_deploy_spec(user_id, job_id, job.input_metadata or {})
             await _set_deploy_state(user_id, job_id, deploy_spec)
 
-        if payload.get("push_public_images"):
-            await publish_event(
-                DomainEvent(
-                    "docker.image.pushed",
-                    user_id=user_id,
-                    job_id=job_id,
-                    payload={"registry_ref": "docker.io/library/example:latest"},
-                )
-            )
-
         primary_container_id = ""
         container_ids: list[str] = []
         if run_stack:
@@ -314,12 +304,14 @@ def _compose_down(spec: dict[str, Any], remove_volumes: bool) -> None:
 
 async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -> None:
     docker_gateway = DockerGateway()
-    max_samples = max(1, METRICS_MAX_RUNTIME_SECONDS // METRICS_INTERVAL_SECONDS)
-    for _ in range(max_samples):
+    while True:
         if await _is_stop_requested(user_id, job_id):
             break
         for container_id in container_ids:
-            metrics = await docker_gateway.inspect_container_metrics(container_id)
+            try:
+                metrics = await docker_gateway.inspect_container_metrics(container_id)
+            except Exception:
+                continue
             payload = {"container_id": container_id, **metrics}
             await publish_event(
                 DomainEvent(

@@ -17,11 +17,23 @@ export interface ResourceEstimateMeta {
   estimated_layers?: number;
   estimated_memory_mb?: number;
   estimated_cpu_millicores?: number;
+  total_estimated_memory_mb?: number;
+  total_estimated_cpu_millicores?: number;
+  service_count?: number;
+  explanation?: string;
+  services?: Array<{
+    name: string;
+    estimated_memory_mb: number;
+    estimated_cpu_millicores: number;
+    has_build_context: boolean;
+    image: string;
+  }>;
 }
 
 export interface AnalysisResult {
   score: number;
   grade: string;
+  line_count?: number;
   errors: Issue[];
   warnings: Issue[];
   suggestions: Issue[];
@@ -65,6 +77,12 @@ export interface Job {
 export interface JobEnqueueResponse {
   job_id: string;
   status: string;
+}
+
+export interface DeployStatusResponse {
+  active: boolean;
+  container_ids: string[];
+  project_name: string | null;
 }
 
 export interface ApiKey {
@@ -144,6 +162,14 @@ export interface ContainerMetricsPayload {
     status?: string;
     health_status?: string;
     restart_count?: number;
+    ip_address?: string;
+    ports?: Array<{
+      container_port?: string;
+      host_bindings?: Array<{
+        host_ip?: string;
+        host_port?: string;
+      }>;
+    }>;
     mounts?: Array<{
       type?: string;
       source?: string;
@@ -420,13 +446,15 @@ export const compose = {
   },
   async deploy(payload: {
     job_id: string;
-    push_public_images: boolean;
     run_stack: boolean;
   }): Promise<JobEnqueueResponse> {
     return request<JobEnqueueResponse>("/api/v1/compose/deploy", {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+  async deployStatus(jobId: string): Promise<DeployStatusResponse> {
+    return request<DeployStatusResponse>(`/api/v1/compose/deploy/status/${jobId}`);
   },
   async stopDeploy(payload: {
     job_id: string;

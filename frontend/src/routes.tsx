@@ -128,7 +128,7 @@ export const router = createBrowserRouter([
         },
       },
       {
-        path: "monitoring/:jobId/:containerId",
+        path: "monitoring/:jobId/:containerId?",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
           const m = await import("./pages/Monitoring");

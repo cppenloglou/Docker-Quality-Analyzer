@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -10,6 +11,7 @@ from app.application.services.analysis_service import AnalysisService
 from app.infrastructure.db.models import JobStatus, JobType, UserModel
 from app.infrastructure.db.repositories import JobRepository
 from app.infrastructure.db.session import get_db_session
+from app.infrastructure.events.bus import redis_client
 from app.workers.queue import enqueue_job
 
 router = APIRouter(prefix="/api/v1/compose", tags=["compose"])
@@ -17,7 +19,6 @@ router = APIRouter(prefix="/api/v1/compose", tags=["compose"])
 
 class ComposeDeployRequest(BaseModel):
     job_id: uuid.UUID
-    push_public_images: bool = False
     run_stack: bool = False
 
 
@@ -81,7 +82,6 @@ async def deploy_compose(
         {
             "user_id": str(current_user.id),
             "job_id": str(payload.job_id),
-            "push_public_images": payload.push_public_images,
             "run_stack": payload.run_stack,
         },
     )
@@ -109,3 +109,29 @@ async def stop_compose_deploy(
         },
     )
     return AnalysisEnqueueResponse(job_id=payload.job_id, status="queued")
+
+
+class DeployStatusResponse(BaseModel):
+    active: bool
+    container_ids: list[str] = []
+    project_name: str | None = None
+
+
+@router.get("/deploy/status/{job_id}", response_model=DeployStatusResponse)
+async def get_deploy_status(
+    job_id: uuid.UUID,
+    current_user: UserModel = Depends(get_current_user),
+) -> DeployStatusResponse:
+    key = f"deploy:{current_user.id}:{job_id}"
+    raw = await redis_client.get(key)
+    if not raw:
+        return DeployStatusResponse(active=False)
+    try:
+        state = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return DeployStatusResponse(active=False)
+    return DeployStatusResponse(
+        active=True,
+        container_ids=state.get("container_ids", []),
+        project_name=state.get("project_name"),
+    )

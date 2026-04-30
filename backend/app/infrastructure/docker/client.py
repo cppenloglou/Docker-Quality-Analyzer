@@ -7,6 +7,32 @@ class DockerGateway:
     def __init__(self) -> None:
         self.client = docker.from_env()
 
+    @staticmethod
+    def _extract_ports(inspect: dict) -> list[dict[str, Any]]:
+        ports_raw = inspect.get("NetworkSettings", {}).get("Ports", {}) or {}
+        result = []
+        for container_port, bindings in ports_raw.items():
+            entry: dict[str, Any] = {"container_port": container_port, "host_bindings": []}
+            if isinstance(bindings, list):
+                for b in bindings:
+                    if isinstance(b, dict):
+                        entry["host_bindings"].append({
+                            "host_ip": b.get("HostIp", "0.0.0.0"),
+                            "host_port": b.get("HostPort", ""),
+                        })
+            result.append(entry)
+        return result
+
+    @staticmethod
+    def _extract_ip(inspect: dict) -> str:
+        networks = inspect.get("NetworkSettings", {}).get("Networks", {}) or {}
+        for net_name, net_info in networks.items():
+            if isinstance(net_info, dict):
+                ip = net_info.get("IPAddress", "")
+                if ip:
+                    return ip
+        return inspect.get("NetworkSettings", {}).get("IPAddress", "")
+
     async def inspect_container_metrics(self, container_id: str) -> dict[str, Any]:
         container = self.client.containers.get(container_id)
         stats = container.stats(stream=False)
@@ -124,5 +150,7 @@ class DockerGateway:
                     for m in mounts
                     if isinstance(m, dict)
                 ],
+                "ports": self._extract_ports(inspect),
+                "ip_address": self._extract_ip(inspect),
             },
         }

@@ -93,10 +93,15 @@ class AnalysisService:
             suggestions = [i for i in issues if i.severity == "info"]
             security = [i for i in issues if i.code.startswith("SEC")]
 
-            score = max(0, 100 - (len(errors) * 15 + len(warnings) * 8 + len(suggestions) * 3 + len(security) * 10))
+            source = context.get("dockerfile_content") or context.get("compose_content") or ""
+            line_count = max(1, len(source.splitlines()))
+            raw_penalty = len(errors) * 15 + len(warnings) * 8 + len(suggestions) * 3 + len(security) * 10
+            density_factor = min(1.0, 50.0 / line_count)
+            score = max(0, min(100, round(100 - raw_penalty * density_factor)))
             result = {
                 "score": score,
                 "grade": _grade(score),
+                "line_count": line_count,
                 "errors": [i.model_dump() for i in errors],
                 "warnings": [i.model_dump() for i in warnings],
                 "suggestions": [i.model_dump() for i in suggestions],

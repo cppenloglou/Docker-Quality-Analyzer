@@ -322,6 +322,11 @@ export function ResultsDashboard() {
                   {result.score}
                 </div>
                 <div className="text-slate-400 text-sm mt-1">Quality Score</div>
+                {result.line_count && (
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {result.line_count} lines analyzed
+                  </div>
+                )}
               </div>
               <Badge className={`text-2xl px-4 py-2 ${gradeColor(result.grade)}`}>
                 Grade {result.grade}
@@ -368,38 +373,71 @@ export function ResultsDashboard() {
 
         {estimate && (
           <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
-            <h3 className="text-lg font-semibold text-white mb-4">
+            <h3 className="text-lg font-semibold text-white mb-2">
               Resource Estimate
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
-                <Layers className="w-5 h-5 text-blue-400" />
-                <div>
-                  <div className="text-xs text-slate-400">Estimated layers</div>
-                  <div className="text-lg text-white font-semibold">
-                    {estimate.estimated_layers ?? "-"}
+            {estimate.explanation && (
+              <p className="text-sm text-slate-400 mb-4">
+                {estimate.explanation}
+              </p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {estimate.estimated_layers != null && (
+                <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
+                  <Layers className="w-5 h-5 text-blue-400" />
+                  <div>
+                    <div className="text-xs text-slate-400">Image layers (RUN/COPY/ADD)</div>
+                    <div className="text-lg text-white font-semibold">
+                      {estimate.estimated_layers}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
               <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
                 <HardDrive className="w-5 h-5 text-purple-400" />
                 <div>
-                  <div className="text-xs text-slate-400">Estimated memory</div>
+                  <div className="text-xs text-slate-400">
+                    {estimate.total_estimated_memory_mb != null ? "Total memory (all services)" : "Estimated runtime memory"}
+                  </div>
                   <div className="text-lg text-white font-semibold">
-                    {estimate.estimated_memory_mb ?? "-"} MB
+                    {estimate.total_estimated_memory_mb != null
+                      ? `${estimate.total_estimated_memory_mb} MB`
+                      : `${estimate.estimated_memory_mb ?? "-"} MB`}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded bg-slate-950 border border-slate-800">
                 <Cpu className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <div className="text-xs text-slate-400">Estimated CPU</div>
+                  <div className="text-xs text-slate-400">
+                    {estimate.total_estimated_cpu_millicores != null ? "Total CPU (all services)" : "Estimated CPU"}
+                  </div>
                   <div className="text-lg text-white font-semibold">
-                    {estimate.estimated_cpu_millicores ?? "-"} m
+                    {estimate.total_estimated_cpu_millicores != null
+                      ? `${estimate.total_estimated_cpu_millicores}m`
+                      : `${estimate.estimated_cpu_millicores ?? "-"}m`}
                   </div>
                 </div>
               </div>
             </div>
+            {estimate.services && estimate.services.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-slate-300 mb-2">Per-service breakdown</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {estimate.services.map((svc, i) => (
+                    <div key={i} className="flex items-center justify-between p-2 rounded bg-slate-950 border border-slate-800 text-xs">
+                      <div>
+                        <span className="text-slate-200 font-mono">{svc.name}</span>
+                        {svc.image && <span className="text-slate-500 ml-2">{svc.image}</span>}
+                      </div>
+                      <div className="text-slate-400">
+                        {svc.estimated_memory_mb}MB / {svc.estimated_cpu_millicores}m
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         )}
 
