@@ -128,56 +128,28 @@ export const router = createBrowserRouter([
         },
       },
       {
-        path: "image-build",
+        path: "monitoring/:jobId/:containerId",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
-          const m = await import("./pages/ImageBuildProgress");
+          const m = await import("./pages/Monitoring");
           return {
             Component: () => (
               <RequireAuth>
-                <m.ImageBuildProgress />
+                <m.Monitoring />
               </RequireAuth>
             ),
           };
         },
       },
       {
-        path: "image-analysis",
+        path: "settings/api-keys",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
-          const m = await import("./pages/ImageAnalysis");
+          const m = await import("./pages/ApiKeys");
           return {
             Component: () => (
               <RequireAuth>
-                <m.ImageAnalysis />
-              </RequireAuth>
-            ),
-          };
-        },
-      },
-      {
-        path: "runtime-monitoring",
-        hydrateFallbackElement: routeHydrateFallbackElement,
-        lazy: async () => {
-          const m = await import("./pages/RuntimeMonitoring");
-          return {
-            Component: () => (
-              <RequireAuth>
-                <m.RuntimeMonitoring />
-              </RequireAuth>
-            ),
-          };
-        },
-      },
-      {
-        path: "compose-monitoring",
-        hydrateFallbackElement: routeHydrateFallbackElement,
-        lazy: async () => {
-          const m = await import("./pages/ComposeMonitoring");
-          return {
-            Component: () => (
-              <RequireAuth>
-                <m.ComposeMonitoring />
+                <m.ApiKeys />
               </RequireAuth>
             ),
           };

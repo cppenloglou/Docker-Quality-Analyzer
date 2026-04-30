@@ -1,17 +1,20 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Upload, FileCode } from "lucide-react";
 import { Button } from "./ui/button";
+import type { DockerFileKind } from "../utils/fileType";
 
 interface DragDropUploadProps {
-  onFileSelect: (file: File) => void;
-  acceptedTypes?: string;
+  onFileSelect: (file: File, hint?: DockerFileKind) => void;
 }
 
-export function DragDropUpload({
-  onFileSelect,
-  acceptedTypes = ".dockerfile,Dockerfile,.yml,.yaml",
-}: DragDropUploadProps) {
+const DOCKERFILE_ACCEPT = ".dockerfile,Dockerfile,dockerfile,text/plain";
+const COMPOSE_ACCEPT = ".yml,.yaml,application/x-yaml,text/yaml,text/plain";
+const DROP_ACCEPT = `${DOCKERFILE_ACCEPT},${COMPOSE_ACCEPT}`;
+
+export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const dockerfileInputRef = useRef<HTMLInputElement>(null);
+  const composeInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -26,19 +29,20 @@ export function DragDropUpload({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      onFileSelect(files[0]);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      onFileSelect(file);
     }
   };
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      onFileSelect(files[0]);
-    }
-  };
+  const handleInputChange =
+    (hint: DockerFileKind) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        onFileSelect(file, hint);
+      }
+      e.target.value = "";
+    };
 
   return (
     <div
@@ -68,20 +72,20 @@ export function DragDropUpload({
             Drop your Docker file here
           </h3>
           <p className="text-slate-400 text-sm mb-4">
-            Supported: Dockerfile, docker-compose.yml
+            Supported: Dockerfile (any name), docker-compose.yml / compose.yaml
           </p>
         </div>
 
         <div className="flex gap-3">
           <Button
-            onClick={() => document.getElementById("dockerfile-input")?.click()}
+            onClick={() => dockerfileInputRef.current?.click()}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <FileCode className="w-4 h-4 mr-2" />
             Select Dockerfile
           </Button>
           <Button
-            onClick={() => document.getElementById("compose-input")?.click()}
+            onClick={() => composeInputRef.current?.click()}
             variant="outline"
             className="border-slate-700 text-slate-300 hover:bg-slate-800"
           >
@@ -91,18 +95,25 @@ export function DragDropUpload({
         </div>
 
         <input
-          id="dockerfile-input"
+          ref={dockerfileInputRef}
           type="file"
-          accept={acceptedTypes}
-          onChange={handleFileInput}
+          accept={DOCKERFILE_ACCEPT}
+          onChange={handleInputChange("dockerfile")}
           className="hidden"
         />
         <input
-          id="compose-input"
+          ref={composeInputRef}
           type="file"
-          accept={acceptedTypes}
-          onChange={handleFileInput}
+          accept={COMPOSE_ACCEPT}
+          onChange={handleInputChange("docker-compose")}
           className="hidden"
+        />
+        <input
+          type="file"
+          accept={DROP_ACCEPT}
+          className="hidden"
+          aria-hidden="true"
+          tabIndex={-1}
         />
       </div>
     </div>

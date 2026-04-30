@@ -45,8 +45,24 @@ async def container_metrics(websocket: WebSocket, container_id: str) -> None:
 
 
 @router.websocket("/ws/users/{user_id}/containers/{container_id}")
-async def user_container_metrics(websocket: WebSocket, user_id: str, container_id: str) -> None:
+async def user_container_metrics(
+    websocket: WebSocket,
+    user_id: str,
+    container_id: str,
+    token: str = Query(...),
+) -> None:
     await websocket.accept()
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            raise ValueError("wrong token type")
+        if payload.get("sub") != user_id:
+            raise ValueError("user mismatch")
+        uuid.UUID(user_id)
+    except Exception:
+        await websocket.send_json({"error": "invalid token"})
+        await websocket.close(code=4401)
+        return
     try:
         async for event in subscribe(f"user:{user_id}:container:{container_id}:metrics"):
             await websocket.send_text(json.dumps(event))

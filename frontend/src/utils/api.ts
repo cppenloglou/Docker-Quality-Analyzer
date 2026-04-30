@@ -1,9 +1,22 @@
 export interface Issue {
   line: number;
   code: string;
-  severity: string;
+  severity: "error" | "warning" | "info";
   message: string;
   suggestion: string;
+  doc_url?: string | null;
+}
+
+export interface RunnabilityMeta {
+  runnable: boolean;
+  reasons: string[];
+  rules?: Record<string, boolean>;
+}
+
+export interface ResourceEstimateMeta {
+  estimated_layers?: number;
+  estimated_memory_mb?: number;
+  estimated_cpu_millicores?: number;
 }
 
 export interface AnalysisResult {
@@ -14,11 +27,9 @@ export interface AnalysisResult {
   suggestions: Issue[];
   securityIssues: Issue[];
   meta?: {
-    runnability?: {
-      runnable: boolean;
-      reasons: string[];
-      rules?: Record<string, boolean>;
-    };
+    runnability?: RunnabilityMeta;
+    estimate?: ResourceEstimateMeta;
+    [key: string]: unknown;
   };
 }
 
@@ -35,65 +46,192 @@ export interface AuthResponse {
   user: User;
 }
 
+export type JobType = "dockerfile" | "compose" | "project";
+export type JobStatus = "queued" | "running" | "done" | "failed";
+
 export interface Job {
   id: string;
-  type: "dockerfile" | "compose" | "project";
-  status: "queued" | "running" | "done" | "failed";
-  input_metadata: Record<string, unknown>;
+  type: JobType;
+  status: JobStatus;
+  input_metadata: Record<string, unknown> & {
+    filename?: string;
+    dockerfiles?: string[];
+    compose_files?: string[];
+  };
   result: AnalysisResult | { message?: string } | null;
   created_at: string;
 }
 
-interface JobEnqueueResponse {
+export interface JobEnqueueResponse {
   job_id: string;
   status: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:8000";
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers || {});
-  if (!(init.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-  const auth = localStorage.getItem("dpa_access_token");
-  if (auth) {
-    headers.set("Authorization", `Bearer ${auth}`);
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-  });
-  if (!response.ok) {
-    const fallbackError = `Request failed with status ${response.status}`;
-    try {
-      const payload = (await response.json()) as { detail?: string };
-      throw new Error(payload.detail || fallbackError);
-    } catch {
-      throw new Error(fallbackError);
-    }
-  }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
+export interface ApiKey {
+  id: string;
+  key_prefix: string;
+  created_at: string;
 }
 
-export function persistSession(auth: AuthResponse) {
-  localStorage.setItem("dpa_access_token", auth.access_token);
-  localStorage.setItem("dpa_refresh_token", auth.refresh_token);
-  localStorage.setItem("dpa_user", JSON.stringify(auth.user));
+export interface ApiKeyCreated {
+  id: string;
+  key: string;
+  key_prefix: string;
+}
+
+export interface DomainEvent {
+  event_name: string;
+  user_id: string;
+  job_id: string | null;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface ContainerMetricsPayload {
+  container_id?: string;
+  cpu_percent?: number;
+  memory_bytes?: number;
+  memory_percent?: number;
+  uptime_seconds?: number;
+  network_rx?: Record<string, unknown>;
+  cpu?: {
+    percent?: number;
+    total_usage?: number;
+    system_usage?: number;
+    online_cpus?: number;
+    throttling?: {
+      periods?: number;
+      throttled_periods?: number;
+      throttled_time?: number;
+    };
+  };
+  memory?: {
+    usage_bytes?: number;
+    limit_bytes?: number;
+    percent?: number;
+    cache_bytes?: number;
+    rss_bytes?: number;
+    mapped_file_bytes?: number;
+    failcnt?: number;
+  };
+  network?: {
+    interfaces?: Record<string, unknown>;
+    totals?: {
+      rx_bytes?: number;
+      tx_bytes?: number;
+      rx_packets?: number;
+      tx_packets?: number;
+      rx_errors?: number;
+      tx_errors?: number;
+      rx_dropped?: number;
+      tx_dropped?: number;
+    };
+  };
+  io?: {
+    read_bytes?: number;
+    write_bytes?: number;
+  };
+  pids?: {
+    current?: number;
+  };
+  container?: {
+    id?: string;
+    name?: string;
+    image?: string;
+    command?: string[];
+    created_at?: string;
+    started_at?: string;
+    status?: string;
+    health_status?: string;
+    restart_count?: number;
+    mounts?: Array<{
+      type?: string;
+      source?: string;
+      destination?: string;
+      mode?: string;
+      rw?: boolean;
+    }>;
+  };
+}
+
+export class ApiError extends Error {
+  status: number;
+  detail: unknown;
+
+  constructor(status: number, detail: unknown, message?: string) {
+    super(message ?? ApiError.deriveMessage(status, detail));
+    this.status = status;
+    this.detail = detail;
+    this.name = "ApiError";
+  }
+
+  static deriveMessage(status: number, detail: unknown): string {
+    if (typeof detail === "string" && detail.trim().length > 0) {
+      return detail;
+    }
+    if (detail && typeof detail === "object") {
+      const maybeMessage = (detail as { message?: unknown }).message;
+      if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
+        return maybeMessage;
+      }
+    }
+    return `Request failed with status ${status}`;
+  }
+
+  get reasons(): string[] | undefined {
+    if (this.detail && typeof this.detail === "object") {
+      const reasons = (this.detail as { reasons?: unknown }).reasons;
+      if (Array.isArray(reasons)) {
+        return reasons.filter((r): r is string => typeof r === "string");
+      }
+    }
+    return undefined;
+  }
+}
+
+const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL =
+  rawApiBaseUrl === undefined ? "http://localhost:8000" : rawApiBaseUrl.trim();
+const ACCESS_TOKEN_KEY = "dpa_access_token";
+const REFRESH_TOKEN_KEY = "dpa_refresh_token";
+const USER_KEY = "dpa_user";
+const UNAUTHORIZED_EVENT = "dpa:unauthorized";
+
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
+}
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function persistSession(authResponse: AuthResponse) {
+  localStorage.setItem(ACCESS_TOKEN_KEY, authResponse.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, authResponse.refresh_token);
+  localStorage.setItem(USER_KEY, JSON.stringify(authResponse.user));
+}
+
+export function persistTokens(tokens: { access_token: string; refresh_token: string }) {
+  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+}
+
+export function persistUser(user: User) {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function clearSession() {
-  localStorage.removeItem("dpa_access_token");
-  localStorage.removeItem("dpa_refresh_token");
-  localStorage.removeItem("dpa_user");
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
 }
 
 export function readUserFromStorage(): User | null {
-  const raw = localStorage.getItem("dpa_user");
+  const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as User;
@@ -102,71 +240,240 @@ export function readUserFromStorage(): User | null {
   }
 }
 
-export async function register(payload: { email: string; password: string }) {
-  return request<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify(payload) });
+export function emitUnauthorized() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+  }
 }
 
-export async function login(payload: { email: string; password: string }) {
-  return request<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify(payload) });
+export function onUnauthorized(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = () => listener();
+  window.addEventListener(UNAUTHORIZED_EVENT, handler);
+  return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler);
 }
 
-export async function enqueueDockerfileAnalysis(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return request<JobEnqueueResponse>("/api/v1/dockerfile/analyze", {
-    method: "POST",
-    body: formData,
-  });
+interface RequestOptions extends RequestInit {
+  skipAuth?: boolean;
+  skipRefresh?: boolean;
 }
 
-export async function enqueueComposeAnalysis(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return request<JobEnqueueResponse>("/api/v1/compose/analyze", {
-    method: "POST",
-    body: formData,
-  });
+let refreshPromise: Promise<AuthResponse> | null = null;
+
+async function rawFetch(path: string, init: RequestOptions): Promise<Response> {
+  const headers = new Headers(init.headers || {});
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (!init.skipAuth) {
+    const token = getAccessToken();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+  return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 }
 
-export async function deployCompose(payload: {
-  job_id: string;
-  push_public_images: boolean;
-  run_stack: boolean;
-}) {
-  return request<JobEnqueueResponse>("/api/v1/compose/deploy", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+async function parseError(response: Response): Promise<ApiError> {
+  let detail: unknown = null;
+  try {
+    const payload = (await response.json()) as { detail?: unknown };
+    detail = payload?.detail ?? payload;
+  } catch {
+    try {
+      detail = await response.text();
+    } catch {
+      detail = null;
+    }
+  }
+  return new ApiError(response.status, detail);
 }
 
-export async function uploadProjectArchive(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return request<JobEnqueueResponse>("/api/v1/project/upload", {
-    method: "POST",
-    body: formData,
-  });
+async function attemptRefresh(): Promise<AuthResponse | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const response = await rawFetch("/auth/refresh", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        skipAuth: true,
+        skipRefresh: true,
+      });
+      if (!response.ok) {
+        throw await parseError(response);
+      }
+      const auth = (await response.json()) as AuthResponse;
+      persistSession(auth);
+      return auth;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  try {
+    return await refreshPromise;
+  } catch {
+    return null;
+  }
 }
 
-export async function getJobs() {
-  return request<Job[]>("/api/v1/users/me/jobs");
+async function request<T>(path: string, init: RequestOptions = {}): Promise<T> {
+  let response = await rawFetch(path, init);
+  if (response.status === 401 && !init.skipRefresh && !init.skipAuth) {
+    const refreshed = await attemptRefresh();
+    if (refreshed) {
+      response = await rawFetch(path, { ...init, skipRefresh: true });
+    }
+  }
+  if (!response.ok) {
+    const error = await parseError(response);
+    if (error.status === 401 && !init.skipAuth) {
+      clearSession();
+      emitUnauthorized();
+    }
+    throw error;
+  }
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
 }
 
-export async function getHistory() {
-  return request<Job[]>("/api/v1/users/me/history");
+// ---------- auth ----------
+export const auth = {
+  async register(payload: { email: string; password: string }): Promise<AuthResponse> {
+    return request<AuthResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      skipAuth: true,
+    });
+  },
+  async login(payload: { email: string; password: string }): Promise<AuthResponse> {
+    return request<AuthResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      skipAuth: true,
+    });
+  },
+  async refresh(refreshToken: string): Promise<AuthResponse> {
+    return request<AuthResponse>("/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      skipAuth: true,
+      skipRefresh: true,
+    });
+  },
+  async me(): Promise<User> {
+    return request<User>("/auth/me");
+  },
+};
+
+// ---------- api keys ----------
+export const apiKeys = {
+  async list(): Promise<ApiKey[]> {
+    return request<ApiKey[]>("/api/v1/users/me/api-keys");
+  },
+  async create(): Promise<ApiKeyCreated> {
+    return request<ApiKeyCreated>("/api/v1/users/me/api-keys", { method: "POST" });
+  },
+  async revoke(keyId: string): Promise<void> {
+    return request<void>(`/api/v1/users/me/api-keys/${keyId}`, { method: "DELETE" });
+  },
+};
+
+// ---------- jobs / history ----------
+export const jobs = {
+  async list(): Promise<Job[]> {
+    return request<Job[]>("/api/v1/users/me/jobs");
+  },
+  async history(): Promise<Job[]> {
+    return request<Job[]>("/api/v1/users/me/history");
+  },
+  async get(jobId: string): Promise<Job> {
+    return request<Job>(`/api/v1/users/me/jobs/${jobId}`);
+  },
+  async getEvents(jobId: string): Promise<Job> {
+    return request<Job>(`/api/v1/users/me/jobs/${jobId}/events`);
+  },
+};
+
+// ---------- workflows ----------
+export const dockerfile = {
+  async analyze(file: File): Promise<JobEnqueueResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<JobEnqueueResponse>("/api/v1/dockerfile/analyze", {
+      method: "POST",
+      body: formData,
+    });
+  },
+};
+
+export const compose = {
+  async analyze(file: File): Promise<JobEnqueueResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<JobEnqueueResponse>("/api/v1/compose/analyze", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async deploy(payload: {
+    job_id: string;
+    push_public_images: boolean;
+    run_stack: boolean;
+  }): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>("/api/v1/compose/deploy", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async stopDeploy(payload: {
+    job_id: string;
+    remove_volumes?: boolean;
+  }): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>("/api/v1/compose/deploy/stop", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
+export const project = {
+  async upload(file: File): Promise<JobEnqueueResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<JobEnqueueResponse>("/api/v1/project/upload", {
+      method: "POST",
+      body: formData,
+    });
+  },
+};
+
+// ---------- websockets ----------
+function wsBase(): string {
+  if (!API_BASE_URL) {
+    if (typeof window === "undefined") return "";
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}`;
+  }
+  return API_BASE_URL.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
 }
 
-export async function getJob(jobId: string) {
-  return request<Job>(`/api/v1/users/me/jobs/${jobId}`);
-}
+export const ws = {
+  connectJob(jobId: string): WebSocket {
+    const token = getAccessToken() ?? "";
+    return new WebSocket(`${wsBase()}/ws/jobs/${jobId}?token=${encodeURIComponent(token)}`);
+  },
+  connectUserContainer(userId: string, containerId: string): WebSocket {
+    const token = getAccessToken() ?? "";
+    return new WebSocket(
+      `${wsBase()}/ws/users/${userId}/containers/${containerId}?token=${encodeURIComponent(token)}`,
+    );
+  },
+};
 
-export function connectJobSocket(jobId: string): WebSocket {
-  const token = localStorage.getItem("dpa_access_token");
-  const wsUrl = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://");
-  return new WebSocket(`${wsUrl}/ws/jobs/${jobId}?token=${encodeURIComponent(token || "")}`);
-}
-
-export function connectContainerMetricsSocket(containerId: string): WebSocket {
-  const wsUrl = API_BASE_URL.replace("http://", "ws://").replace("https://", "wss://");
-  return new WebSocket(`${wsUrl}/ws/metrics/${containerId}`);
+// ---------- health ----------
+export async function checkHealth(): Promise<{ status: string }> {
+  return request<{ status: string }>("/health", { skipAuth: true });
 }

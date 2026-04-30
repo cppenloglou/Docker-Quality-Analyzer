@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { useAuth } from "../auth/AuthProvider";
+import { ApiError } from "../utils/api";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 
@@ -22,9 +24,17 @@ export function Login() {
     setError(null);
     try {
       await loginWithPassword(email, password);
+      toast.success("Signed in");
       navigate(redirect, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed.");
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Login failed.";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }

@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates nodejs npm gcc \
+    && apt-get install -y --no-install-recommends curl ca-certificates nodejs npm gcc docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 # hadolint binary
@@ -15,6 +15,10 @@ RUN curl -L -o /usr/local/bin/hadolint "https://github.com/hadolint/hadolint/rel
 
 # docker-compose-linter CLI (dclint)
 RUN npm install -g dclint
+
+# standalone Docker Compose v2 CLI
+RUN curl -L -o /usr/local/bin/docker-compose "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64" \
+    && chmod +x /usr/local/bin/docker-compose
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

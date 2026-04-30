@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.schemas import TokenResponse, UserRead
 from app.core.config import get_settings
-from app.core.security import create_token
+from app.core.security import create_token, decode_token
 from app.infrastructure.db.repositories import UserRepository
 
 
@@ -27,6 +27,22 @@ class AuthService:
         user = await self.repo.authenticate(email, password)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials.")
+        return self._issue_tokens(user.id, user.email, user.created_at)
+
+    async def refresh(self, refresh_token: str) -> TokenResponse:
+        try:
+            payload = decode_token(refresh_token)
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail="Invalid refresh token.") from exc
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type.")
+        try:
+            user_id = uuid.UUID(payload["sub"])
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=401, detail="Invalid refresh token.") from exc
+        user = await self.repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User no longer exists.")
         return self._issue_tokens(user.id, user.email, user.created_at)
 
     def _issue_tokens(self, user_id: uuid.UUID, email: str, created_at) -> TokenResponse:

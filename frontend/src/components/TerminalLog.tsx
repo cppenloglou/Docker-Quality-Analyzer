@@ -1,17 +1,49 @@
-import { useEffect, useRef } from 'react';
-import { Terminal } from 'lucide-react';
+import { useEffect, useRef } from "react";
+import { Terminal } from "lucide-react";
 
-interface TerminalLogProps {
-  logs: string[];
-  title?: string;
-  maxHeight?: string;
+export interface TerminalLogEntry {
+  message: string;
+  timestamp?: string;
+  tone?: "info" | "success" | "warning" | "error";
 }
 
-export function TerminalLog({ logs, title = 'Container Logs', maxHeight = '400px' }: TerminalLogProps) {
+interface TerminalLogProps {
+  logs: (string | TerminalLogEntry)[];
+  title?: string;
+  maxHeight?: string;
+  emptyLabel?: string;
+}
+
+function toneClass(tone?: TerminalLogEntry["tone"]) {
+  switch (tone) {
+    case "success":
+      return "text-emerald-300";
+    case "warning":
+      return "text-yellow-300";
+    case "error":
+      return "text-red-300";
+    default:
+      return "text-slate-300";
+  }
+}
+
+function formatTimestamp(timestamp?: string): string {
+  if (!timestamp) return new Date().toLocaleTimeString();
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return timestamp;
+  return parsed.toLocaleTimeString();
+}
+
+export function TerminalLog({
+  logs,
+  title = "Container Logs",
+  maxHeight = "400px",
+  emptyLabel = "No logs yet...",
+}: TerminalLogProps) {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
   return (
@@ -20,20 +52,26 @@ export function TerminalLog({ logs, title = 'Container Logs', maxHeight = '400px
         <Terminal className="w-4 h-4 text-green-400" />
         <span className="text-sm text-slate-300 font-mono">{title}</span>
       </div>
-      
-      <div 
-        style={{ maxHeight }} 
-        className="overflow-auto p-4 font-mono text-sm"
-      >
+
+      <div style={{ maxHeight }} className="overflow-auto p-4 font-mono text-sm">
         {logs.length === 0 ? (
-          <div className="text-slate-500 italic">No logs yet...</div>
+          <div className="text-slate-500 italic">{emptyLabel}</div>
         ) : (
-          logs.map((log, index) => (
-            <div key={index} className="text-slate-300 mb-1 whitespace-pre-wrap">
-              <span className="text-slate-600 mr-3">[{new Date().toLocaleTimeString()}]</span>
-              {log}
-            </div>
-          ))
+          logs.map((log, index) => {
+            const entry: TerminalLogEntry =
+              typeof log === "string" ? { message: log } : log;
+            return (
+              <div
+                key={index}
+                className={`${toneClass(entry.tone)} mb-1 whitespace-pre-wrap break-all`}
+              >
+                <span className="text-slate-600 mr-3">
+                  [{formatTimestamp(entry.timestamp)}]
+                </span>
+                {entry.message}
+              </div>
+            );
+          })
         )}
         <div ref={logsEndRef} />
       </div>

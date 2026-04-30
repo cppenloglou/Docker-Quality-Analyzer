@@ -1,0 +1,29 @@
+# Expect: runnability precheck passes.
+# Every image has a pinned non-latest tag, no build contexts, no bind mounts,
+# no env_file, no external networks/volumes, no privileged runtime flags.
+services:
+  cache:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    depends_on:
+      - cache
+    restart: unless-stopped
+
+  api:
+    image: node:20-alpine
+    command: ["node", "-e", "require('http').createServer((_,r)=>r.end('ok')).listen(3000)"]
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      CACHE_HOST: cache
+    depends_on:
+      - cache
+    restart: unless-stopped

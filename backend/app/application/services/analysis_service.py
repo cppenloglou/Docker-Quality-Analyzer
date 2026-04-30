@@ -1,3 +1,4 @@
+import json
 import uuid
 from collections.abc import Iterable
 from typing import Any
@@ -11,6 +12,35 @@ from app.infrastructure.db.repositories import JobRepository
 from app.infrastructure.events.bus import publish_event
 from app.plugins.base import BasePlugin
 from app.plugins.registry import load_plugins
+
+
+def _rule_code_and_doc_url(raw: dict[str, Any]) -> tuple[str, str | None]:
+    field = raw.get("code", raw.get("rule"))
+    if isinstance(field, dict):
+        code = str(field.get("value") or field.get("rule") or "GEN000")
+        url = field.get("url")
+        return code, str(url) if url else None
+    if field is not None and field != "":
+        return str(field), None
+    return "GEN000", None
+
+
+def _suggestion_from_raw(raw: dict[str, Any]) -> str:
+    direct = raw.get("suggestion")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    orig = raw.get("original_output")
+    if isinstance(orig, str) and orig.strip():
+        try:
+            parsed = json.loads(orig)
+            meta = parsed.get("meta") if isinstance(parsed, dict) else None
+            if isinstance(meta, dict):
+                desc = meta.get("description")
+                if isinstance(desc, str) and desc.strip():
+                    return desc.strip()
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return "Review related container best practices."
 
 
 def _grade(score: int) -> str:
@@ -95,10 +125,12 @@ class AnalysisService:
             else:
                 severity = "info"
         line = raw.get("line") or raw.get("location", {}).get("range", {}).get("start", {}).get("line") or 1
+        code, doc_url = _rule_code_and_doc_url(raw)
         return Issue(
             line=int(line),
-            code=str(raw.get("code", raw.get("rule", "GEN000"))),
+            code=code,
             severity=severity,
             message=str(raw.get("message", "No details provided.")),
-            suggestion=str(raw.get("suggestion", "Review related container best practices.")),
+            suggestion=_suggestion_from_raw(raw),
+            doc_url=doc_url,
         )
