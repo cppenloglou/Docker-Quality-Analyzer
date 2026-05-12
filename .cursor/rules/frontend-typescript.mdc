@@ -1,0 +1,47 @@
+---
+description: TypeScript conventions — strict mode, imports, type patterns, and shadcn/ui primitives
+globs: frontend/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript Conventions
+
+## Compiler Strictness
+
+Strict mode is enabled with `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, and `noUncheckedSideEffectImports`.
+
+## Import Rules
+
+`verbatimModuleSyntax` is on — always use explicit `type` keyword for type-only imports:
+
+```typescript
+// Good
+import type { ReactNode } from "react";
+import { useState } from "react";
+
+// Bad — will fail compilation
+import { ReactNode } from "react";  // ReactNode is type-only
+```
+
+## Type Definitions
+
+- **Interfaces** for object shapes: `interface LayoutProps { children: ReactNode }`
+- **`type`** for unions and aliases: `type StepStatus = "pending" | "running" | "complete" | "error"`
+- **No enums** (`erasableSyntaxOnly` is enabled) — use string literal unions instead.
+- **No namespaces** — use modules.
+
+## UI Primitive Typing (shadcn/ui pattern)
+
+```typescript
+function Button({ className, variant, size, asChild, ...props }: React.ComponentProps<"button"> & VariantProps<typeof buttonVariants>) {
+```
+
+- Props extend `React.ComponentProps<"tag">` — not custom interfaces.
+- Variant types come from `VariantProps<typeof xVariants>` (CVA).
+- Components use `data-slot` attributes for identification.
+
+## General
+
+- Use `as` type assertions sparingly — mainly for `JSON.parse` results.
+- Write type guards for runtime checks: `function isAnalysisResult(v): v is AnalysisResult`.
+- Generics in API layer: `request<T>(path, init)`, `loadState<T>(key)`.

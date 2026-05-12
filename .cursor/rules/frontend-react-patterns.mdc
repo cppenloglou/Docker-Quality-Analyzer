@@ -1,0 +1,48 @@
+---
+description: React component patterns — exports, auth, API calls, state management, WebSocket lifecycle
+globs: frontend/src/**/*.tsx
+alwaysApply: false
+---
+
+# React Patterns
+
+## Component Exports
+
+- **Named exports only**: `export function ComponentName() { ... }`
+- **No default exports** except `App.tsx`.
+- Function declarations for components, inline arrow functions for handlers.
+
+## Auth
+
+- Access auth state via `useAuth()` hook from `src/auth/AuthProvider.tsx`.
+- Protect routes with `<RequireAuth>` wrapper in route definitions.
+- `isBooting` flag is true during initial `/auth/me` validation — show `DockerLoader` while waiting.
+
+## API Calls
+
+All HTTP calls go through namespaced objects in `src/utils/api.ts`:
+
+```typescript
+const result = await api.dockerfile.analyze(file);
+const jobs = await api.jobs.list();
+await api.compose.deploy(payload);
+```
+
+Never call `fetch()` directly — `api.ts` handles auth headers, token refresh, and error parsing.
+
+## WebSocket Lifecycle
+
+- Store socket in `useRef` to survive re-renders.
+- Open in `useEffect`, close in the cleanup return.
+- Auth token passed as `?token=` query parameter.
+
+## State Management
+
+- **No Redux/Zustand** — React Context for auth only, `useState` for everything else.
+- **Cross-page data**: `sessionStorage` (uploaded files, job IDs, execution state).
+- **Durable data**: `localStorage` (auth tokens via `dpa_` prefix, notifications via `dqa:` prefix).
+- **URL params**: `jobId` via query params between pages; `containerId` via path params.
+
+## Pages
+
+Every authenticated page wraps content in `<Layout>`. Login/Register render standalone.

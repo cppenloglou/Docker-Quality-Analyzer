@@ -1,0 +1,48 @@
+---
+description: Styling conventions — Tailwind CSS v4, dark theme, shadcn/ui primitives, cn() helper
+globs: frontend/src/**/*.{css,tsx}
+alwaysApply: false
+---
+
+# Styling Conventions
+
+## Tailwind CSS v4
+
+- Utility-first approach with the new `@import "tailwindcss"` syntax.
+- PostCSS plugin: `@tailwindcss/postcss`.
+- CSS variables defined in `src/styles/index.css` using `oklch()` color space.
+
+## Dark-Only Theme
+
+The app forces dark mode (`document.documentElement.classList.add("dark")`). All color choices assume a dark background. Do not add light-mode variants.
+
+## Color Palette
+
+| Role | Colors |
+|---|---|
+| Background | slate-950 |
+| Cards / surfaces | slate-900 |
+| Borders | slate-800 |
+| Primary actions | blue-500 / blue-600 |
+| Success | green-500 |
+| Error / destructive | red-500 |
+| Warning | yellow-500 |
+| Compose/project accent | purple-500 |
+| Security accent | orange-500 |
+
+## Class Merging
+
+Always use the `cn()` helper from `src/components/ui/utils.ts` for conditional classes:
+
+```typescript
+import { cn } from "@/components/ui/utils";
+
+<div className={cn("rounded-lg p-4", isActive && "border-blue-500")} />
+```
+
+## UI Primitives (shadcn/ui)
+
+- Located in `src/components/ui/`.
+- Built with CVA (`class-variance-authority`) for variant styling.
+- Support `asChild` via Radix `Slot` for composition.
+- No CSS modules, no styled-components — pure Tailwind utilities everywhere.
