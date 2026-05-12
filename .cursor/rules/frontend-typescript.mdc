@@ -1,47 +1,51 @@
 ---
-description: TypeScript conventions — strict mode, imports, type patterns, and shadcn/ui primitives
+description: TypeScript — strict compiler flags, verbatim imports, UI prop typing
 globs: frontend/src/**/*.{ts,tsx}
 alwaysApply: false
 ---
 
-# TypeScript Conventions
+# TypeScript Conventions (Frontend)
 
-## Compiler Strictness
+## Compiler
 
-Strict mode is enabled with `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, and `noUncheckedSideEffectImports`.
+Strict mode with `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, `noUncheckedSideEffectImports`, `erasableSyntaxOnly`.
 
-## Import Rules
+## Imports
 
-`verbatimModuleSyntax` is on — always use explicit `type` keyword for type-only imports:
+`verbatimModuleSyntax` is on — use **`import type`** for type-only symbols:
 
 ```typescript
-// Good
 import type { ReactNode } from "react";
 import { useState } from "react";
-
-// Bad — will fail compilation
-import { ReactNode } from "react";  // ReactNode is type-only
 ```
 
-## Type Definitions
+There is **no** `@/` path alias—use relative imports (e.g. `../components/ui/utils`, `../utils/api`).
 
-- **Interfaces** for object shapes: `interface LayoutProps { children: ReactNode }`
-- **`type`** for unions and aliases: `type StepStatus = "pending" | "running" | "complete" | "error"`
-- **No enums** (`erasableSyntaxOnly` is enabled) — use string literal unions instead.
-- **No namespaces** — use modules.
+## Types vs interfaces
 
-## UI Primitive Typing (shadcn/ui pattern)
+- **`interface`** for object props/shapes (e.g. component props with `children`).
+- **`type`** for unions and aliases; **no TypeScript enums**—use string literal unions.
+
+## UI components (shadcn/CVA pattern)
+
+Extend DOM props and merge variants:
 
 ```typescript
-function Button({ className, variant, size, asChild, ...props }: React.ComponentProps<"button"> & VariantProps<typeof buttonVariants>) {
+import type { ComponentProps } from "react";
+import type { VariantProps } from "class-variance-authority";
+
+function Button({
+  className,
+  variant,
+  size,
+  ...props
+}: ComponentProps<"button"> & VariantProps<typeof buttonVariants>) {
 ```
 
-- Props extend `React.ComponentProps<"tag">` — not custom interfaces.
-- Variant types come from `VariantProps<typeof xVariants>` (CVA).
-- Components use `data-slot` attributes for identification.
+- Primitives use `data-slot` where applicable.
+- Merge classes with **`cn()`** from `components/ui/utils.ts` (not duplicated merge logic).
 
-## General
+## Runtime safety
 
-- Use `as` type assertions sparingly — mainly for `JSON.parse` results.
-- Write type guards for runtime checks: `function isAnalysisResult(v): v is AnalysisResult`.
-- Generics in API layer: `request<T>(path, init)`, `loadState<T>(key)`.
+- Minimize `as` assertions; prefer type guards (`function isFoo(x): x is Foo`).
+- Narrow `JSON.parse` results before use.

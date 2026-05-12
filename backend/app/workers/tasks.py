@@ -2,7 +2,7 @@ import asyncio
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,6 +71,8 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
     user_id = str(payload["user_id"])
     job_id = str(payload["job_id"])
     run_stack = bool(payload.get("run_stack", False))
+    compose_up_completed = False
+    deploy_spec: dict[str, Any] | None = None
 
     try:
         async with SessionLocal() as session:
@@ -84,7 +86,8 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
         primary_container_id = ""
         container_ids: list[str] = []
         if run_stack:
-            await _compose_up(deploy_spec)
+            await _compose_up(deploy_spec, user_id=user_id, job_id=job_id)
+            compose_up_completed = True
             container_ids = await _compose_ps_ids(deploy_spec)
             if container_ids:
                 primary_container_id = container_ids[0]
@@ -122,6 +125,25 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
             "container_id": started_container,
         }
     except Exception as exc:
+        if run_stack and deploy_spec is not None:
+            cleanup_payload = {"project_name": deploy_spec["project_name"]}
+            await publish_event(
+                DomainEvent("deploy.cleanup_started", user_id=user_id, job_id=job_id, payload=cleanup_payload)
+            )
+            await _compose_down_soft(deploy_spec, remove_volumes=False)
+            await publish_event(
+                DomainEvent(
+                    "deploy.cleanup_completed",
+                    user_id=user_id,
+                    job_id=job_id,
+                    payload={**cleanup_payload, "ok": True},
+                )
+            )
+        if deploy_spec is not None:
+            try:
+                await _clear_deploy_state(user_id, job_id)
+            except Exception:
+                pass
         fail_payload = {"message": str(exc)}
         await publish_event(
             DomainEvent("user.analysis.failed", user_id=user_id, job_id=job_id, payload=fail_payload)
@@ -212,26 +234,126 @@ def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) ->
     raise RuntimeError("No deployable compose content found for this job.")
 
 
-async def _compose_up(spec: dict[str, Any]) -> None:
+def _stderr_suggests_host_port_publish_conflict(stderr: str) -> bool:
+    """Detect Docker / Compose errors where published host ports block ``up``."""
+    s = stderr.lower()
+    return any(
+        needle in s
+        for needle in (
+            "port is already allocated",
+            "address already in use",
+            "failed to bind port",
+            "userland proxy",
+            "failed programming external connectivity",
+        )
+    )
+
+
+def _count_compose_services(spec: dict[str, Any]) -> int:
+    """Best-effort count of service definitions in the spec's compose file."""
+    try:
+        raw = Path(str(spec["compose_file"])).read_text(encoding="utf-8")
+        parsed = yaml.safe_load(raw) or {}
+        services = parsed.get("services")
+        if isinstance(services, dict):
+            return len(services)
+    except Exception:
+        return 0
+    return 0
+
+
+def _classify_compose_up_line(line: str) -> str | None:
+    """Map a compose-up output line to a coarse progress bucket."""
+    text = line.strip()
+    if not text or "Container " not in text:
+        return None
+    lower = text.lower()
+    # Terminal states only ("Created" / "Started"), ignore "Creating" / "Starting".
+    if lower.endswith(" started"):
+        return "started"
+    if lower.endswith(" created"):
+        return "created"
+    return None
+
+
+async def _compose_up(
+    spec: dict[str, Any],
+    *,
+    user_id: str | None = None,
+    job_id: str | None = None,
+) -> None:
+    project_name = str(spec["project_name"])
+    total_services = _count_compose_services(spec)
+
+    async def emit_log(line: str) -> None:
+        if user_id and job_id and line:
+            await publish_event(
+                DomainEvent(
+                    "deploy.compose_up_log",
+                    user_id=user_id,
+                    job_id=job_id,
+                    payload={"line": line, "project_name": project_name},
+                )
+            )
+
+    async def make_progress_callback(buffer: list[str]) -> Callable[[str], Awaitable[None]]:
+        counters = {"created": 0, "started": 0}
+
+        async def on_line(line: str) -> None:
+            buffer.append(line)
+            await emit_log(line)
+            bucket = _classify_compose_up_line(line)
+            if not bucket:
+                return
+            counters[bucket] = counters[bucket] + 1
+            if user_id and job_id and total_services:
+                await publish_event(
+                    DomainEvent(
+                        "deploy.compose_up_progress",
+                        user_id=user_id,
+                        job_id=job_id,
+                        payload={
+                            "project_name": project_name,
+                            "total_services": total_services,
+                            "created": min(counters["created"], total_services),
+                            "started": min(counters["started"], total_services),
+                        },
+                    )
+                )
+
+        return on_line
+
+    primary_buffer: list[str] = []
+    primary_cb = await make_progress_callback(primary_buffer)
     command = _compose_base_cmd(spec) + ["up", "-d"]
-    stdout, stderr, returncode = await _run_subprocess(command, cwd=str(spec["project_dir"]))
-    if returncode != 0:
-        if "port is already allocated" in stderr.lower():
-            sanitized_file = _build_no_ports_compose(spec)
-            fallback_command = [
-                "docker-compose",
-                "-p",
-                str(spec["project_name"]),
-                "-f",
-                sanitized_file,
-                "up",
-                "-d",
-            ]
-            _, fallback_err, fallback_rc = await _run_subprocess(fallback_command, cwd=str(spec["project_dir"]))
-            if fallback_rc != 0:
-                raise RuntimeError(f"docker-compose up failed (fallback): {fallback_err}")
-            return
-        raise RuntimeError(f"docker-compose up failed: {stderr}")
+    rc = await _run_subprocess_streaming(command, cwd=str(spec["project_dir"]), on_line=primary_cb)
+    if rc == 0:
+        return
+
+    combined_stderr = "\n".join(primary_buffer)
+    if _stderr_suggests_host_port_publish_conflict(combined_stderr):
+        sanitized_file = _build_no_ports_compose(spec)
+        await emit_log("[falling back: stripping published ports and retrying]")
+        fallback_buffer: list[str] = []
+        fallback_cb = await make_progress_callback(fallback_buffer)
+        fallback_command = [
+            "docker-compose",
+            "-p",
+            project_name,
+            "-f",
+            sanitized_file,
+            "up",
+            "-d",
+        ]
+        fallback_rc = await _run_subprocess_streaming(
+            fallback_command, cwd=str(spec["project_dir"]), on_line=fallback_cb
+        )
+        if fallback_rc != 0:
+            raise RuntimeError(
+                f"docker-compose up failed (fallback): {'\n'.join(fallback_buffer)}"
+            )
+        return
+    raise RuntimeError(f"docker-compose up failed: {combined_stderr}")
 
 
 def _build_no_ports_compose(spec: dict[str, Any]) -> str:
@@ -269,6 +391,14 @@ async def _compose_down(spec: dict[str, Any], remove_volumes: bool) -> None:
         raise RuntimeError(f"docker-compose down failed: {stderr}")
 
 
+async def _compose_down_soft(spec: dict[str, Any], *, remove_volumes: bool = False) -> None:
+    """Remove a partially created stack without masking the original deploy error."""
+    try:
+        await _compose_down(spec, remove_volumes)
+    except Exception:
+        pass
+
+
 async def _run_subprocess(command: list[str], cwd: str | None = None) -> tuple[str, str, int]:
     proc = await asyncio.create_subprocess_exec(
         *command,
@@ -282,6 +412,34 @@ async def _run_subprocess(command: list[str], cwd: str | None = None) -> tuple[s
         stderr_bytes.decode("utf-8", errors="ignore"),
         proc.returncode or 0,
     )
+
+
+async def _run_subprocess_streaming(
+    command: list[str],
+    cwd: str | None,
+    on_line: Callable[[str], Awaitable[None]],
+) -> int:
+    """Run a subprocess streaming combined stdout/stderr line-by-line to ``on_line``."""
+    proc = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    assert proc.stdout is not None
+    while True:
+        chunk = await proc.stdout.readline()
+        if not chunk:
+            break
+        text = chunk.decode("utf-8", errors="ignore").rstrip("\r\n")
+        if not text:
+            continue
+        try:
+            await on_line(text)
+        except Exception:
+            pass
+    await proc.wait()
+    return proc.returncode or 0
 
 
 async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -> None:

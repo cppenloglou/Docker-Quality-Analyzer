@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -74,3 +74,39 @@ class JobRead(BaseModel):
     input_metadata: dict[str, Any]
     result: dict[str, Any] | None
     created_at: datetime
+
+
+class ResearchJobRead(BaseModel):
+    """Cross-tenant job row for authenticated research dashboard (see research router docstring)."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    type: str
+    status: str
+    input_metadata: dict[str, Any]
+    result: dict[str, Any] | None
+    created_at: datetime
+    score: int | None = None
+    grade: str | None = None
+
+
+class ResearchTimeBucket(BaseModel):
+    bucket_date: date
+    count: int
+
+
+class ResearchSummary(BaseModel):
+    total_jobs: int
+    count_by_type: dict[str, int]
+    count_by_status: dict[str, int]
+    jobs_last_7_days: int
+    avg_score: float | None = None
+    grade_distribution: dict[str, int]
+    daily_buckets: list[ResearchTimeBucket]
+
+
+class PaginatedResearchJobs(BaseModel):
+    items: list[ResearchJobRead]
+    total: int
+    limit: int
+    offset: int

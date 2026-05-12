@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Select, select
+from sqlalchemy import Date, Numeric, Select, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
@@ -110,3 +110,125 @@ class JobRepository:
         stmt = select(AnalysisJobModel).where(AnalysisJobModel.user_id == user_id).order_by(AnalysisJobModel.created_at.desc())
         rows = await self.session.scalars(stmt)
         return list(rows)
+
+    async def count_jobs_global(self) -> int:
+        stmt = select(func.count()).select_from(AnalysisJobModel)
+        result = await self.session.scalar(stmt)
+        return int(result or 0)
+
+    async def count_jobs_since(self, since: datetime) -> int:
+        stmt = select(func.count()).select_from(AnalysisJobModel).where(AnalysisJobModel.created_at >= since)
+        result = await self.session.scalar(stmt)
+        return int(result or 0)
+
+    async def aggregate_jobs_by_type(self) -> dict[str, int]:
+        stmt = select(AnalysisJobModel.type, func.count(AnalysisJobModel.id)).group_by(AnalysisJobModel.type)
+        rows = await self.session.execute(stmt)
+        return {row[0].value: int(row[1]) for row in rows.all()}
+
+    async def aggregate_jobs_by_status(self) -> dict[str, int]:
+        stmt = select(AnalysisJobModel.status, func.count(AnalysisJobModel.id)).group_by(AnalysisJobModel.status)
+        rows = await self.session.execute(stmt)
+        return {row[0].value: int(row[1]) for row in rows.all()}
+
+    async def daily_job_counts(self, since: datetime) -> list[tuple[datetime, int]]:
+        day_bucket = cast(func.date_trunc("day", AnalysisJobModel.created_at), Date)
+        stmt = (
+            select(day_bucket, func.count(AnalysisJobModel.id))
+            .where(AnalysisJobModel.created_at >= since)
+            .group_by(day_bucket)
+            .order_by(day_bucket)
+        )
+        rows = await self.session.execute(stmt)
+        return [(row[0], int(row[1])) for row in rows.all()]
+
+    async def avg_score_global(self) -> float | None:
+        score_txt = AnalysisJobModel.result["score"].astext
+        stmt = select(func.avg(cast(score_txt, Numeric))).where(
+            AnalysisJobModel.result.isnot(None),
+            score_txt.isnot(None),
+            score_txt != "",
+        )
+        val = await self.session.scalar(stmt)
+        if val is None:
+            return None
+        return float(val)
+
+    async def grade_distribution_global(self) -> dict[str, int]:
+        grade_txt = AnalysisJobModel.result["grade"].astext
+        stmt = (
+            select(grade_txt, func.count(AnalysisJobModel.id))
+            .where(AnalysisJobModel.result.isnot(None), grade_txt.isnot(None), grade_txt != "")
+            .group_by(grade_txt)
+        )
+        rows = await self.session.execute(stmt)
+        return {str(row[0]): int(row[1]) for row in rows.all()}
+
+    def _global_jobs_base_filter(
+        self,
+        *,
+        job_type: str | None,
+        status: str | None,
+        created_from: datetime | None,
+        created_to: datetime | None,
+    ) -> list:
+        clauses = []
+        if job_type is not None:
+            try:
+                jt = JobType(job_type)
+            except ValueError:
+                jt = None
+            if jt is not None:
+                clauses.append(AnalysisJobModel.type == jt)
+        if status is not None:
+            try:
+                st = JobStatus(status)
+            except ValueError:
+                st = None
+            if st is not None:
+                clauses.append(AnalysisJobModel.status == st)
+        if created_from is not None:
+            clauses.append(AnalysisJobModel.created_at >= created_from)
+        if created_to is not None:
+            clauses.append(AnalysisJobModel.created_at <= created_to)
+        return clauses
+
+    async def count_jobs_global_filtered(
+        self,
+        *,
+        job_type: str | None = None,
+        status: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> int:
+        clauses = self._global_jobs_base_filter(
+            job_type=job_type, status=status, created_from=created_from, created_to=created_to
+        )
+        stmt = select(func.count()).select_from(AnalysisJobModel)
+        if clauses:
+            stmt = stmt.where(and_(*clauses))
+        result = await self.session.scalar(stmt)
+        return int(result or 0)
+
+    async def list_jobs_global(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        job_type: str | None = None,
+        status: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> list[AnalysisJobModel]:
+        clauses = self._global_jobs_base_filter(
+            job_type=job_type, status=status, created_from=created_from, created_to=created_to
+        )
+        stmt: Select[tuple[AnalysisJobModel]] = select(AnalysisJobModel).order_by(AnalysisJobModel.created_at.desc())
+        if clauses:
+            stmt = stmt.where(and_(*clauses))
+        stmt = stmt.limit(limit).offset(offset)
+        rows = await self.session.scalars(stmt)
+        return list(rows)
+
+    async def get_job_global(self, job_id: uuid.UUID) -> AnalysisJobModel | None:
+        return await self.session.get(AnalysisJobModel, job_id)

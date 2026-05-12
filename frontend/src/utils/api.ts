@@ -74,6 +74,44 @@ export interface Job {
   created_at: string;
 }
 
+export interface ResearchJob {
+  id: string;
+  user_id: string;
+  type: JobType;
+  status: JobStatus;
+  input_metadata: Record<string, unknown> & {
+    filename?: string;
+    dockerfile_content?: string;
+    compose_content?: string;
+  };
+  result: Job["result"];
+  created_at: string;
+  score: number | null;
+  grade: string | null;
+}
+
+export interface ResearchTimeBucket {
+  bucket_date: string;
+  count: number;
+}
+
+export interface ResearchSummary {
+  total_jobs: number;
+  count_by_type: Record<string, number>;
+  count_by_status: Record<string, number>;
+  jobs_last_7_days: number;
+  avg_score: number | null;
+  grade_distribution: Record<string, number>;
+  daily_buckets: ResearchTimeBucket[];
+}
+
+export interface PaginatedResearchJobsResponse {
+  items: ResearchJob[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface JobEnqueueResponse {
   job_id: string;
   status: string;
@@ -83,18 +121,6 @@ export interface DeployStatusResponse {
   active: boolean;
   container_ids: string[];
   project_name: string | null;
-}
-
-export interface ApiKey {
-  id: string;
-  key_prefix: string;
-  created_at: string;
-}
-
-export interface ApiKeyCreated {
-  id: string;
-  key: string;
-  key_prefix: string;
 }
 
 export interface DomainEvent {
@@ -394,19 +420,6 @@ export const auth = {
   },
 };
 
-// ---------- api keys ----------
-export const apiKeys = {
-  async list(): Promise<ApiKey[]> {
-    return request<ApiKey[]>("/api/v1/users/me/api-keys");
-  },
-  async create(): Promise<ApiKeyCreated> {
-    return request<ApiKeyCreated>("/api/v1/users/me/api-keys", { method: "POST" });
-  },
-  async revoke(keyId: string): Promise<void> {
-    return request<void>(`/api/v1/users/me/api-keys/${keyId}`, { method: "DELETE" });
-  },
-};
-
 // ---------- jobs / history ----------
 export const jobs = {
   async list(): Promise<Job[]> {
@@ -420,6 +433,36 @@ export const jobs = {
   },
   async getEvents(jobId: string): Promise<Job> {
     return request<Job>(`/api/v1/users/me/jobs/${jobId}/events`);
+  },
+};
+
+export const research = {
+  async summary(chartDays = 90): Promise<ResearchSummary> {
+    const q = new URLSearchParams({ chart_days: String(chartDays) });
+    return request<ResearchSummary>(`/api/v1/research/summary?${q}`);
+  },
+  async jobs(params: {
+    limit?: number;
+    offset?: number;
+    job_type?: string;
+    status?: string;
+    created_after?: string;
+    created_before?: string;
+  }): Promise<PaginatedResearchJobsResponse> {
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set("limit", String(params.limit));
+    if (params.offset != null) q.set("offset", String(params.offset));
+    if (params.job_type) q.set("job_type", params.job_type);
+    if (params.status) q.set("status", params.status);
+    if (params.created_after) q.set("created_after", params.created_after);
+    if (params.created_before) q.set("created_before", params.created_before);
+    const suffix = q.toString();
+    return request<PaginatedResearchJobsResponse>(
+      `/api/v1/research/jobs${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  async get(jobId: string): Promise<ResearchJob> {
+    return request<ResearchJob>(`/api/v1/research/jobs/${jobId}`);
   },
 };
 

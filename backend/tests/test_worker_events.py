@@ -1,7 +1,12 @@
 import pytest
 import uuid
 
-from app.workers.tasks import run_compose_deploy, run_compose_stop
+from app.workers.tasks import (
+    _compose_up,
+    _stderr_suggests_host_port_publish_conflict,
+    run_compose_deploy,
+    run_compose_stop,
+)
 
 
 @pytest.mark.asyncio
@@ -55,8 +60,15 @@ async def test_run_compose_deploy_emits_expected_events(monkeypatch: pytest.Monk
         },
     )
     monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_state)
-    monkeypatch.setattr("app.workers.tasks._compose_up", lambda _spec: None)
-    monkeypatch.setattr("app.workers.tasks._compose_ps_ids", lambda _spec: ["web-123"])
+
+    async def fake_compose_up(_spec, **_kwargs):
+        return None
+
+    async def fake_compose_ps_ids(_spec):
+        return ["web-123"]
+
+    monkeypatch.setattr("app.workers.tasks._compose_up", fake_compose_up)
+    monkeypatch.setattr("app.workers.tasks._compose_ps_ids", fake_compose_ps_ids)
     monkeypatch.setattr("app.workers.tasks._stream_metrics", fake_stream)
     monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
 
@@ -72,7 +84,6 @@ async def test_run_compose_deploy_emits_expected_events(monkeypatch: pytest.Monk
 
     assert result["status"] == "deployment workflow acknowledged"
     event_names = [event.event_name for event in emitted_events]
-    assert "docker.image.pushed" in event_names
     assert "container.started" in event_names
     assert "container.metrics" in event_names
 
@@ -80,6 +91,158 @@ async def test_run_compose_deploy_emits_expected_events(monkeypatch: pytest.Monk
     metrics_event = next(event for event in emitted_events if event.event_name == "container.metrics")
     assert started_event.payload["container_id"] == "web-123"
     assert metrics_event.payload["container_id"] == "web-123"
+
+
+@pytest.mark.asyncio
+async def test_run_compose_deploy_clears_redis_when_compose_up_fails(monkeypatch: pytest.MonkeyPatch):
+    emitted_events = []
+    cleared: list[tuple[str, str]] = []
+    down_calls: list[tuple[str, bool]] = []
+
+    async def fake_publish(event):
+        emitted_events.append(event)
+
+    async def record_down(spec: dict, remove_volumes: bool):
+        down_calls.append((str(spec.get("project_name")), remove_volumes))
+
+    class FakeSessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            class _Job:
+                input_metadata = {"compose_content": "services: {web: {image: nginx:1.27}}"}
+
+            return _Job()
+
+    async def fake_clear(uid: str, jid: str):
+        cleared.append((uid, jid))
+
+    async def fake_set_deploy(*_a, **_k):
+        return None
+
+    monkeypatch.setattr("app.workers.tasks.SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr("app.workers.tasks.JobRepository", FakeRepo)
+    monkeypatch.setattr(
+        "app.workers.tasks._resolve_deploy_spec",
+        lambda _user, _job, _meta: {
+            "project_name": "dqa-proj",
+            "project_dir": "/tmp",
+            "compose_file": "/tmp/docker-compose.yml",
+        },
+    )
+    monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_deploy)
+
+    async def failing_compose_up(_spec, **_kwargs):
+        raise RuntimeError("docker-compose up failed: nope")
+
+    monkeypatch.setattr("app.workers.tasks._compose_up", failing_compose_up)
+    monkeypatch.setattr("app.workers.tasks._compose_down", record_down)
+    monkeypatch.setattr("app.workers.tasks._clear_deploy_state", fake_clear)
+    monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
+
+    user_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
+    with pytest.raises(RuntimeError, match="docker-compose up failed"):
+        await run_compose_deploy(
+            None,
+            {"user_id": user_id, "job_id": job_id, "run_stack": True},
+        )
+
+    assert cleared == [(user_id, job_id)]
+    assert down_calls == [("dqa-proj", False)]
+    assert [event.event_name for event in emitted_events] == [
+        "deploy.cleanup_started",
+        "deploy.cleanup_completed",
+        "user.analysis.failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypatch: pytest.MonkeyPatch):
+    emitted_events = []
+    cleared: list[tuple[str, str]] = []
+    down_calls: list[tuple[str, bool]] = []
+
+    async def fake_publish(event):
+        emitted_events.append(event)
+
+    async def record_down(spec: dict, remove_volumes: bool):
+        down_calls.append((str(spec.get("project_name")), remove_volumes))
+
+    class FakeSessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            class _Job:
+                input_metadata = {"compose_content": "services: {web: {image: nginx:1.27}}"}
+
+            return _Job()
+
+    async def fake_set_deploy(*_a, **_k):
+        return None
+
+    async def fake_compose_up(_spec, **_kwargs):
+        return None
+
+    async def fake_compose_ps_ids(_spec):
+        return ["web-123"]
+
+    async def failing_stream_metrics(_user_id: str, _job_id: str, _container_ids: list[str]):
+        raise RuntimeError("metrics failed after stack start")
+
+    async def fake_clear(uid: str, jid: str):
+        cleared.append((uid, jid))
+
+    monkeypatch.setattr("app.workers.tasks.SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr("app.workers.tasks.JobRepository", FakeRepo)
+    monkeypatch.setattr(
+        "app.workers.tasks._resolve_deploy_spec",
+        lambda _user, _job, _meta: {
+            "project_name": "dqa-proj",
+            "project_dir": "/tmp",
+            "compose_file": "/tmp/docker-compose.yml",
+        },
+    )
+    monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_deploy)
+    monkeypatch.setattr("app.workers.tasks._compose_up", fake_compose_up)
+    monkeypatch.setattr("app.workers.tasks._compose_ps_ids", fake_compose_ps_ids)
+    monkeypatch.setattr("app.workers.tasks._stream_metrics", failing_stream_metrics)
+    monkeypatch.setattr("app.workers.tasks._compose_down", record_down)
+    monkeypatch.setattr("app.workers.tasks._clear_deploy_state", fake_clear)
+    monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
+
+    user_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
+    with pytest.raises(RuntimeError, match="metrics failed"):
+        await run_compose_deploy(
+            None,
+            {"user_id": user_id, "job_id": job_id, "run_stack": True},
+        )
+
+    assert cleared == [(user_id, job_id)]
+    assert down_calls == [("dqa-proj", False)]
+    assert [event.event_name for event in emitted_events] == [
+        "container.started",
+        "deploy.cleanup_started",
+        "deploy.cleanup_completed",
+        "user.analysis.failed",
+    ]
 
 
 @pytest.mark.asyncio
@@ -109,7 +272,11 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
     monkeypatch.setattr("app.workers.tasks._get_deploy_state", fake_get_state)
     monkeypatch.setattr("app.workers.tasks._set_stop_requested", fake_set_stop)
     monkeypatch.setattr("app.workers.tasks._clear_deploy_state", fake_clear)
-    monkeypatch.setattr("app.workers.tasks._compose_down", lambda _state, _remove_volumes: None)
+
+    async def fake_compose_down(_state, _remove_volumes):
+        return None
+
+    monkeypatch.setattr("app.workers.tasks._compose_down", fake_compose_down)
 
     result = await run_compose_stop(
         None,
@@ -125,3 +292,68 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
     assert cleared_called["value"] is True
     event_names = [event.event_name for event in emitted_events]
     assert "container.stopped" in event_names
+
+
+def test_stderr_port_conflict_detection_covers_bind_and_userland_proxy():
+    assert _stderr_suggests_host_port_publish_conflict("port is already allocated")
+    assert _stderr_suggests_host_port_publish_conflict(
+        "failed to bind port 127.0.0.1:8025: bind: address already in use"
+    )
+    assert _stderr_suggests_host_port_publish_conflict(
+        "Error starting userland proxy: listen tcp4 127.0.0.1:8025: bind: address already in use"
+    )
+    assert _stderr_suggests_host_port_publish_conflict(
+        "driver failed programming external connectivity on endpoint foo"
+    )
+    assert not _stderr_suggests_host_port_publish_conflict("out of memory")
+
+
+@pytest.mark.asyncio
+async def test_compose_up_strips_ports_when_address_already_in_use(monkeypatch: pytest.MonkeyPatch):
+    subprocess_calls: list[tuple[tuple[str, ...], str | None]] = []
+
+    async def fake_stream(cmd: list[str], cwd: str | None, on_line):
+        subprocess_calls.append((tuple(cmd), cwd))
+        if len(subprocess_calls) == 1:
+            await on_line("failed to bind port 127.0.0.1:8025: bind: address already in use")
+            return 1
+        return 0
+
+    monkeypatch.setattr("app.workers.tasks._run_subprocess_streaming", fake_stream)
+    monkeypatch.setattr(
+        "app.workers.tasks._build_no_ports_compose",
+        lambda _spec: "/tmp/.dqa-no-publish.compose.yml",
+    )
+
+    await _compose_up(
+        {
+            "project_name": "dqa-testproj",
+            "project_dir": "/tmp",
+            "compose_file": "/tmp/compose.yml",
+        }
+    )
+
+    assert len(subprocess_calls) == 2
+    assert subprocess_calls[1][0][4] == "/tmp/.dqa-no-publish.compose.yml"
+
+
+@pytest.mark.asyncio
+async def test_compose_up_no_fallback_on_unrelated_error(monkeypatch: pytest.MonkeyPatch):
+    calls: list[int] = []
+
+    async def fake_stream(_cmd: list[str], cwd: str | None, on_line):
+        calls.append(1)
+        await on_line("something else went wrong")
+        return 1
+
+    monkeypatch.setattr("app.workers.tasks._run_subprocess_streaming", fake_stream)
+
+    with pytest.raises(RuntimeError, match="docker-compose up failed"):
+        await _compose_up(
+            {
+                "project_name": "dqa-x",
+                "project_dir": "/tmp",
+                "compose_file": "/tmp/c.yml",
+            }
+        )
+    assert len(calls) == 1

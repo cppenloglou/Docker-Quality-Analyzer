@@ -20,6 +20,9 @@ import {
 import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
+import { MotionPage, AnimatedNumber, StaggerList, StaggerItem } from "../components/motion";
+import { motion, useReducedMotion } from "motion/react";
+import { scoreVariants, scoreTransition, badgePopVariants, badgePopTransition } from "../components/motion/variants";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -78,6 +81,7 @@ export function ResultsDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const ready = useMinLoader(!loading);
+  const reducedMotion = useReducedMotion();
   const [error, setError] = useState<string | null>(null);
   const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping">(() => {
     const stored = sessionStorage.getItem("dqa:containerStatus");
@@ -253,12 +257,12 @@ export function ResultsDashboard() {
 
   const handleExport = () => {
     if (!job) return;
-    const payload = JSON.stringify(job, null, 2);
-    const blob = new Blob([payload], { type: "application/json" });
+    const markdown = buildMarkdownReport(job, result, uploadedFile);
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `analysis-${job.id}.json`;
+    anchor.download = `analysis-${job.id}.md`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
@@ -315,7 +319,7 @@ export function ResultsDashboard() {
             </h2>
             <p className="text-red-200 mb-4">{failureMessage}</p>
             <Button onClick={handleExport} variant="outline">
-              <Download className="w-4 h-4 mr-2" /> Export Job JSON
+              <Download className="w-4 h-4 mr-2" /> Export Report (Markdown)
             </Button>
           </Card>
         </div>
@@ -342,6 +346,7 @@ export function ResultsDashboard() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
           <Button
@@ -371,7 +376,7 @@ export function ResultsDashboard() {
                 className="border-slate-700 text-slate-300 hover:bg-slate-800"
               >
                 <Download className="w-4 h-4 mr-2" />
-                Export Report
+                Export Report (Markdown)
               </Button>
               {(isComposeJob || isProjectJob) && containerStatus === "stopped" && (
                 <Button
@@ -394,7 +399,7 @@ export function ResultsDashboard() {
                     onClick={handleRunContainers}
                     className="bg-emerald-600 hover:bg-emerald-700"
                   >
-                    🏃🏿 Inspect your Containers
+                    Inspect your Containers
                     <Loader2 className="w-3 h-3 ml-2 animate-spin" />
                   </Button>
                   <Button
@@ -418,11 +423,17 @@ export function ResultsDashboard() {
         </div>
 
         <Card className="p-6 bg-slate-900 border-slate-800 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            <div className="md:col-span-2 flex items-center gap-4">
-              <div className="text-center">
+          <StaggerList className="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <StaggerItem className="md:col-span-2 flex items-center gap-4">
+              <motion.div
+                className="text-center"
+                initial="initial"
+                animate="animate"
+                variants={reducedMotion ? undefined : scoreVariants}
+                transition={reducedMotion ? undefined : scoreTransition}
+              >
                 <div className={`text-6xl font-bold ${scoreColor(result.score)}`}>
-                  {result.score}
+                  <AnimatedNumber value={result.score} />
                 </div>
                 <div className="text-slate-400 text-sm mt-1">Quality Score</div>
                 {result.line_count && (
@@ -430,12 +441,20 @@ export function ResultsDashboard() {
                     {result.line_count} lines analyzed
                   </div>
                 )}
-              </div>
-              <Badge className={`text-2xl px-4 py-2 ${gradeColor(result.grade)}`}>
-                Grade {result.grade}
-              </Badge>
-            </div>
+              </motion.div>
+              <motion.div
+                initial="initial"
+                animate="animate"
+                variants={reducedMotion ? undefined : badgePopVariants}
+                transition={reducedMotion ? undefined : badgePopTransition}
+              >
+                <Badge className={`text-2xl px-4 py-2 ${gradeColor(result.grade)}`}>
+                  Grade {result.grade}
+                </Badge>
+              </motion.div>
+            </StaggerItem>
 
+            <StaggerItem>
             <Card className="p-4 bg-slate-950 border-slate-700 flex items-center gap-3">
               <div className="p-2 bg-red-500/10 rounded">
                 <AlertCircle className="w-5 h-5 text-red-400" />
@@ -447,7 +466,9 @@ export function ResultsDashboard() {
                 <div className="text-sm text-slate-400">Errors</div>
               </div>
             </Card>
+            </StaggerItem>
 
+            <StaggerItem>
             <Card className="p-4 bg-slate-950 border-slate-700 flex items-center gap-3">
               <div className="p-2 bg-yellow-500/10 rounded">
                 <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -459,7 +480,9 @@ export function ResultsDashboard() {
                 <div className="text-sm text-slate-400">Warnings</div>
               </div>
             </Card>
+            </StaggerItem>
 
+            <StaggerItem>
             <Card className="p-4 bg-slate-950 border-slate-700 flex items-center gap-3">
               <div className="p-2 bg-orange-500/10 rounded">
                 <Shield className="w-5 h-5 text-orange-400" />
@@ -471,7 +494,8 @@ export function ResultsDashboard() {
                 <div className="text-sm text-slate-400">Security</div>
               </div>
             </Card>
-          </div>
+            </StaggerItem>
+          </StaggerList>
         </Card>
 
         {estimate && (
@@ -696,8 +720,140 @@ export function ResultsDashboard() {
           </div>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
+}
+
+function escapeMarkdownCell(value: string | number | undefined | null): string {
+  if (value === null || value === undefined) return "";
+  return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
+function issueTable(rows: Issue[]): string {
+  if (rows.length === 0) return "_None_\n";
+  const header =
+    "| Line | Code | Severity | Message | Suggestion | Docs |\n" +
+    "| --- | --- | --- | --- | --- | --- |\n";
+  const body = rows
+    .map(
+      (issue) =>
+        `| ${escapeMarkdownCell(issue.line)} | ${escapeMarkdownCell(issue.code)} | ${escapeMarkdownCell(issue.severity)} | ${escapeMarkdownCell(issue.message)} | ${escapeMarkdownCell(issue.suggestion ?? "")} | ${escapeMarkdownCell(issue.doc_url ?? "")} |`,
+    )
+    .join("\n");
+  return `${header}${body}\n`;
+}
+
+function detectSourceLanguage(jobType: string, filename: string | null): string {
+  if (jobType === "compose" || jobType === "project") return "yaml";
+  const lower = (filename ?? "").toLowerCase();
+  if (lower.endsWith(".yml") || lower.endsWith(".yaml")) return "yaml";
+  return "dockerfile";
+}
+
+function buildMarkdownReport(
+  job: Job,
+  result: AnalysisResult | null,
+  uploadedFile: UploadedFile | null,
+): string {
+  const meta = (job.input_metadata ?? {}) as Record<string, unknown>;
+  const filename =
+    (meta.filename as string | undefined) ?? uploadedFile?.name ?? job.id;
+  const sourceContent =
+    (meta.dockerfile_content as string | undefined) ??
+    (meta.compose_content as string | undefined) ??
+    uploadedFile?.content ??
+    "";
+  const language = detectSourceLanguage(job.type, filename);
+
+  const errors = result?.errors ?? [];
+  const warnings = result?.warnings ?? [];
+  const suggestions = result?.suggestions ?? [];
+  const security = result?.securityIssues ?? [];
+  const allIssues: Issue[] = [...errors, ...warnings, ...suggestions, ...security];
+
+  const lines: string[] = [];
+  lines.push(`# Analysis Report - ${filename}`);
+  lines.push("");
+  lines.push("## Metadata");
+  lines.push("");
+  lines.push(`- **Job ID:** \`${job.id}\``);
+  lines.push(`- **Job Type:** \`${job.type}\``);
+  lines.push(`- **Status:** \`${job.status}\``);
+  if (result) {
+    lines.push(`- **Score:** ${result.score}`);
+    lines.push(`- **Grade:** ${result.grade}`);
+    lines.push(
+      `- **Counts:** ${errors.length} errors, ${warnings.length} warnings, ${suggestions.length} suggestions, ${security.length} security`,
+    );
+  } else {
+    lines.push("- **Result:** _not available_");
+  }
+  lines.push("");
+
+  lines.push("## Source File");
+  lines.push("");
+  lines.push(`File: \`${filename}\``);
+  lines.push("");
+  if (sourceContent) {
+    lines.push("```" + language);
+    lines.push(sourceContent.replace(/```/g, "``\u200b`"));
+    lines.push("```");
+  } else {
+    lines.push("_Source file content not embedded in this report._");
+  }
+  lines.push("");
+
+  if (result) {
+    lines.push("## Issues");
+    lines.push("");
+    lines.push("### Errors");
+    lines.push("");
+    lines.push(issueTable(errors));
+    lines.push("### Warnings");
+    lines.push("");
+    lines.push(issueTable(warnings));
+    lines.push("### Suggestions");
+    lines.push("");
+    lines.push(issueTable(suggestions));
+    lines.push("### Security");
+    lines.push("");
+    lines.push(issueTable(security));
+  }
+
+  lines.push("## LLM Prompt");
+  lines.push("");
+  lines.push(
+    "Paste the following block into an LLM chat to get a fixed version of the file above.",
+  );
+  lines.push("");
+  lines.push("```text");
+  lines.push(
+    `You are a Docker / container best-practices expert. Apply the following fixes to the ${language} source file shown in the "Source File" section above.`,
+  );
+  lines.push("");
+  lines.push("Requirements:");
+  lines.push("- Output ONLY the modified file contents in a single fenced code block.");
+  lines.push("- Preserve unrelated formatting and comments where possible.");
+  lines.push("- Resolve every issue listed below; if a fix is ambiguous, choose the safest production-ready option and add a brief comment.");
+  lines.push("- Do not invent services, images, or environment variables that are not implied by the original file.");
+  lines.push("");
+  lines.push("Issues to fix:");
+  if (allIssues.length === 0) {
+    lines.push("- No issues were detected; return the source file unchanged.");
+  } else {
+    for (const issue of allIssues) {
+      const docPart = issue.doc_url ? ` (docs: ${issue.doc_url})` : "";
+      const suggestionPart = issue.suggestion ? ` Suggested fix: ${issue.suggestion}` : "";
+      lines.push(
+        `- [line ${issue.line}] [${issue.severity.toUpperCase()} ${issue.code}] ${issue.message}.${suggestionPart}${docPart}`,
+      );
+    }
+  }
+  lines.push("```");
+  lines.push("");
+
+  return lines.join("\n");
 }
 
 function renderIssues(issues: Issue[]) {

@@ -43,4 +43,4 @@ Worker uses `DOCKER_HOST=tcp://dind:2375` to reach an isolated DinD sidecar. All
 
 ## Frontend
 
-React 19 SPA (`frontend/src/`). Pages in `src/pages/`, components in `src/components/`, Radix-based primitives in `src/components/ui/`. All API calls go through `src/utils/api.ts`. Auth context in `src/auth/AuthProvider.tsx`.
+React 19 SPA (`frontend/src/`). Pages in `src/pages/`, shared UI in `src/components/`, Radix-based primitives in `src/components/ui/`. **API:** only through `src/utils/api.ts` (`jobs`, `dockerfile`, `compose`, `project`, `research`, `auth`, `ws`, …). **Auth:** `src/auth/AuthProvider.tsx`. **Styling:** Tailwind v4 + CSS variables; prefer semantic tokens (`bg-card`, `text-foreground`, `border-border`) and the conventions in `.cursor/rules/frontend-styling.mdc` (contrast, native selects, charts).

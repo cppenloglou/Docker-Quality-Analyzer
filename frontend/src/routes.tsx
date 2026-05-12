@@ -97,6 +97,20 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: "research",
+        hydrateFallbackElement: routeHydrateFallbackElement,
+        lazy: async () => {
+          const m = await import("./pages/ResearchAnalytics");
+          return {
+            Component: () => (
+              <RequireAuth>
+                <m.ResearchAnalytics />
+              </RequireAuth>
+            ),
+          };
+        },
+      },
+      {
         path: "history",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
@@ -133,20 +147,6 @@ export const router = createBrowserRouter([
             Component: () => (
               <RequireAuth>
                 <m.Monitoring />
-              </RequireAuth>
-            ),
-          };
-        },
-      },
-      {
-        path: "settings/api-keys",
-        hydrateFallbackElement: routeHydrateFallbackElement,
-        lazy: async () => {
-          const m = await import("./pages/ApiKeys");
-          return {
-            Component: () => (
-              <RequireAuth>
-                <m.ApiKeys />
               </RequireAuth>
             ),
           };

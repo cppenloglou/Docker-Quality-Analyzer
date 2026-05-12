@@ -28,6 +28,8 @@ import { Button } from "../components/ui/button";
 import { DockerLoader } from "../components/DockerLoader";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
 import { useAuth } from "../auth/AuthProvider";
+import { MotionPage, StaggerList, StaggerItem } from "../components/motion";
+import { motion } from "motion/react";
 import {
   compose as composeApi,
   ws,
@@ -257,6 +259,7 @@ export function Monitoring() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="w-full max-w-[1600px] mx-auto px-2">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -314,7 +317,8 @@ export function Monitoring() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+        <StaggerList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+          <StaggerItem>
           <Card className="p-2.5 bg-slate-900 border-slate-800">
             <div className="flex items-center gap-1.5 mb-1">
               <Cpu className="w-3.5 h-3.5 text-emerald-400" />
@@ -324,6 +328,8 @@ export function Monitoring() {
               {latest?.cpuPercent != null ? `${latest.cpuPercent}` : "-"}
             </div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-2.5 bg-slate-900 border-slate-800">
             <div className="flex items-center gap-1.5 mb-1">
               <MemoryStick className="w-3.5 h-3.5 text-purple-400" />
@@ -333,6 +339,8 @@ export function Monitoring() {
               {latestPayload?.memory_bytes != null ? `${latestPayload.memory_bytes}` : "-"}
             </div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-2.5 bg-slate-900 border-slate-800">
             <div className="flex items-center gap-1.5 mb-1">
               <Network className="w-3.5 h-3.5 text-cyan-400" />
@@ -342,6 +350,8 @@ export function Monitoring() {
               {netTotals?.rx_bytes ?? "-"} / {netTotals?.tx_bytes ?? "-"}
             </div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-2.5 bg-slate-900 border-slate-800">
             <div className="flex items-center gap-1.5 mb-1">
               <Database className="w-3.5 h-3.5 text-orange-400" />
@@ -351,6 +361,8 @@ export function Monitoring() {
               {ioStats?.read_bytes ?? "-"} / {ioStats?.write_bytes ?? "-"}
             </div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-2.5 bg-slate-900 border-slate-800">
             <div className="flex items-center gap-1.5 mb-1">
               <HardDrive className="w-3.5 h-3.5 text-lime-400" />
@@ -360,16 +372,26 @@ export function Monitoring() {
               {typeof pids?.current === "number" ? pids.current : "-"}
             </div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-2.5 bg-slate-900 border-slate-800">
             <div className="flex items-center gap-1.5 mb-1">
               <Server className="w-3.5 h-3.5 text-indigo-400" />
               <span className="text-xs text-slate-400">Status</span>
             </div>
-            <div className="text-xs text-slate-300 font-mono">
+            <div className="flex items-center gap-1.5 text-xs text-slate-300 font-mono">
+              {currentState?.connected && (
+                <motion.span
+                  className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"
+                  animate={{ scale: [1, 1.4, 1], opacity: [0.7, 1, 0.7] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                />
+              )}
               {container?.status ?? "-"} / {container?.health_status ?? "-"}
             </div>
           </Card>
-        </div>
+          </StaggerItem>
+        </StaggerList>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mb-3">
           <Card className="p-3 bg-slate-900 border-slate-800">
@@ -494,6 +516,7 @@ export function Monitoring() {
           maxHeight="200px"
         />
       </div>
+      </MotionPage>
     </Layout>
   );
 }

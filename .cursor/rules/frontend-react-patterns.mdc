@@ -1,48 +1,68 @@
 ---
-description: React component patterns — exports, auth, API calls, state management, WebSocket lifecycle
+description: React patterns — exports, auth, api.ts clients, state, WS, forms, a11y
 globs: frontend/src/**/*.tsx
 alwaysApply: false
 ---
 
 # React Patterns
 
-## Component Exports
+## Component exports
 
-- **Named exports only**: `export function ComponentName() { ... }`
-- **No default exports** except `App.tsx`.
-- Function declarations for components, inline arrow functions for handlers.
+- **Named exports only**: `export function ComponentName() { … }`
+- **Default export** only for `App.tsx`.
+- Prefer function components; handlers as inline arrows or named functions inside the component.
 
 ## Auth
 
-- Access auth state via `useAuth()` hook from `src/auth/AuthProvider.tsx`.
-- Protect routes with `<RequireAuth>` wrapper in route definitions.
-- `isBooting` flag is true during initial `/auth/me` validation — show `DockerLoader` while waiting.
+- `useAuth()` from `src/auth/AuthProvider.tsx`.
+- Routes wrapped with `<RequireAuth>` in `routes.tsx`.
+- While `isBooting`, show `DockerLoader` (same as token validation).
 
-## API Calls
+## API layer (`src/utils/api.ts`)
 
-All HTTP calls go through namespaced objects in `src/utils/api.ts`:
+All HTTP goes through exported clients—**never** raw `fetch()` in pages/components.
 
 ```typescript
-const result = await api.dockerfile.analyze(file);
-const jobs = await api.jobs.list();
-await api.compose.deploy(payload);
+import { jobs, dockerfile, compose, project, research } from "../utils/api";
+
+const list = await jobs.list();
+const job = await jobs.get(jobId);
+await dockerfile.analyze(file);
+await compose.deploy({ job_id: id, run_stack: true });
+await research.summary(90);
+await research.jobs({ limit: 20, offset: 0 });
 ```
 
-Never call `fetch()` directly — `api.ts` handles auth headers, token refresh, and error parsing.
+Also exported: `auth`, `project`, `ws`, `checkHealth`, shared types (`Job`, `ApiError`, etc.).
 
-## WebSocket Lifecycle
+## WebSocket
 
-- Store socket in `useRef` to survive re-renders.
-- Open in `useEffect`, close in the cleanup return.
-- Auth token passed as `?token=` query parameter.
+- Hold socket in `useRef`.
+- Open in `useEffect`, close in cleanup.
+- Pass JWT as `?token=` when connecting (see existing monitoring/progress pages).
 
-## State Management
+## State
 
-- **No Redux/Zustand** — React Context for auth only, `useState` for everything else.
-- **Cross-page data**: `sessionStorage` (uploaded files, job IDs, execution state).
-- **Durable data**: `localStorage` (auth tokens via `dpa_` prefix, notifications via `dqa:` prefix).
-- **URL params**: `jobId` via query params between pages; `containerId` via path params.
+- **No Redux/Zustand** — auth via Context; local state via `useState`.
+- **sessionStorage**: uploads, job IDs, execution flow.
+- **localStorage**: auth (`dpa_*`), notifications (`dqa:` prefix).
+- **URL**: `jobId` query; `containerId` route params where applicable.
 
-## Pages
+## Pages & layout
 
-Every authenticated page wraps content in `<Layout>`. Login/Register render standalone.
+- Authenticated flows wrap content in `<Layout>` (standalone: Login/Register).
+
+## Forms & native controls
+
+- **Labels**: visible, `htmlFor` matched to control `id`; spacing **`gap-3`** between label group and input/select.
+- **Selects**: prefer **`NativeSelectField`** (`components/ui/native-select.tsx`).
+- **Keyboard**: modals/dialogs—Escape closes, focus returns to trigger; trap Tab within dialog content when practical.
+
+## Overlays (modals)
+
+- `role="dialog"`, `aria-modal="true"`, `aria-labelledby` pointing at title `id`.
+- Provide visible **Close** + backdrop click policy consistent with existing pages.
+
+## Charts
+
+- Use **Recharts** where needed; follow styling rule: **`currentColor`** ticks/grid inside a tinted wrapper—do not rely on SVG `var(--muted-foreground)` alone for axis labels.

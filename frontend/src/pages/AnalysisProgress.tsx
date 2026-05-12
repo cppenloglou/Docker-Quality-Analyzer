@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { Layout } from "../components/Layout";
 import { ProgressStep } from "../components/ProgressStep";
+import { MotionPage } from "../components/motion";
 import { Card } from "../components/ui/card";
 import { Progress } from "../components/ui/progress";
 import { Button } from "../components/ui/button";
@@ -304,6 +305,7 @@ export function AnalysisProgress() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">
@@ -379,6 +381,7 @@ export function AnalysisProgress() {
           </Card>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }

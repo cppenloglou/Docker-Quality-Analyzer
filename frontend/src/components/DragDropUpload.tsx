@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 import { Upload, FileCode } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { Button } from "./ui/button";
 import type { DockerFileKind } from "../utils/fileType";
+import { dragActiveVariants, dragActiveTransition } from "./motion/variants";
 
 interface DragDropUploadProps {
   onFileSelect: (file: File, hint?: DockerFileKind) => void;
@@ -13,6 +15,7 @@ const DROP_ACCEPT = `${DOCKERFILE_ACCEPT},${COMPOSE_ACCEPT}`;
 
 export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const reducedMotion = useReducedMotion();
   const dockerfileInputRef = useRef<HTMLInputElement>(null);
   const composeInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,27 +48,37 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
     };
 
   return (
-    <div
+    <motion.div
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      animate={isDragging ? "active" : "idle"}
+      variants={reducedMotion ? undefined : dragActiveVariants}
+      transition={dragActiveTransition}
       className={`
-        border-2 border-dashed rounded-lg p-12 transition-all duration-200
+        border-2 border-dashed rounded-lg p-12
         ${
           isDragging
-            ? "border-blue-500 bg-blue-500/5 scale-[1.02]"
-            : "border-slate-700 bg-slate-900/50 hover:border-slate-600"
+            ? "border-blue-500 bg-blue-500/5"
+            : "border-slate-700 bg-slate-900/50 hover:border-slate-600 motion-safe:transition-[border-color,background-color] motion-safe:duration-200"
         }
       `}
     >
       <div className="flex flex-col items-center gap-4 text-center">
-        <div
+        <motion.div
+          animate={isDragging ? { scale: 1.1 } : { scale: 1 }}
+          transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
           className={`p-4 rounded-full ${isDragging ? "bg-blue-500/20" : "bg-slate-800"}`}
         >
+          <motion.div
+            animate={isDragging ? { y: [-3, 0, -3] } : { y: 0 }}
+            transition={isDragging ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
+          >
           <Upload
             className={`w-8 h-8 ${isDragging ? "text-blue-400" : "text-slate-400"}`}
           />
-        </div>
+          </motion.div>
+        </motion.div>
 
         <div>
           <h3 className="text-lg font-medium text-white mb-2">
@@ -116,6 +129,6 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
           tabIndex={-1}
         />
       </div>
-    </div>
+    </motion.div>
   );
 }

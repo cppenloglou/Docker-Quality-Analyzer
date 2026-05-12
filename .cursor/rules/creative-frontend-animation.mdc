@@ -1,0 +1,44 @@
+---
+description: Motion & animation — prefer CSS + Tailwind; optional libraries only when installed
+globs: frontend/src/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# Frontend Motion & Animation
+
+## Default stack (this repo)
+
+The SPA ships **without** Motion, GSAP, R3F, Rive, or Lottie in `package.json` unless someone adds them.
+
+**Default tools:**
+
+- **Tailwind** transitions: `transition-[colors,opacity,…]`, `duration-200`, `ease-out`.
+- **`motion-safe:`** / **`motion-reduce:`** (and `motion-reduce:animate-none`) for accessibility.
+- **CSS** `@keyframes` only when necessary.
+
+Do **not** import Motion/GSAP/R3F/Rive/Lottie unless the dependency exists and the user asked for that stack.
+
+## When adding a heavy library
+
+Choose by need:
+
+| Need | Library |
+|------|---------|
+| Micro-interactions, gestures, layout transitions | **Motion** (formerly Framer Motion)—add dependency first |
+| Timelines, ScrollTrigger, SVG morph | **GSAP** |
+| WebGL / 3D | **React Three Fiber** |
+| Designer-export loops | **Lottie** / **dotLottie** |
+| Stateful vector mascots | **Rive** |
+
+## Performance
+
+- Prefer **transform** and **opacity** over layout properties (`width`, `height`, `top`, `margin`).
+- Avoid **`transition-all`**—list properties explicitly.
+- Use **`will-change` sparingly** and only during active animation.
+- Respect **`prefers-reduced-motion`**.
+- Lazy-load heavy animation modules/routes.
+
+## Design
+
+- Motion supports hierarchy and feedback; it should not obstruct readability or contrast (see `frontend-styling.mdc`).
+- Glassmorphism / heavy gradients only when they aid comprehension—not as default chrome.

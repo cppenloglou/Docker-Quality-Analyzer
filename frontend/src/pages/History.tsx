@@ -16,6 +16,7 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { ApiError, compose as composeApi, jobs as jobsApi, type Job } from "../utils/api";
+import { MotionPage, StaggerList, StaggerItem, MotionCard } from "../components/motion";
 
 interface HistoryItem {
   id: string;
@@ -188,6 +189,7 @@ export function History() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-5xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">
@@ -198,32 +200,40 @@ export function History() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <StaggerList className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-white">
               {historyItems.length}
             </div>
             <div className="text-sm text-slate-400">Total jobs</div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-green-400">
               {historyItems.filter((item) => (item.score ?? 0) >= 80).length}
             </div>
             <div className="text-sm text-slate-400">Grade A</div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-white">
               {averageScore ?? "-"}
             </div>
             <div className="text-sm text-slate-400">Average score</div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-blue-400">
               {historyItems.filter((item) => item.jobType === "compose").length}
             </div>
             <div className="text-sm text-slate-400">Compose jobs</div>
           </Card>
-        </div>
+          </StaggerItem>
+        </StaggerList>
 
         {!ready && (
           <DockerLoader message="Loading your job history..." fullScreen={false} />
@@ -254,12 +264,16 @@ export function History() {
         )}
 
         {ready && historyItems.length > 0 && (
-          <div className="space-y-3">
+          <StaggerList className="space-y-3">
             {historyItems.map((item) => (
+              <StaggerItem key={item.id}>
+              <MotionCard
+                noHover
+                className="rounded-xl"
+              >
               <Card
-                key={item.id}
                 onClick={() => openJob(item)}
-                className="p-5 bg-slate-900 border-slate-800 hover:border-slate-700 transition-all cursor-pointer group"
+                className="p-5 bg-slate-900 border-slate-800 hover:border-slate-700 transition-colors cursor-pointer group"
               >
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-start gap-4 flex-1 min-w-0">
@@ -335,10 +349,13 @@ export function History() {
                   </div>
                 </div>
               </Card>
+              </MotionCard>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerList>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }

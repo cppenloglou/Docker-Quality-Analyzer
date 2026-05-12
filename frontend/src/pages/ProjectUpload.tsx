@@ -14,6 +14,7 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { ApiError, project } from "../utils/api";
+import { MotionPage } from "../components/motion";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -72,6 +73,7 @@ export function ProjectUpload() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <Button
@@ -186,6 +188,7 @@ export function ProjectUpload() {
           </Card>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }
