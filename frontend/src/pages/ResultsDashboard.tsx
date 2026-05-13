@@ -45,8 +45,8 @@ import {
   type Issue,
   type Job,
   type PerFileAnalysisResult,
+  type ProjectAnalysisResult,
   type ServiceBuildMapping,
-  type ProjectSummary,
 } from "../utils/api";
 import { pushNotification } from "../utils/notifications";
 
@@ -74,6 +74,17 @@ function isAnalysisResult(value: unknown): value is AnalysisResult {
     typeof value === "object" &&
     Array.isArray((value as { errors?: unknown }).errors) &&
     Array.isArray((value as { warnings?: unknown }).warnings)
+  );
+}
+
+function isProjectAnalysisResult(value: unknown): value is ProjectAnalysisResult {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    Array.isArray(v.per_file_results) &&
+    !!v.project_summary &&
+    typeof v.project_summary === "object" &&
+    (typeof v.score === "number" || typeof v.overall_score === "number")
   );
 }
 
@@ -188,32 +199,62 @@ export function ResultsDashboard() {
     return () => { cancelled = true; };
   }, [job]);
 
-  const result = useMemo<AnalysisResult | null>(() => {
+  const standardResult = useMemo<AnalysisResult | null>(() => {
     if (!job?.result) return null;
     return isAnalysisResult(job.result) ? job.result : null;
   }, [job]);
 
+  const projectResult = useMemo<ProjectAnalysisResult | null>(() => {
+    if (!job?.result) return null;
+    return isProjectAnalysisResult(job.result) ? job.result : null;
+  }, [job]);
+
   const failureMessage = useMemo(() => {
-    if (!job || isAnalysisResult(job.result)) return null;
+    if (!job) return null;
+    if (isAnalysisResult(job.result) || isProjectAnalysisResult(job.result)) return null;
     const r = job.result as { message?: string } | null;
     return r?.message ?? null;
   }, [job]);
 
   const highlightedLines = useMemo(() => {
-    if (!result) return [] as number[];
+    if (!standardResult) return [] as number[];
     return [
-      ...result.errors.map((e) => e.line),
-      ...result.warnings.map((w) => w.line),
-      ...result.securityIssues.map((s) => s.line),
+      ...standardResult.errors.map((e) => e.line),
+      ...standardResult.warnings.map((w) => w.line),
+      ...standardResult.securityIssues.map((s) => s.line),
     ];
-  }, [result]);
+  }, [standardResult]);
 
   const isComposeJob = job?.type === "compose";
   const isProjectJob = job?.type === "project";
-  const runnability = result?.meta?.runnability;
-  const estimate = result?.meta?.estimate;
+
+  const runnability = useMemo(() => {
+    if (standardResult?.meta?.runnability) return standardResult.meta.runnability;
+    if (projectResult?.meta?.runnability) return projectResult.meta.runnability;
+    if (projectResult) {
+      const mappings = projectResult.service_mappings ?? [];
+      if (mappings.length === 0) return undefined;
+      const allCanRun = mappings.every(m => m.can_run && m.issues.length === 0);
+      return {
+        runnable: allCanRun,
+        reasons: allCanRun
+          ? []
+          : mappings.flatMap(m => m.issues.map(issue => `[${m.service}] ${issue}`)),
+      };
+    }
+    return undefined;
+  }, [standardResult, projectResult]);
+
+  const estimate = standardResult?.meta?.estimate;
   const composeRunnable =
     (isComposeJob || isProjectJob) && runnability?.runnable === true;
+
+  const displayScore = projectResult?.overall_score ?? projectResult?.score ?? standardResult?.score;
+  const displayGrade = projectResult?.overall_grade ?? projectResult?.grade ?? standardResult?.grade;
+
+  const errorCount = projectResult?.project_summary?.total_errors ?? standardResult?.errors.length ?? 0;
+  const warningCount = projectResult?.project_summary?.total_warnings ?? standardResult?.warnings.length ?? 0;
+  const securityCount = projectResult?.project_summary?.total_security_issues ?? standardResult?.securityIssues.length ?? 0;
 
   const detectedFiles = useMemo(() => {
     const meta = job?.input_metadata ?? {};
@@ -265,7 +306,7 @@ export function ResultsDashboard() {
 
   const handleExport = () => {
     if (!job) return;
-    const markdown = buildMarkdownReport(job, result, uploadedFile);
+    const markdown = buildMarkdownReport(job, standardResult, projectResult, uploadedFile);
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -335,17 +376,34 @@ export function ResultsDashboard() {
     );
   }
 
-  if (!result) {
+  if (!standardResult && !projectResult) {
+    const hasUnknownResult = job.status === "done" && !!job.result;
     return (
       <Layout>
         <div className="max-w-3xl mx-auto">
           <Card className="p-6 bg-slate-900 border-slate-800 text-slate-300">
-            <p className="mb-4">
-              Job {job.id} is {job.status}. Results are not yet available.
-            </p>
-            <Button onClick={() => navigate(`/analysis?jobId=${job.id}`)}>
-              Watch progress
-            </Button>
+            {hasUnknownResult ? (
+              <>
+                <p className="mb-2 font-medium text-white">
+                  Results were returned, but this result format is not supported by the dashboard yet.
+                </p>
+                <p className="text-xs text-slate-500 mb-4">
+                  The backend returned a result object, but the dashboard type guard did not recognize its shape.
+                </p>
+                <Button onClick={handleExport} variant="outline">
+                  <Download className="w-4 h-4 mr-2" /> Export Report (Markdown)
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="mb-4">
+                  Job {job.id} is {job.status}. Results are not yet available.
+                </p>
+                <Button onClick={() => navigate(`/analysis?jobId=${job.id}`)}>
+                  Watch progress
+                </Button>
+              </>
+            )}
           </Card>
         </div>
       </Layout>
@@ -440,13 +498,13 @@ export function ResultsDashboard() {
                 variants={reducedMotion ? undefined : scoreVariants}
                 transition={reducedMotion ? undefined : scoreTransition}
               >
-                <div className={`text-6xl font-bold ${scoreColor(result.score)}`}>
-                  <AnimatedNumber value={result.score} />
+                <div className={`text-6xl font-bold ${scoreColor(displayScore ?? 0)}`}>
+                  <AnimatedNumber value={displayScore ?? 0} />
                 </div>
                 <div className="text-slate-400 text-sm mt-1">Quality Score</div>
-                {result.line_count && (
+                {standardResult?.line_count && (
                   <div className="text-xs text-slate-500 mt-0.5">
-                    {result.line_count} lines analyzed
+                    {standardResult.line_count} lines analyzed
                   </div>
                 )}
               </motion.div>
@@ -456,8 +514,8 @@ export function ResultsDashboard() {
                 variants={reducedMotion ? undefined : badgePopVariants}
                 transition={reducedMotion ? undefined : badgePopTransition}
               >
-                <Badge className={`text-2xl px-4 py-2 ${gradeColor(result.grade)}`}>
-                  Grade {result.grade}
+                <Badge className={`text-2xl px-4 py-2 ${gradeColor(displayGrade ?? "-")}`}>
+                  Grade {displayGrade ?? "-"}
                 </Badge>
               </motion.div>
             </StaggerItem>
@@ -469,7 +527,7 @@ export function ResultsDashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {result.errors.length}
+                  {errorCount}
                 </div>
                 <div className="text-sm text-slate-400">Errors</div>
               </div>
@@ -483,7 +541,7 @@ export function ResultsDashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {result.warnings.length}
+                  {warningCount}
                 </div>
                 <div className="text-sm text-slate-400">Warnings</div>
               </div>
@@ -497,7 +555,7 @@ export function ResultsDashboard() {
               </div>
               <div>
                 <div className="text-2xl font-bold text-white">
-                  {result.securityIssues.length}
+                  {securityCount}
                 </div>
                 <div className="text-sm text-slate-400">Security</div>
               </div>
@@ -671,46 +729,48 @@ export function ResultsDashboard() {
             </Card>
           )}
 
-        {isProjectJob && <ProjectResultsSection result={result} job={job} />}
+        {isProjectJob && projectResult && <ProjectResultsSection result={projectResult} job={job} />}
 
-        <Tabs defaultValue="all" className="mb-6">
-          <TabsList className="bg-slate-900 border border-slate-800">
-            <TabsTrigger value="all">All Issues</TabsTrigger>
-            <TabsTrigger value="errors">
-              Errors ({result.errors.length})
-            </TabsTrigger>
-            <TabsTrigger value="warnings">
-              Warnings ({result.warnings.length})
-            </TabsTrigger>
-            <TabsTrigger value="security">
-              Security ({result.securityIssues.length})
-            </TabsTrigger>
-            <TabsTrigger value="suggestions">
-              Suggestions ({result.suggestions.length})
-            </TabsTrigger>
-          </TabsList>
+        {standardResult && (
+          <Tabs defaultValue="all" className="mb-6">
+            <TabsList className="bg-slate-900 border border-slate-800">
+              <TabsTrigger value="all">All Issues</TabsTrigger>
+              <TabsTrigger value="errors">
+                Errors ({standardResult.errors.length})
+              </TabsTrigger>
+              <TabsTrigger value="warnings">
+                Warnings ({standardResult.warnings.length})
+              </TabsTrigger>
+              <TabsTrigger value="security">
+                Security ({standardResult.securityIssues.length})
+              </TabsTrigger>
+              <TabsTrigger value="suggestions">
+                Suggestions ({standardResult.suggestions.length})
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="all" className="mt-6 space-y-3">
-            {renderIssues([
-              ...result.errors,
-              ...result.warnings,
-              ...result.securityIssues,
-              ...result.suggestions,
-            ])}
-          </TabsContent>
-          <TabsContent value="errors" className="mt-6 space-y-3">
-            {renderIssues(result.errors)}
-          </TabsContent>
-          <TabsContent value="warnings" className="mt-6 space-y-3">
-            {renderIssues(result.warnings)}
-          </TabsContent>
-          <TabsContent value="security" className="mt-6 space-y-3">
-            {renderIssues(result.securityIssues)}
-          </TabsContent>
-          <TabsContent value="suggestions" className="mt-6 space-y-3">
-            {renderIssues(result.suggestions)}
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="all" className="mt-6 space-y-3">
+              {renderIssues([
+                ...standardResult.errors,
+                ...standardResult.warnings,
+                ...standardResult.securityIssues,
+                ...standardResult.suggestions,
+              ])}
+            </TabsContent>
+            <TabsContent value="errors" className="mt-6 space-y-3">
+              {renderIssues(standardResult.errors)}
+            </TabsContent>
+            <TabsContent value="warnings" className="mt-6 space-y-3">
+              {renderIssues(standardResult.warnings)}
+            </TabsContent>
+            <TabsContent value="security" className="mt-6 space-y-3">
+              {renderIssues(standardResult.securityIssues)}
+            </TabsContent>
+            <TabsContent value="suggestions" className="mt-6 space-y-3">
+              {renderIssues(standardResult.suggestions)}
+            </TabsContent>
+          </Tabs>
+        )}
 
         {uploadedFile?.content && (
           <div className="mt-8">
@@ -826,22 +886,15 @@ function ServiceMappingCard({ mapping }: { mapping: ServiceBuildMapping }) {
 }
 
 interface ProjectResultsSectionProps {
-  result: AnalysisResult;
+  result: ProjectAnalysisResult;
   job: Job;
 }
 
 function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
-  const raw = result as unknown as {
-    per_file_results?: PerFileAnalysisResult[];
-    service_mappings?: ServiceBuildMapping[];
-    project_summary?: ProjectSummary;
-    project_recommendations?: string[];
-  };
-
-  const perFileResults = raw.per_file_results ?? [];
-  const serviceMappings = raw.service_mappings ?? [];
-  const projectSummary = raw.project_summary;
-  const recommendations = raw.project_recommendations ?? [];
+  const perFileResults = result.per_file_results ?? [];
+  const serviceMappings = result.service_mappings ?? [];
+  const projectSummary = result.project_summary;
+  const recommendations = result.project_recommendations ?? [];
 
   const dfResults = perFileResults.filter(r => r.file_type === "dockerfile");
   const cfResults = perFileResults.filter(r => r.file_type === "compose");
@@ -979,6 +1032,7 @@ function detectSourceLanguage(jobType: string, filename: string | null): string 
 function buildMarkdownReport(
   job: Job,
   result: AnalysisResult | null,
+  projectResult: ProjectAnalysisResult | null,
   uploadedFile: UploadedFile | null,
 ): string {
   const meta = (job.input_metadata ?? {}) as Record<string, unknown>;
@@ -991,12 +1045,6 @@ function buildMarkdownReport(
     "";
   const language = detectSourceLanguage(job.type, filename);
 
-  const errors = result?.errors ?? [];
-  const warnings = result?.warnings ?? [];
-  const suggestions = result?.suggestions ?? [];
-  const security = result?.securityIssues ?? [];
-  const allIssues: Issue[] = [...errors, ...warnings, ...suggestions, ...security];
-
   const lines: string[] = [];
   lines.push(`# Analysis Report - ${filename}`);
   lines.push("");
@@ -1005,7 +1053,23 @@ function buildMarkdownReport(
   lines.push(`- **Job ID:** \`${job.id}\``);
   lines.push(`- **Job Type:** \`${job.type}\``);
   lines.push(`- **Status:** \`${job.status}\``);
-  if (result) {
+
+  if (projectResult) {
+    lines.push(`- **Overall Score:** ${projectResult.overall_score ?? projectResult.score}`);
+    lines.push(`- **Overall Grade:** ${projectResult.overall_grade ?? projectResult.grade}`);
+    const ps = projectResult.project_summary;
+    if (ps) {
+      lines.push(`- **Files Analyzed:** ${ps.total_files_analyzed}`);
+      lines.push(`- **Total Errors:** ${ps.total_errors}`);
+      lines.push(`- **Total Warnings:** ${ps.total_warnings}`);
+      lines.push(`- **Security Issues:** ${ps.total_security_issues}`);
+      lines.push(`- **Suggestions:** ${ps.total_suggestions}`);
+    }
+  } else if (result) {
+    const errors = result.errors ?? [];
+    const warnings = result.warnings ?? [];
+    const suggestions = result.suggestions ?? [];
+    const security = result.securityIssues ?? [];
     lines.push(`- **Score:** ${result.score}`);
     lines.push(`- **Grade:** ${result.grade}`);
     lines.push(
@@ -1029,7 +1093,55 @@ function buildMarkdownReport(
   }
   lines.push("");
 
-  if (result) {
+  if (projectResult) {
+    lines.push("## Per-File Results");
+    lines.push("");
+    for (const fileResult of projectResult.per_file_results ?? []) {
+      lines.push(`### ${fileResult.file_path} (${fileResult.file_type})`);
+      lines.push("");
+      lines.push(`Score: **${fileResult.score}** | Grade: **${fileResult.grade}**`);
+      lines.push("");
+      const fileIssues: Issue[] = [
+        ...(fileResult.errors ?? []),
+        ...(fileResult.warnings ?? []),
+        ...(fileResult.securityIssues ?? []),
+        ...(fileResult.suggestions ?? []),
+      ];
+      if (fileIssues.length > 0) {
+        lines.push(issueTable(fileIssues));
+      } else {
+        lines.push("_No issues found._");
+        lines.push("");
+      }
+    }
+
+    if ((projectResult.service_mappings ?? []).length > 0) {
+      lines.push("## Service Mappings");
+      lines.push("");
+      for (const m of projectResult.service_mappings) {
+        lines.push(`- **${m.service}** (${m.compose_file}) — can_build: ${m.can_build}, can_run: ${m.can_run}`);
+        for (const issue of m.issues) {
+          lines.push(`  - ${issue}`);
+        }
+      }
+      lines.push("");
+    }
+
+    if ((projectResult.project_recommendations ?? []).length > 0) {
+      lines.push("## Project Recommendations");
+      lines.push("");
+      for (const rec of projectResult.project_recommendations) {
+        lines.push(`- ${rec}`);
+      }
+      lines.push("");
+    }
+  } else if (result) {
+    const errors = result.errors ?? [];
+    const warnings = result.warnings ?? [];
+    const suggestions = result.suggestions ?? [];
+    const security = result.securityIssues ?? [];
+    const allIssues: Issue[] = [...errors, ...warnings, ...suggestions, ...security];
+
     lines.push("## Issues");
     lines.push("");
     lines.push("### Errors");
@@ -1044,39 +1156,39 @@ function buildMarkdownReport(
     lines.push("### Security");
     lines.push("");
     lines.push(issueTable(security));
-  }
 
-  lines.push("## LLM Prompt");
-  lines.push("");
-  lines.push(
-    "Paste the following block into an LLM chat to get a fixed version of the file above.",
-  );
-  lines.push("");
-  lines.push("```text");
-  lines.push(
-    `You are a Docker / container best-practices expert. Apply the following fixes to the ${language} source file shown in the "Source File" section above.`,
-  );
-  lines.push("");
-  lines.push("Requirements:");
-  lines.push("- Output ONLY the modified file contents in a single fenced code block.");
-  lines.push("- Preserve unrelated formatting and comments where possible.");
-  lines.push("- Resolve every issue listed below; if a fix is ambiguous, choose the safest production-ready option and add a brief comment.");
-  lines.push("- Do not invent services, images, or environment variables that are not implied by the original file.");
-  lines.push("");
-  lines.push("Issues to fix:");
-  if (allIssues.length === 0) {
-    lines.push("- No issues were detected; return the source file unchanged.");
-  } else {
-    for (const issue of allIssues) {
-      const docPart = issue.doc_url ? ` (docs: ${issue.doc_url})` : "";
-      const suggestionPart = issue.suggestion ? ` Suggested fix: ${issue.suggestion}` : "";
-      lines.push(
-        `- [line ${issue.line}] [${issue.severity.toUpperCase()} ${issue.code}] ${issue.message}.${suggestionPart}${docPart}`,
-      );
+    lines.push("## LLM Prompt");
+    lines.push("");
+    lines.push(
+      "Paste the following block into an LLM chat to get a fixed version of the file above.",
+    );
+    lines.push("");
+    lines.push("```text");
+    lines.push(
+      `You are a Docker / container best-practices expert. Apply the following fixes to the ${language} source file shown in the "Source File" section above.`,
+    );
+    lines.push("");
+    lines.push("Requirements:");
+    lines.push("- Output ONLY the modified file contents in a single fenced code block.");
+    lines.push("- Preserve unrelated formatting and comments where possible.");
+    lines.push("- Resolve every issue listed below; if a fix is ambiguous, choose the safest production-ready option and add a brief comment.");
+    lines.push("- Do not invent services, images, or environment variables that are not implied by the original file.");
+    lines.push("");
+    lines.push("Issues to fix:");
+    if (allIssues.length === 0) {
+      lines.push("- No issues were detected; return the source file unchanged.");
+    } else {
+      for (const issue of allIssues) {
+        const docPart = issue.doc_url ? ` (docs: ${issue.doc_url})` : "";
+        const suggestionPart = issue.suggestion ? ` Suggested fix: ${issue.suggestion}` : "";
+        lines.push(
+          `- [line ${issue.line}] [${issue.severity.toUpperCase()} ${issue.code}] ${issue.message}.${suggestionPart}${docPart}`,
+        );
+      }
     }
+    lines.push("```");
+    lines.push("");
   }
-  lines.push("```");
-  lines.push("");
 
   return lines.join("\n");
 }

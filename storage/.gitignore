@@ -1,5 +1,0 @@
-# Ignore all uploaded/generated files in storage.
-*
-
-# Keep this ignore file tracked.
-!.gitignore
