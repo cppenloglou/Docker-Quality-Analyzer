@@ -107,3 +107,24 @@ During dev the Vite server listens on `http://localhost:5173`; since `VITE_API_B
 - `http://localhost:3000/docs` - Swagger UI (proxied to api)
 - `http://localhost:3000/metrics` - Prometheus metrics (proxied to api)
 - `http://localhost:8000` - Direct backend (useful for curl, CI, debugging)
+
+## 🧭 Beginner Onboarding Map
+
+If you are new to this codebase, follow this order:
+
+1. **Run the stack first** with `docker compose up --build` so you can see the full upload → analysis → results flow end-to-end.
+2. **Read the backend entrypoint** (`backend/app/main.py`) and API router composition (`backend/app/api/router.py`) to understand how routes are wired.
+3. **Study the analysis pipeline** in `backend/app/application/services/analysis_service.py` and worker task orchestration in `backend/app/workers/tasks.py`.
+4. **Review plugin-based checks** under `backend/app/plugins/` (Hadolint, compose runnability, security checks, resource estimation).
+5. **Move to the frontend shell** starting at `frontend/src/main.tsx`, routes in `frontend/src/routes.tsx`, and key pages under `frontend/src/pages/`.
+6. **Inspect real-time features**: backend WebSocket router (`backend/app/api/routers/ws.py`) and frontend monitoring/notification components.
+
+### What to learn next
+
+- **FastAPI fundamentals** (dependency injection, routers, pydantic schemas).
+- **Async Python patterns** (`async/await`, background workers, queue-based processing).
+- **Docker & Compose internals** (images, build context, runtime security constraints).
+- **React + TypeScript app structure** (routing, component composition, API client patterns).
+- **Observability basics** (logs, metrics, event-driven UX).
+
+This sequence helps you build a mental model before diving into implementation details.
