@@ -30,7 +30,6 @@ import {
 
 import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
-import { CodePreview } from "../components/CodePreview";
 import { MotionPage } from "../components/motion";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -42,7 +41,7 @@ import {
   ApiError,
   research as researchApi,
   type JobStatus,
-  type ResearchJob,
+  type PublicResearchJob,
   type ResearchSummary,
 } from "../utils/api";
 
@@ -63,9 +62,6 @@ const panelCard =
 const kpiShell =
   "group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm motion-safe:transition-shadow motion-safe:duration-200 hover:shadow-md";
 
-function shortUser(id: string) {
-  return id.replace(/-/g, "").slice(0, 12);
-}
 
 function statusMixBadge(status: string) {
   switch (status) {
@@ -119,14 +115,14 @@ export function ResearchAnalytics() {
   const ready = useMinLoader(!loading);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ResearchSummary | null>(null);
-  const [rows, setRows] = useState<ResearchJob[]>([]);
+  const [rows, setRows] = useState<PublicResearchJob[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [filterType, setFilterType] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
 
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailJob, setDetailJob] = useState<ResearchJob | null>(null);
+  const [detailJob, setDetailJob] = useState<PublicResearchJob | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -270,17 +266,6 @@ export function ResearchAnalytics() {
     }
   };
 
-  const sourceSnippet = (job: ResearchJob) => {
-    const meta = job.input_metadata;
-    const df =
-      typeof meta.dockerfile_content === "string" ? meta.dockerfile_content : "";
-    const comp =
-      typeof meta.compose_content === "string" ? meta.compose_content : "";
-    if (df) return { lang: "docker" as const, code: df };
-    if (comp) return { lang: "yaml" as const, code: comp };
-    return null;
-  };
-
   if (!ready) {
     return (
       <Layout>
@@ -316,9 +301,9 @@ export function ResearchAnalytics() {
                   Global analytics
                 </h1>
                 <p className={cn("max-w-2xl text-pretty text-base leading-relaxed", captionMuted)}>
-                  Cross-tenant view of analysis jobs in this deployment—submitters,
-                  filenames, embedded sources, and full results. Use filters and row
-                  detail for cohort inspection.
+                  Anonymized research dataset — public analytics across all analyses
+                  in this deployment. Privacy-safe job signals with no personal data
+                  exposed. Use filters and row detail to explore public issue statistics.
                 </p>
               </div>
             </div>
@@ -335,7 +320,7 @@ export function ResearchAnalytics() {
               </Button>
               <p className={cn("flex items-center gap-2 text-xs lg:text-right", captionMuted)}>
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-500/90" aria-hidden />
-                Trusted research context only
+                Anonymized contributor data only
               </p>
             </div>
           </div>
@@ -550,7 +535,7 @@ export function ResearchAnalytics() {
               <div>
                 <h2 className="text-base font-semibold text-foreground">Job ledger</h2>
                 <p className={cn("mt-1 text-sm", captionMuted)}>
-                  Paginated records · open a row for full payload
+                  Paginated records · open a row for public issue statistics
                 </p>
               </div>
               <div className="flex flex-col gap-8 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-10 sm:gap-y-6">
@@ -613,7 +598,7 @@ export function ResearchAnalytics() {
                     Created
                   </th>
                   <th scope="col" className={cn(tableTh, "text-left")}>
-                    Submitter
+                    Contributor
                   </th>
                   <th scope="col" className={cn(tableTh, "text-left")}>
                     Type
@@ -641,8 +626,8 @@ export function ResearchAnalytics() {
                     <td className={cn("whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums", bodyMuted)}>
                       {new Date(job.created_at).toLocaleString()}
                     </td>
-                    <td className={cn("max-w-[120px] truncate px-4 py-3 font-mono text-xs", bodyMuted)} title={job.user_id}>
-                      {shortUser(job.user_id)}
+                    <td className={cn("max-w-[140px] truncate px-4 py-3 font-mono text-xs", bodyMuted)} title={job.anonymized_submitter}>
+                      {job.anonymized_submitter}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" className="border-border font-normal capitalize">
@@ -657,12 +642,9 @@ export function ResearchAnalytics() {
                         {job.status}
                       </Badge>
                     </td>
-                    <td
-                      className={cn("max-w-[200px] truncate px-4 py-3", bodyMuted)}
-                      title={String(job.input_metadata.filename ?? "")}
-                    >
-                      {typeof job.input_metadata.filename === "string"
-                        ? job.input_metadata.filename
+                    <td className={cn("px-4 py-3 font-mono text-xs", bodyMuted)}>
+                      {typeof job.public_metadata.file_extension === "string"
+                        ? job.public_metadata.file_extension
                         : "—"}
                     </td>
                     <td className={cn("px-4 py-3 text-right font-mono tabular-nums text-sm", scoreTone(job.score))}>
@@ -797,7 +779,7 @@ export function ResearchAnalytics() {
               {detailLoading ? (
                 <div className={cn("flex items-center gap-3 text-sm", captionMuted)}>
                   <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
-                  Loading job payload…
+                  Loading job signals…
                 </div>
               ) : null}
 
@@ -807,11 +789,8 @@ export function ResearchAnalytics() {
                     <TabsTrigger value="meta" className="min-h-[44px] rounded-lg px-4">
                       Metadata
                     </TabsTrigger>
-                    <TabsTrigger value="source" className="min-h-[44px] rounded-lg px-4">
-                      Source
-                    </TabsTrigger>
                     <TabsTrigger value="result" className="min-h-[44px] rounded-lg px-4">
-                      Result JSON
+                      Public signals
                     </TabsTrigger>
                   </TabsList>
 
@@ -825,9 +804,9 @@ export function ResearchAnalytics() {
                       </div>
                       <div className="rounded-xl border border-border bg-muted/25 p-4">
                         <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
-                          Submitter
+                          Anonymized contributor
                         </dt>
-                        <dd className="mt-2 break-all font-mono text-xs text-foreground">{detailJob.user_id}</dd>
+                        <dd className="mt-2 break-all font-mono text-xs text-foreground">{detailJob.anonymized_submitter}</dd>
                       </div>
                       <div className="sm:col-span-2">
                         <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
@@ -842,33 +821,14 @@ export function ResearchAnalytics() {
                       </div>
                     </dl>
                     <pre className="max-h-[42vh] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground">
-                      {JSON.stringify(detailJob.input_metadata, null, 2)}
+                      {JSON.stringify(detailJob.public_metadata, null, 2)}
                     </pre>
-                  </TabsContent>
-
-                  <TabsContent value="source" className="mt-4 outline-none">
-                    {(() => {
-                      const src = sourceSnippet(detailJob);
-                      if (!src) {
-                        return (
-                          <p className={cn(
-                            "rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm",
-                            captionMuted,
-                          )}>
-                            No dockerfile or compose body stored on this job.
-                          </p>
-                        );
-                      }
-                      return (
-                        <CodePreview code={src.code} language={src.lang} maxHeight="320px" />
-                      );
-                    })()}
                   </TabsContent>
 
                   <TabsContent value="result" className="mt-4 outline-none">
                     <pre className="max-h-[min(50vh,420px)] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground">
-                      {detailJob.result
-                        ? JSON.stringify(detailJob.result, null, 2)
+                      {detailJob.public_result
+                        ? JSON.stringify(detailJob.public_result, null, 2)
                         : "null"}
                     </pre>
                   </TabsContent>

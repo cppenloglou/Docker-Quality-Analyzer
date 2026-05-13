@@ -29,6 +29,10 @@ interface HistoryItem {
   errors: number;
   warnings: number;
   securityIssues: number;
+  // project-specific
+  dockerfileCount?: number;
+  composeFileCount?: number;
+  archiveName?: string;
 }
 
 function scoreColor(score: number | null) {
@@ -142,26 +146,46 @@ export function History() {
         const result = (job.result ?? {}) as {
           score?: number;
           grade?: string;
+          overall_score?: number;
+          overall_grade?: string;
           errors?: unknown[];
           warnings?: unknown[];
           securityIssues?: unknown[];
+          project_summary?: { total_errors?: number; total_warnings?: number; total_security_issues?: number };
         };
+        const meta = job.input_metadata;
         const fileName =
-          (job.input_metadata?.filename as string | undefined) ??
+          (meta?.filename as string | undefined) ??
           `${job.type}-${job.id.slice(0, 6)}`;
+
+        // For project jobs, prefer overall_score
+        const score = typeof (result.overall_score ?? result.score) === "number"
+          ? (result.overall_score ?? result.score)!
+          : null;
+        const grade = typeof (result.overall_grade ?? result.grade) === "string"
+          ? (result.overall_grade ?? result.grade)!
+          : null;
+
+        // For project jobs, use project_summary counts if available
+        const summary = result.project_summary;
+        const errors = summary?.total_errors ?? (Array.isArray(result.errors) ? result.errors.length : 0);
+        const warnings = summary?.total_warnings ?? (Array.isArray(result.warnings) ? result.warnings.length : 0);
+        const securityIssues = summary?.total_security_issues ?? (Array.isArray(result.securityIssues) ? result.securityIssues.length : 0);
+
         return {
           id: job.id,
           fileName,
           jobType: job.type,
           status: job.status,
           timestamp: new Date(job.created_at),
-          score: typeof result.score === "number" ? result.score : null,
-          grade: typeof result.grade === "string" ? result.grade : null,
-          errors: Array.isArray(result.errors) ? result.errors.length : 0,
-          warnings: Array.isArray(result.warnings) ? result.warnings.length : 0,
-          securityIssues: Array.isArray(result.securityIssues)
-            ? result.securityIssues.length
-            : 0,
+          score,
+          grade,
+          errors,
+          warnings,
+          securityIssues,
+          dockerfileCount: Array.isArray(meta?.dockerfiles) ? (meta.dockerfiles as string[]).length : undefined,
+          composeFileCount: Array.isArray(meta?.compose_files) ? (meta.compose_files as string[]).length : undefined,
+          archiveName: job.type === "project" ? (meta?.filename as string | undefined) : undefined,
         };
       }),
     [jobList],
@@ -311,6 +335,22 @@ export function History() {
                           <Clock className="w-4 h-4" />
                           {formatTimestamp(item.timestamp)}
                         </div>
+                        {item.jobType === "project" && (
+                          <>
+                            {item.dockerfileCount != null && item.dockerfileCount > 0 && (
+                              <span className="text-blue-400 flex items-center gap-1">
+                                <FileCode className="w-3 h-3" />
+                                {item.dockerfileCount} Dockerfile{item.dockerfileCount !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                            {item.composeFileCount != null && item.composeFileCount > 0 && (
+                              <span className="text-green-400 flex items-center gap-1">
+                                <FileText className="w-3 h-3" />
+                                {item.composeFileCount} Compose
+                              </span>
+                            )}
+                          </>
+                        )}
                         {item.errors > 0 && (
                           <span className="text-red-400">
                             {item.errors} errors

@@ -50,6 +50,48 @@ const BASE_STEPS: AnalysisStep[] = [
   },
 ];
 
+const PROJECT_STEPS: AnalysisStep[] = [
+  {
+    id: "queued",
+    label: "Job Queued",
+    description: "Waiting for a worker to pick up the project analysis",
+    status: "running",
+  },
+  {
+    id: "project.analysis_started",
+    label: "Analysis Started",
+    description: "Preparing project files for analysis",
+    status: "pending",
+  },
+  {
+    id: "project.file_analysis",
+    label: "Analyzing Files",
+    description: "Running plugins on each Dockerfile and Compose file",
+    status: "pending",
+  },
+  {
+    id: "project.merge_started",
+    label: "Merging Results",
+    description: "Aggregating per-file results and computing project score",
+    status: "pending",
+  },
+  {
+    id: "finalize",
+    label: "Complete",
+    description: "Project analysis report ready",
+    status: "pending",
+  },
+];
+
+// Map project event names to step IDs
+const PROJECT_EVENT_TO_STEP: Record<string, string> = {
+  "project.analysis_started": "project.analysis_started",
+  "project.file_analysis_started": "project.file_analysis",
+  "project.file_analysis_completed": "project.file_analysis",
+  "project.merge_started": "project.merge_started",
+  "project.analysis_completed": "finalize",
+};
+
 function progressForStatus(status: Job["status"], stepsCompleted: number): number {
   if (status === "done") return 100;
   if (status === "failed") return 100;
@@ -62,6 +104,7 @@ export function AnalysisProgress() {
   const [searchParams] = useSearchParams();
   const queryJobId = searchParams.get("jobId");
 
+  const [isProjectJob, setIsProjectJob] = useState(false);
   const [steps, setSteps] = useState<AnalysisStep[]>(() =>
     BASE_STEPS.map((step) => ({ ...step })),
   );
@@ -70,6 +113,7 @@ export function AnalysisProgress() {
   const [progressValue, setProgressValue] = useState<number>(queryJobId ? 15 : 5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [logs, setLogs] = useState<TerminalLogEntry[]>([]);
+  const [currentFile, setCurrentFile] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   const pushLog = (entry: TerminalLogEntry) => {
@@ -185,6 +229,11 @@ export function AnalysisProgress() {
           const reconciled = await jobsApi.getEvents(activeJobId);
           if (cancelled) return;
           setJobStatus(reconciled.status);
+          // Switch to project step list if needed
+          if (reconciled.type === "project") {
+            setIsProjectJob(true);
+            setSteps(PROJECT_STEPS.map(s => ({ ...s })));
+          }
           if (reconciled.status === "done") {
             handleCompleted(reconciled);
             return;
@@ -224,17 +273,62 @@ export function AnalysisProgress() {
           try {
             const parsed = JSON.parse(event.data as string) as DomainEvent;
             const tone: TerminalLogEntry["tone"] =
-              parsed.event_name === "user.analysis.failed"
+              parsed.event_name === "user.analysis.failed" || parsed.event_name === "project.analysis_failed"
                 ? "error"
-                : parsed.event_name === "user.analysis.completed"
+                : parsed.event_name === "user.analysis.completed" || parsed.event_name === "project.analysis_completed"
                   ? "success"
                   : "info";
-            pushLog({
-              message: `${parsed.event_name}`,
-              timestamp: parsed.timestamp,
-              tone,
-            });
-            if (parsed.event_name === "user.analysis.started") {
+
+            // Build human-readable log message
+            let logMsg = parsed.event_name;
+            const pl = parsed.payload as Record<string, unknown>;
+            if (parsed.event_name === "project.file_analysis_started" && pl.file) {
+              logMsg = `Analyzing ${pl.type ?? "file"}: ${pl.file}`;
+              setCurrentFile(String(pl.file));
+            } else if (parsed.event_name === "project.file_analysis_completed" && pl.file) {
+              logMsg = `Completed: ${pl.file}`;
+              setCurrentFile(null);
+            } else if (parsed.event_name === "deploy.compose_up_log" && pl.line) {
+              logMsg = String(pl.line);
+            }
+
+            pushLog({ message: logMsg, timestamp: parsed.timestamp, tone });
+
+            // Update steps for project events
+            if (parsed.event_name.startsWith("project.")) {
+              setIsProjectJob(true);
+              setSteps(prev => {
+                // Ensure we're on project steps
+                if (prev.length !== PROJECT_STEPS.length) {
+                  return PROJECT_STEPS.map(s => ({ ...s }));
+                }
+                return prev;
+              });
+              const targetStep = PROJECT_EVENT_TO_STEP[parsed.event_name];
+              if (targetStep) {
+                if (parsed.event_name === "project.analysis_started") {
+                  setStep("queued", "complete");
+                  setStep("project.analysis_started", "running");
+                  setJobStatus("running");
+                  setProgressValue(20);
+                } else if (parsed.event_name === "project.file_analysis_started") {
+                  setStep("project.analysis_started", "complete");
+                  setStep("project.file_analysis", "running");
+                  setProgressValue(45);
+                } else if (parsed.event_name === "project.merge_started") {
+                  setStep("project.file_analysis", "complete");
+                  setStep("project.merge_started", "running");
+                  setProgressValue(80);
+                } else if (parsed.event_name === "project.analysis_completed") {
+                  setStep("project.merge_started", "complete");
+                  setStep("finalize", "running");
+                  setProgressValue(95);
+                } else if (parsed.event_name === "project.analysis_failed") {
+                  const message = (parsed.payload as { message?: string })?.message ?? "Project analysis failed.";
+                  handleFailed(message);
+                }
+              }
+            } else if (parsed.event_name === "user.analysis.started") {
               setStep("queued", "complete");
               setStep("running", "running");
               setJobStatus("running");
@@ -309,13 +403,18 @@ export function AnalysisProgress() {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">
-            Analyzing Your Docker Configuration
+            {isProjectJob ? "Analyzing Project Archive" : "Analyzing Your Docker Configuration"}
           </h1>
           <p className="text-slate-400">
             {jobId
               ? `Live updates for job ${jobId}`
               : "Submitting your file to the analysis queue..."}
           </p>
+          {isProjectJob && currentFile && (
+            <p className="text-blue-400 text-sm mt-2 font-mono">
+              → {currentFile}
+            </p>
+          )}
         </div>
 
         <Card className="p-6 bg-slate-900 border-slate-800 mb-8">

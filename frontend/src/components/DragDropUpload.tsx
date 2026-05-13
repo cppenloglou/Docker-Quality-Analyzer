@@ -66,7 +66,7 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
     >
       <div className="flex flex-col items-center gap-4 text-center">
         <motion.div
-          animate={isDragging ? { scale: 1.1 } : { scale: 1 }}
+          animate={isDragging && !reducedMotion ? { scale: 1.1 } : { scale: 1 }}
           transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
           className={`p-4 rounded-full ${isDragging ? "bg-blue-500/20" : "bg-slate-800"}`}
         >

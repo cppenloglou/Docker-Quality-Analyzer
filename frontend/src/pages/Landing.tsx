@@ -62,7 +62,7 @@ export function Landing() {
         <div className="text-center mb-12">
           <motion.h1
             className="text-5xl font-bold text-white mb-4"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
@@ -70,7 +70,7 @@ export function Landing() {
           </motion.h1>
           <motion.p
             className="text-xl text-slate-400 max-w-2xl mx-auto"
-            initial={{ opacity: 0, y: 14 }}
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94], delay: 0.08 }}
           >
@@ -119,13 +119,13 @@ export function Landing() {
         <div className="mb-16">
           <motion.h2
             className="text-2xl font-semibold text-white mb-6 text-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 10 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, delay: 0.15 }}
           >
             Analysis Pipeline
           </motion.h2>
-          <StaggerList className="grid grid-cols-1 md:grid-cols-7 gap-4">
+          <StaggerList className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] gap-4">
             <StaggerItem>
               <MotionCard>
               <Card className="p-6 bg-slate-900 border-slate-800 h-full">

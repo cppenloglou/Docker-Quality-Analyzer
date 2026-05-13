@@ -8,7 +8,8 @@ import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.application.services.analysis_service import AnalysisService
+from app.application.services.analysis_service import AnalysisService, _grade
+from app.application.services.compose_mapper import map_compose_services
 from app.domain.events import DomainEvent
 from app.infrastructure.db.models import JobStatus
 from app.infrastructure.db.repositories import JobRepository
@@ -37,34 +38,188 @@ async def run_compose_analysis(ctx, payload: dict) -> dict:
 
 
 async def run_project_analysis(ctx, payload: dict) -> dict:
+    """Analyze selected Dockerfiles and Compose files separately, then merge results."""
     async with SessionLocal() as session:
         user_id = uuid.UUID(payload["user_id"])
         job_id = uuid.UUID(payload["job_id"])
         project_path = Path(payload["project_path"])
-        dockerfiles = payload.get("dockerfiles", [])
-        compose_files = payload.get("compose_files", [])
-        service = AnalysisService(session)
+        dockerfiles: list[str] = payload.get("dockerfiles", [])
+        compose_files: list[str] = payload.get("compose_files", [])
+        repo = JobRepository(session)
+        svc = AnalysisService(session)
+
+        await publish_event(DomainEvent("project.analysis_started", str(user_id), str(job_id), payload={"project_path": str(project_path)}))
+        await repo.update_status(job_id, user_id, JobStatus.running)
+        await session.commit()
 
         if not dockerfiles and not compose_files:
-            result = {"message": "No Dockerfile or Compose file found. Cannot analyze containerization."}
-            await JobRepository(session).update_status(job_id, user_id, JobStatus.failed, result=result)
+            result: dict[str, Any] = {
+                "message": "No Dockerfile or Compose file found. Cannot analyze containerization.",
+                "overall_score": 0,
+                "overall_grade": "F",
+                "per_file_results": [],
+                "project_summary": {
+                    "total_files_analyzed": 0,
+                    "dockerfiles_analyzed": 0,
+                    "compose_files_analyzed": 0,
+                    "total_errors": 0,
+                    "total_warnings": 0,
+                    "total_security_issues": 0,
+                    "total_suggestions": 0,
+                },
+            }
+            await repo.update_status(job_id, user_id, JobStatus.failed, result=result)
             await session.commit()
-            await publish_event(DomainEvent("user.analysis.failed", str(user_id), str(job_id), payload=result))
+            await publish_event(DomainEvent("project.analysis_failed", str(user_id), str(job_id), payload=result))
             return result
 
-        combined = {"dockerfile": None, "compose": None}
-        if dockerfiles:
-            combined["dockerfile"] = (project_path / dockerfiles[0]).read_text(encoding="utf-8", errors="ignore")
-        if compose_files:
-            combined["compose"] = (project_path / compose_files[0]).read_text(encoding="utf-8", errors="ignore")
+        per_file_results: list[dict[str, Any]] = []
+        all_scores: list[int] = []
 
-        context = {"dockerfile_content": combined["dockerfile"], "compose_content": combined["compose"], "project_path": str(project_path)}
-        plugins = ["security_scanner", "resource_estimation"]
-        if combined["dockerfile"]:
-            plugins.append("hadolint")
-        if combined["compose"]:
-            plugins.append("compose_validator")
-        return await service.run_job_with_plugins(user_id, job_id, context, plugins)
+        # Analyze each Dockerfile separately
+        for df_rel in dockerfiles:
+            df_path = project_path / df_rel
+            await publish_event(
+                DomainEvent("project.file_analysis_started", str(user_id), str(job_id), payload={"file": df_rel, "type": "dockerfile"})
+            )
+            try:
+                content = df_path.read_text(encoding="utf-8", errors="ignore")
+                file_result = await svc.analyze_content(
+                    content,
+                    content_type="dockerfile",
+                    context_extras={"project_path": str(project_path)},
+                )
+                file_entry: dict[str, Any] = {"file_path": df_rel, "file_type": "dockerfile", **file_result}
+                per_file_results.append(file_entry)
+                all_scores.append(file_result["score"])
+            except Exception as exc:
+                per_file_results.append(
+                    {
+                        "file_path": df_rel,
+                        "file_type": "dockerfile",
+                        "score": 0,
+                        "grade": "F",
+                        "errors_count": 1,
+                        "warnings_count": 0,
+                        "security_count": 0,
+                        "suggestions_count": 0,
+                        "errors": [{"code": "SCAN_ERROR", "severity": "error", "message": str(exc), "line": 1, "suggestion": ""}],
+                        "warnings": [],
+                        "securityIssues": [],
+                        "suggestions": [],
+                        "meta": {},
+                    }
+                )
+                all_scores.append(0)
+            await publish_event(
+                DomainEvent("project.file_analysis_completed", str(user_id), str(job_id), payload={"file": df_rel, "type": "dockerfile"})
+            )
+
+        # Analyze each Compose file separately
+        for cf_rel in compose_files:
+            cf_path = project_path / cf_rel
+            await publish_event(
+                DomainEvent("project.file_analysis_started", str(user_id), str(job_id), payload={"file": cf_rel, "type": "compose"})
+            )
+            try:
+                content = cf_path.read_text(encoding="utf-8", errors="ignore")
+                file_result = await svc.analyze_content(
+                    content,
+                    content_type="compose",
+                    context_extras={"project_path": str(project_path)},
+                )
+                file_entry = {"file_path": cf_rel, "file_type": "compose", **file_result}
+                per_file_results.append(file_entry)
+                all_scores.append(file_result["score"])
+            except Exception as exc:
+                per_file_results.append(
+                    {
+                        "file_path": cf_rel,
+                        "file_type": "compose",
+                        "score": 0,
+                        "grade": "F",
+                        "errors_count": 1,
+                        "warnings_count": 0,
+                        "security_count": 0,
+                        "suggestions_count": 0,
+                        "errors": [{"code": "SCAN_ERROR", "severity": "error", "message": str(exc), "line": 1, "suggestion": ""}],
+                        "warnings": [],
+                        "securityIssues": [],
+                        "suggestions": [],
+                        "meta": {},
+                    }
+                )
+                all_scores.append(0)
+            await publish_event(
+                DomainEvent("project.file_analysis_completed", str(user_id), str(job_id), payload={"file": cf_rel, "type": "compose"})
+            )
+
+        await publish_event(DomainEvent("project.merge_started", str(user_id), str(job_id), payload={}))
+
+        # Compose-to-Dockerfile mapping
+        service_mappings: list[dict[str, Any]] = []
+        primary_compose = payload.get("primary_compose_file") or (compose_files[0] if compose_files else None)
+        if primary_compose:
+            service_mappings = map_compose_services(primary_compose, project_path)
+
+        # Aggregate project-level result
+        overall_score = round(sum(all_scores) / len(all_scores)) if all_scores else 0
+        overall_grade = _grade(overall_score)
+
+        df_results = [r for r in per_file_results if r["file_type"] == "dockerfile"]
+        cf_results = [r for r in per_file_results if r["file_type"] == "compose"]
+
+        total_errors = sum(r.get("errors_count", len(r.get("errors", []))) for r in per_file_results)
+        total_warnings = sum(r.get("warnings_count", len(r.get("warnings", []))) for r in per_file_results)
+        total_security = sum(r.get("security_count", len(r.get("securityIssues", []))) for r in per_file_results)
+        total_suggestions = sum(r.get("suggestions_count", len(r.get("suggestions", []))) for r in per_file_results)
+
+        best_file = max(per_file_results, key=lambda r: r["score"])["file_path"] if per_file_results else None
+        worst_file = min(per_file_results, key=lambda r: r["score"])["file_path"] if per_file_results else None
+
+        project_recommendations: list[str] = []
+        if not dockerfiles:
+            project_recommendations.append("No Dockerfile found — add a Dockerfile to enable image builds.")
+        if not compose_files:
+            project_recommendations.append("No Compose file found — add a docker-compose.yml for multi-service orchestration.")
+        if dockerfiles and not any("dockerignore" in p for p in payload.get("dockerfiles", [])):
+            project_recommendations.append("Consider adding a .dockerignore to reduce build context size.")
+        for mapping in service_mappings:
+            for issue in mapping.get("issues", []):
+                project_recommendations.append(f"[{mapping['service']}] {issue}")
+
+        for r in per_file_results:
+            r.setdefault("errors_count", len(r.get("errors", [])))
+            r.setdefault("warnings_count", len(r.get("warnings", [])))
+            r.setdefault("security_count", len(r.get("securityIssues", [])))
+            r.setdefault("suggestions_count", len(r.get("suggestions", [])))
+
+        result = {
+            "score": overall_score,
+            "grade": overall_grade,
+            "overall_score": overall_score,
+            "overall_grade": overall_grade,
+            "per_file_results": per_file_results,
+            "service_mappings": service_mappings,
+            "project_summary": {
+                "total_files_analyzed": len(per_file_results),
+                "dockerfiles_analyzed": len(df_results),
+                "compose_files_analyzed": len(cf_results),
+                "total_errors": total_errors,
+                "total_warnings": total_warnings,
+                "total_security_issues": total_security,
+                "total_suggestions": total_suggestions,
+                "best_score_file": best_file,
+                "worst_score_file": worst_file,
+            },
+            "project_recommendations": project_recommendations,
+        }
+
+        await repo.update_status(job_id, user_id, JobStatus.done, result=result)
+        await session.commit()
+        await publish_event(DomainEvent("project.analysis_completed", str(user_id), str(job_id), payload={"overall_score": overall_score, "overall_grade": overall_grade}))
+        await publish_event(DomainEvent("user.analysis.completed", str(user_id), str(job_id), payload=result))
+        return result
 
 
 async def run_compose_deploy(ctx, payload: dict) -> dict:
@@ -188,8 +343,8 @@ async def _run_with_payload(session: AsyncSession, payload: dict, plugins: list[
         "compose_content": content if job_type == "compose" else "",
         "filename": payload.get("filename", ""),
     }
-    service = AnalysisService(session)
-    return await service.run_job_with_plugins(user_id, job_id, context, plugins)
+    svc = AnalysisService(session)
+    return await svc.run_job_with_plugins(user_id, job_id, context, plugins)
 
 
 def _deployment_key(user_id: str, job_id: str) -> str:
@@ -207,10 +362,14 @@ def _compose_base_cmd(spec: dict[str, Any]) -> list[str]:
 def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) -> dict[str, str]:
     project_name = f"dqa-{job_id.replace('-', '')[:12]}"
     project_path = metadata.get("project_path")
-    compose_files = metadata.get("compose_files") or []
-    if project_path and compose_files:
+
+    # Prefer explicit primary_compose_file from analyze selections
+    primary_compose = metadata.get("primary_compose_file")
+    compose_files = metadata.get("selected_compose_files") or metadata.get("compose_files") or []
+    compose_rel = primary_compose or (compose_files[0] if compose_files else None)
+
+    if project_path and compose_rel:
         project_dir = Path(str(project_path)).resolve()
-        compose_rel = str(compose_files[0])
         compose_file = (project_dir / compose_rel).resolve()
         return {
             "project_name": project_name,
@@ -268,7 +427,6 @@ def _classify_compose_up_line(line: str) -> str | None:
     if not text or "Container " not in text:
         return None
     lower = text.lower()
-    # Terminal states only ("Created" / "Started"), ignore "Creating" / "Starting".
     if lower.endswith(" started"):
         return "started"
     if lower.endswith(" created"):
@@ -350,7 +508,7 @@ async def _compose_up(
         )
         if fallback_rc != 0:
             raise RuntimeError(
-                f"docker-compose up failed (fallback): {'\n'.join(fallback_buffer)}"
+                f"docker-compose up failed (fallback): {chr(10).join(fallback_buffer)}"
             )
         return
     raise RuntimeError(f"docker-compose up failed: {combined_stderr}")

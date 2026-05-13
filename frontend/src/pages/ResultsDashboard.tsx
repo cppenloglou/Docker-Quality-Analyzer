@@ -6,12 +6,17 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Cpu,
   Download,
+  FileCode,
+  FileText,
   HardDrive,
   Info,
   Layers,
   Loader2,
+  Package,
   Play,
   Shield,
   Square,
@@ -39,6 +44,9 @@ import {
   type AnalysisResult,
   type Issue,
   type Job,
+  type PerFileAnalysisResult,
+  type ServiceBuildMapping,
+  type ProjectSummary,
 } from "../utils/api";
 import { pushNotification } from "../utils/notifications";
 
@@ -663,6 +671,8 @@ export function ResultsDashboard() {
             </Card>
           )}
 
+        {isProjectJob && <ProjectResultsSection result={result} job={job} />}
+
         <Tabs defaultValue="all" className="mb-6">
           <TabsList className="bg-slate-900 border border-slate-800">
             <TabsTrigger value="all">All Issues</TabsTrigger>
@@ -722,6 +732,221 @@ export function ResultsDashboard() {
       </div>
       </MotionPage>
     </Layout>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project-specific results section
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FileResultCard({ file }: { file: PerFileAnalysisResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const allIssues = [
+    ...(file.errors ?? []),
+    ...(file.warnings ?? []),
+    ...(file.securityIssues ?? []),
+    ...(file.suggestions ?? []),
+  ];
+  return (
+    <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full p-4 flex items-center gap-3 text-left hover:bg-slate-800/50 motion-safe:transition-colors"
+      >
+        {file.file_type === "dockerfile" ? (
+          <FileCode className="w-4 h-4 text-blue-400 shrink-0" />
+        ) : (
+          <FileText className="w-4 h-4 text-green-400 shrink-0" />
+        )}
+        <span className="flex-1 font-mono text-sm text-white truncate">{file.file_path}</span>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={`text-sm font-bold ${scoreColor(file.score)}`}>{file.score}</span>
+          <Badge className={`text-xs ${gradeColor(file.grade)}`}>Grade {file.grade}</Badge>
+          {file.errors_count > 0 && (
+            <span className="text-xs text-red-400">{file.errors_count}E</span>
+          )}
+          {file.warnings_count > 0 && (
+            <span className="text-xs text-yellow-400">{file.warnings_count}W</span>
+          )}
+          {file.security_count > 0 && (
+            <span className="text-xs text-orange-400">{file.security_count}S</span>
+          )}
+          {expanded ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+        </div>
+      </button>
+      {expanded && allIssues.length > 0 && (
+        <div className="border-t border-slate-800 p-4 space-y-2 max-h-72 overflow-y-auto">
+          {allIssues.map((issue, i) => (
+            <div key={i} className={`flex items-start gap-2 text-xs p-2 rounded border ${
+              issue.severity === "error" ? "border-red-800/50 bg-red-950/20" :
+              issue.severity === "warning" ? "border-yellow-800/50 bg-yellow-950/20" :
+              "border-slate-800 bg-slate-950/50"
+            }`}>
+              <span className={`font-mono shrink-0 ${
+                issue.severity === "error" ? "text-red-400" :
+                issue.severity === "warning" ? "text-yellow-400" :
+                "text-slate-400"
+              }`}>{issue.code}</span>
+              <span className="text-slate-300 flex-1">{issue.message}</span>
+              {issue.line && issue.line > 1 && (
+                <span className="text-slate-600 shrink-0">L{issue.line}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {expanded && allIssues.length === 0 && (
+        <div className="border-t border-slate-800 p-4 text-sm text-slate-500 italic">No issues found.</div>
+      )}
+    </Card>
+  );
+}
+
+function ServiceMappingCard({ mapping }: { mapping: ServiceBuildMapping }) {
+  return (
+    <div className={`p-3 rounded-lg border text-sm ${
+      mapping.issues.length === 0 ? "border-green-800/50 bg-green-950/10" : "border-amber-800/50 bg-amber-950/10"
+    }`}>
+      <div className="flex items-center gap-2 mb-1">
+        <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <span className="font-medium text-white">{mapping.service}</span>
+        {mapping.can_build && <Badge className="text-xs bg-blue-900/40 text-blue-300 border-blue-700/50">can build</Badge>}
+        {mapping.can_run && <Badge className="text-xs bg-green-900/40 text-green-300 border-green-700/50">can run</Badge>}
+      </div>
+      {mapping.resolved_dockerfile && (
+        <p className="text-xs text-slate-400 font-mono truncate">{mapping.resolved_dockerfile}</p>
+      )}
+      {mapping.issues.map((iss, i) => (
+        <p key={i} className="text-xs text-amber-300 mt-1 flex items-start gap-1">
+          <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />{iss}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+interface ProjectResultsSectionProps {
+  result: AnalysisResult;
+  job: Job;
+}
+
+function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
+  const raw = result as unknown as {
+    per_file_results?: PerFileAnalysisResult[];
+    service_mappings?: ServiceBuildMapping[];
+    project_summary?: ProjectSummary;
+    project_recommendations?: string[];
+  };
+
+  const perFileResults = raw.per_file_results ?? [];
+  const serviceMappings = raw.service_mappings ?? [];
+  const projectSummary = raw.project_summary;
+  const recommendations = raw.project_recommendations ?? [];
+
+  const dfResults = perFileResults.filter(r => r.file_type === "dockerfile");
+  const cfResults = perFileResults.filter(r => r.file_type === "compose");
+
+  const stacks = (job.input_metadata?.stacks as string[] | undefined) ?? [];
+
+  if (perFileResults.length === 0 && serviceMappings.length === 0 && !projectSummary) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-6 mb-6">
+      {/* Project summary card */}
+      {projectSummary && (
+        <Card className="p-5 bg-slate-900 border-slate-800">
+          <h3 className="text-lg font-semibold text-white mb-4">Project Summary</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="p-3 bg-slate-950 rounded border border-slate-800 text-center">
+              <div className="text-2xl font-bold text-white">{projectSummary.total_files_analyzed}</div>
+              <div className="text-xs text-slate-400">Files analyzed</div>
+            </div>
+            <div className="p-3 bg-slate-950 rounded border border-slate-800 text-center">
+              <div className="text-2xl font-bold text-red-400">{projectSummary.total_errors}</div>
+              <div className="text-xs text-slate-400">Total errors</div>
+            </div>
+            <div className="p-3 bg-slate-950 rounded border border-slate-800 text-center">
+              <div className="text-2xl font-bold text-yellow-400">{projectSummary.total_warnings}</div>
+              <div className="text-xs text-slate-400">Total warnings</div>
+            </div>
+            <div className="p-3 bg-slate-950 rounded border border-slate-800 text-center">
+              <div className="text-2xl font-bold text-orange-400">{projectSummary.total_security_issues}</div>
+              <div className="text-xs text-slate-400">Security issues</div>
+            </div>
+          </div>
+          {stacks.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {stacks.map(s => <Badge key={s} variant="secondary" className="bg-slate-800 text-slate-300 text-xs">{s}</Badge>)}
+            </div>
+          )}
+          {projectSummary.best_score_file && (
+            <p className="text-xs text-slate-500">Best: <span className="font-mono text-slate-300">{projectSummary.best_score_file}</span></p>
+          )}
+        </Card>
+      )}
+
+      {/* Per-file analysis tabs */}
+      {perFileResults.length > 0 && (
+        <div>
+          <Tabs defaultValue="all-files">
+            <TabsList className="bg-slate-900 border border-slate-800 mb-4">
+              <TabsTrigger value="all-files">All Files ({perFileResults.length})</TabsTrigger>
+              {dfResults.length > 0 && <TabsTrigger value="dockerfiles">Dockerfiles ({dfResults.length})</TabsTrigger>}
+              {cfResults.length > 0 && <TabsTrigger value="compose">Compose ({cfResults.length})</TabsTrigger>}
+              {serviceMappings.length > 0 && <TabsTrigger value="mapping">Service Mapping</TabsTrigger>}
+              {recommendations.length > 0 && <TabsTrigger value="recommendations">Recommendations</TabsTrigger>}
+            </TabsList>
+
+            <TabsContent value="all-files" className="space-y-3">
+              {perFileResults.map(f => <FileResultCard key={f.file_path} file={f} />)}
+            </TabsContent>
+
+            {dfResults.length > 0 && (
+              <TabsContent value="dockerfiles" className="space-y-3">
+                {dfResults.map(f => <FileResultCard key={f.file_path} file={f} />)}
+              </TabsContent>
+            )}
+
+            {cfResults.length > 0 && (
+              <TabsContent value="compose" className="space-y-3">
+                {cfResults.map(f => <FileResultCard key={f.file_path} file={f} />)}
+              </TabsContent>
+            )}
+
+            {serviceMappings.length > 0 && (
+              <TabsContent value="mapping">
+                <Card className="p-5 bg-slate-900 border-slate-800">
+                  <h3 className="text-base font-semibold text-white mb-3">Compose → Dockerfile Mapping</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {serviceMappings.map(m => (
+                      <ServiceMappingCard key={`${m.compose_file}:${m.service}`} mapping={m} />
+                    ))}
+                  </div>
+                </Card>
+              </TabsContent>
+            )}
+
+            {recommendations.length > 0 && (
+              <TabsContent value="recommendations">
+                <Card className="p-5 bg-slate-900 border-slate-800">
+                  <h3 className="text-base font-semibold text-white mb-3">Project Recommendations</h3>
+                  <ul className="space-y-2">
+                    {recommendations.map((rec, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
+                        <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                        {rec}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </TabsContent>
+            )}
+          </Tabs>
+        </div>
+      )}
+    </div>
   );
 }
 

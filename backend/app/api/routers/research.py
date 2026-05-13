@@ -1,7 +1,7 @@
-"""Cross-tenant research analytics.
+"""Public research analytics — anonymized, privacy-safe.
 
-Any authenticated user can read aggregates and all jobs. Intended for trusted research
-cohorts only; redaction or ``RESEARCH_ENABLED`` toggles may be added later.
+Any authenticated user can read aggregate statistics and per-job public signals.
+No personal identifiers, file contents, paths, or raw metadata are exposed.
 """
 
 import uuid
@@ -11,7 +11,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.application.schemas import PaginatedResearchJobs, ResearchJobRead, ResearchSummary, ResearchTimeBucket
+from app.api.research_privacy import (
+    anonymize_user_id,
+    sanitize_research_metadata,
+    sanitize_research_result,
+)
+from app.application.schemas import (
+    PaginatedPublicResearchJobs,
+    PublicResearchJobRead,
+    ResearchSummary,
+    ResearchTimeBucket,
+)
 from app.infrastructure.db.models import AnalysisJobModel, UserModel
 from app.infrastructure.db.repositories import JobRepository
 from app.infrastructure.db.session import get_db_session
@@ -41,18 +51,18 @@ def _extract_score_grade(result: dict | None) -> tuple[int | None, str | None]:
     return score, grade
 
 
-def _to_research_job_read(job: AnalysisJobModel) -> ResearchJobRead:
+def _to_public_research_job(job: AnalysisJobModel) -> PublicResearchJobRead:
     score, grade = _extract_score_grade(job.result)
-    return ResearchJobRead(
+    return PublicResearchJobRead(
         id=job.id,
-        user_id=job.user_id,
+        anonymized_submitter=anonymize_user_id(job.user_id),
         type=job.type.value,
         status=job.status.value,
-        input_metadata=dict(job.input_metadata or {}),
-        result=job.result,
         created_at=job.created_at,
         score=score,
         grade=grade,
+        public_metadata=sanitize_research_metadata(dict(job.input_metadata or {})),
+        public_result=sanitize_research_result(job.result),
     )
 
 
@@ -95,7 +105,7 @@ async def research_summary(
     )
 
 
-@router.get("/jobs", response_model=PaginatedResearchJobs)
+@router.get("/jobs", response_model=PaginatedPublicResearchJobs)
 async def list_research_jobs(
     limit: int = Query(default=_DEFAULT_LIMIT, ge=1, le=_MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
@@ -105,7 +115,7 @@ async def list_research_jobs(
     created_before: datetime | None = Query(default=None),
     current_user: UserModel = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> PaginatedResearchJobs:
+) -> PaginatedPublicResearchJobs:
     _ = current_user
     repo = JobRepository(session)
     total = await repo.count_jobs_global_filtered(
@@ -122,23 +132,23 @@ async def list_research_jobs(
         created_from=created_after,
         created_to=created_before,
     )
-    return PaginatedResearchJobs(
-        items=[_to_research_job_read(j) for j in rows],
+    return PaginatedPublicResearchJobs(
+        items=[_to_public_research_job(j) for j in rows],
         total=total,
         limit=limit,
         offset=offset,
     )
 
 
-@router.get("/jobs/{job_id}", response_model=ResearchJobRead)
+@router.get("/jobs/{job_id}", response_model=PublicResearchJobRead)
 async def get_research_job(
     job_id: uuid.UUID,
     current_user: UserModel = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> ResearchJobRead:
+) -> PublicResearchJobRead:
     _ = current_user
     repo = JobRepository(session)
     job = await repo.get_job_global(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
-    return _to_research_job_read(job)
+    return _to_public_research_job(job)

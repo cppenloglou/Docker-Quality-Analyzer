@@ -74,17 +74,13 @@ export interface Job {
   created_at: string;
 }
 
-export interface ResearchJob {
+export interface PublicResearchJob {
   id: string;
-  user_id: string;
+  anonymized_submitter: string;
   type: JobType;
   status: JobStatus;
-  input_metadata: Record<string, unknown> & {
-    filename?: string;
-    dockerfile_content?: string;
-    compose_content?: string;
-  };
-  result: Job["result"];
+  public_metadata: Record<string, unknown>;
+  public_result: Record<string, unknown> | null;
   created_at: string;
   score: number | null;
   grade: string | null;
@@ -106,7 +102,7 @@ export interface ResearchSummary {
 }
 
 export interface PaginatedResearchJobsResponse {
-  items: ResearchJob[];
+  items: PublicResearchJob[];
   total: number;
   limit: number;
   offset: number;
@@ -486,8 +482,8 @@ export const research = {
       `/api/v1/research/jobs${suffix ? `?${suffix}` : ""}`,
     );
   },
-  async get(jobId: string): Promise<ResearchJob> {
-    return request<ResearchJob>(`/api/v1/research/jobs/${jobId}`);
+  async get(jobId: string): Promise<PublicResearchJob> {
+    return request<PublicResearchJob>(`/api/v1/research/jobs/${jobId}`);
   },
 };
 
@@ -535,7 +531,118 @@ export const compose = {
   },
 };
 
+// ---------- project scan types ----------
+export interface DetectedService {
+  name: string;
+  compose_file: string;
+  image?: string | null;
+  build_context?: string | null;
+  build_dockerfile?: string | null;
+  ports: unknown[];
+  depends_on: string[];
+  db_hints: string[];
+}
+
+export interface ProjectDetectedAssets {
+  dockerfiles: string[];
+  compose_files: string[];
+  dockerignore_files: string[];
+  env_examples: string[];
+  stacks: string[];
+  package_managers: string[];
+  services: DetectedService[];
+}
+
+export interface ProjectRecommendation {
+  analysis_mode: string;
+  primary_dockerfile?: string | null;
+  primary_compose_file?: string | null;
+  can_build: boolean;
+  can_run: boolean;
+  reasons: string[];
+}
+
+export interface ProjectScanResponse {
+  project_id: string;
+  archive_name: string;
+  detected: ProjectDetectedAssets;
+  recommendation: ProjectRecommendation;
+  warnings: string[];
+}
+
+export interface ProjectAnalyzeRequest {
+  project_id: string;
+  selected_dockerfiles: string[];
+  selected_compose_files: string[];
+  primary_compose_file?: string | null;
+  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
+  build_selected_images: boolean;
+  run_after_analysis: boolean;
+}
+
+export interface PerFileAnalysisResult {
+  file_path: string;
+  file_type: "dockerfile" | "compose";
+  score: number;
+  grade: string;
+  errors_count: number;
+  warnings_count: number;
+  security_count: number;
+  suggestions_count: number;
+  errors: Issue[];
+  warnings: Issue[];
+  securityIssues: Issue[];
+  suggestions: Issue[];
+  meta?: Record<string, unknown>;
+}
+
+export interface ServiceBuildMapping {
+  service: string;
+  compose_file: string;
+  build_context?: string | null;
+  dockerfile?: string | null;
+  resolved_dockerfile?: string | null;
+  can_build: boolean;
+  can_run: boolean;
+  issues: string[];
+}
+
+export interface ProjectSummary {
+  total_files_analyzed: number;
+  dockerfiles_analyzed: number;
+  compose_files_analyzed: number;
+  total_errors: number;
+  total_warnings: number;
+  total_security_issues: number;
+  total_suggestions: number;
+  best_score_file?: string | null;
+  worst_score_file?: string | null;
+}
+
+export interface ProjectAnalysisResult extends AnalysisResult {
+  overall_score: number;
+  overall_grade: string;
+  per_file_results: PerFileAnalysisResult[];
+  service_mappings: ServiceBuildMapping[];
+  project_summary: ProjectSummary;
+  project_recommendations: string[];
+}
+
 export const project = {
+  async scan(file: File): Promise<ProjectScanResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ProjectScanResponse>("/api/v1/project/scan", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async analyze(payload: ProjectAnalyzeRequest): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>("/api/v1/project/analyze", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
   async upload(file: File): Promise<JobEnqueueResponse> {
     const formData = new FormData();
     formData.append("file", file);

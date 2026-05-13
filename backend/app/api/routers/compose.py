@@ -66,7 +66,8 @@ async def deploy_compose(
         raise HTTPException(status_code=404, detail="Job not found.")
 
     if job.type == JobType.project:
-        pass
+        if job.status != JobStatus.done:
+            raise HTTPException(status_code=409, detail="Project analysis must complete before deploy.")
     elif job.type == JobType.compose:
         if job.status != JobStatus.done:
             raise HTTPException(status_code=409, detail="Compose analysis must complete before deploy.")

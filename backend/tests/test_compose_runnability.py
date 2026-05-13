@@ -151,7 +151,7 @@ async def test_deploy_compose_allows_runnable_compose_and_project(monkeypatch: p
             id=project_job_id,
             user_id=user_id,
             type=JobType.project,
-            status=JobStatus.queued,
+            status=JobStatus.done,
             input_metadata={},
             result=None,
         ),
