@@ -14,7 +14,7 @@ alwaysApply: true
 | Domain | `backend/app/domain/` | `DomainEvent` dataclass (thin domain layer) |
 | Infrastructure | `backend/app/infrastructure/` | DB (SQLAlchemy async), Docker gateway, Redis event bus, subprocess tools |
 
-**Strict rule:** API layer never imports SQLAlchemy directly — always go through repositories and services.
+**API ↔ DB:** Handlers may import **lightweight ORM types/enums** for auth and comparisons. **Persistent reads/writes** and queries go through **repositories/services**—routers **must not** run raw SQLAlchemy queries.
 
 ## Async Job Pipeline
 
@@ -22,6 +22,10 @@ alwaysApply: true
 2. Worker picks up task → runs `AnalysisService.run_job_with_plugins()`
 3. Worker publishes `DomainEvent`s to Redis pub/sub
 4. WebSocket endpoints subscribe to channels and stream events to the browser
+
+## Project Analysis Workflow
+
+ZIP upload → **safe scan** → user **selects** Dockerfiles/Compose files → **per-file plugin runs** → merged **`ProjectAnalysisResult`** (`per_file_results`, `project_summary`, `service_mappings`, optional **`image_build_results`**). Builds and Compose **run/deploy only on explicit user action** (`build_selected_images`, deploy controls). Details: **`project-workflow.mdc`**, **`project-runtime-safety.mdc`**.
 
 ## Redis Channel Naming
 
@@ -40,6 +44,14 @@ Plugins live in `backend/app/plugins/`. Each extends `BasePlugin` (single `async
 ## Docker-in-Docker (DinD)
 
 Worker uses `DOCKER_HOST=tcp://dind:2375` to reach an isolated DinD sidecar. All `docker-compose` subprocess calls execute inside the worker container — never the host socket.
+
+## Research Privacy
+
+Research endpoints and `ResearchAnalytics` UI expose **aggregated / anonymized** fields only (`anonymized_submitter`, `public_metadata`, `public_result`). See **`research-privacy.mdc`**.
+
+## Runtime Monitoring
+
+Workers and Docker gateway expose **metrics** and **final container state** (running, exited, unhealthy, partial). Frontend monitoring pages must distinguish states honestly—no “Live” for exited containers. See **`results-and-monitoring.mdc`** and **`project-runtime-safety.mdc`**.
 
 ## Frontend
 

@@ -31,6 +31,15 @@ app.dependency_overrides.clear()  # always clean up
 
 Prefer `monkeypatch.setattr("app.api.routers.compose.JobRepository", FakeRepo)` with inline fake classes over complex `unittest.mock` setups.
 
+### Coverage expectations
+
+When touching these areas, keep or extend tests in:
+
+- **`test_project_scan.py`** — project ZIP scan behavior
+- **`test_project_build.py`** — optional image builds, failure isolation
+- **`test_container_lifecycle.py`** — start/stop, exit, unhealthy states
+- **`test_research_privacy.py`** — research responses leak no forbidden fields
+
 ### Running Tests
 
 ```bash
@@ -48,3 +57,5 @@ cd frontend
 npm run lint
 npm run build
 ```
+
+**CI / pre-merge:** run **`npm run build`** (not only `lint`) so TypeScript and bundling stay green.

@@ -62,4 +62,5 @@ import { cn } from "../components/ui/utils";
 
 ## Motion
 
+- UI motion libraries: **`creative-frontend-animation.mdc`** (Motion is default; GSAP/R3F/Rive/Lottie only if requested).
 - Prefer **`motion-safe:`** / **`motion-reduce:`** for transitions; avoid `transition-all`—animate specific properties (`colors`, `opacity`, `transform`, `box-shadow`).

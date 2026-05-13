@@ -23,7 +23,42 @@ from app.infrastructure.events.bus import publish_event, redis_client
 settings = get_settings()
 DEPLOY_STATE_TTL_SECONDS = 60 * 60 * 6
 METRICS_INTERVAL_SECONDS = 2
-SOURCE_PREVIEW_MAX_LINES = 500
+SOURCE_PREVIEW_MAX_LINES = 300
+SOURCE_PREVIEW_MAX_BYTES = 50 * 1024
+
+
+def extract_base_image_from_dockerfile(content: str) -> str | None:
+    """Return the image reference from the first effective FROM line (strip AS stage name)."""
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not line.upper().startswith("FROM "):
+            continue
+        rest = line[5:].strip().split("#", 1)[0].strip()
+        if not rest:
+            return None
+        lower = rest.lower()
+        if " as " in lower:
+            idx = lower.rfind(" as ")
+            rest = rest[:idx].strip()
+        tokens = rest.split()
+        i = 0
+        while i < len(tokens) and tokens[i].startswith("--"):
+            i += 1
+        if i >= len(tokens):
+            return None
+        return tokens[i].strip() or None
+    return None
+
+
+def truncate_source_preview(content: str, max_lines: int, max_bytes: int) -> str:
+    lines = content.splitlines()[:max_lines]
+    text = "\n".join(lines)
+    blob = text.encode("utf-8")
+    if len(blob) <= max_bytes:
+        return text
+    return blob[:max_bytes].decode("utf-8", errors="ignore")
 
 
 async def run_dockerfile_analysis(ctx, payload: dict) -> dict:
@@ -89,7 +124,11 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
             )
             try:
                 content = df_path.read_text(encoding="utf-8", errors="ignore")
-                source_preview = "\n".join(content.splitlines()[:SOURCE_PREVIEW_MAX_LINES])
+                source_preview = truncate_source_preview(
+                    content,
+                    SOURCE_PREVIEW_MAX_LINES,
+                    SOURCE_PREVIEW_MAX_BYTES,
+                )
                 file_result = await svc.analyze_content(
                     content,
                     content_type="dockerfile",
@@ -134,7 +173,11 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
             )
             try:
                 content = cf_path.read_text(encoding="utf-8", errors="ignore")
-                source_preview = "\n".join(content.splitlines()[:SOURCE_PREVIEW_MAX_LINES])
+                source_preview = truncate_source_preview(
+                    content,
+                    SOURCE_PREVIEW_MAX_LINES,
+                    SOURCE_PREVIEW_MAX_BYTES,
+                )
                 file_result = await svc.analyze_content(
                     content,
                     content_type="compose",
@@ -217,15 +260,24 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
             gateway = DockerGateway()
             job_id_hex = str(job_id).replace("-", "")
             for df_rel in dockerfiles:
-                df_path = project_path / df_rel
-                df_hash = hashlib.md5(df_rel.encode()).hexdigest()[:8]
+                df_path = (project_path / df_rel).resolve()
+                df_hash = hashlib.sha256(df_rel.encode()).hexdigest()[:8]
                 image_tag = f"dqa-{job_id_hex[:12]}-{df_hash}"
-                # Build context is the directory containing the Dockerfile, or project root
-                build_ctx = str(df_path.parent) if df_path.parent != project_path else str(project_path)
+                build_ctx = str(df_path.parent)
+                dockerfile_name = df_path.name
+                base_image: str | None = None
+                try:
+                    base_image = extract_base_image_from_dockerfile(
+                        df_path.read_text(encoding="utf-8", errors="ignore")
+                    )
+                except Exception:
+                    pass
+
                 build_entry: dict[str, Any] = {
                     "dockerfile_path": df_rel,
                     "build_context": build_ctx,
                     "image_tag": image_tag,
+                    "base_image": base_image,
                     "status": "skipped",
                     "build_logs": [],
                 }
@@ -251,10 +303,9 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
                             )
                         )
 
-                    # Collect logs via the generator, streaming each line as an event
-                    image_obj, log_lines = await gateway.build_image(
+                    _, log_lines = await gateway.build_image(
                         path=build_ctx,
-                        dockerfile=str(df_path),
+                        dockerfile=dockerfile_name,
                         tag=image_tag,
                     )
                     for line in log_lines:
@@ -428,6 +479,8 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
         return {"status": "no_active_deploy"}
 
     await _set_stop_requested(user_id, job_id)
+    state["stopping"] = True
+    await _set_deploy_state(user_id, job_id, state)
     await _compose_down(state, remove_volumes)
 
     container_id = str(state.get("container_id") or state.get("project_name") or "")
@@ -713,9 +766,29 @@ async def _run_subprocess_streaming(
     return proc.returncode or 0
 
 
+def _reconcile_deploy_counts(state: dict[str, Any]) -> None:
+    """Set running/exited/unhealthy counts from ``state['containers']``."""
+    containers_raw = state.get("containers") or []
+    running = exited = unhealthy = 0
+    for c in containers_raw:
+        if not isinstance(c, dict):
+            continue
+        st = (c.get("status") or "").lower()
+        if st in ("running", "paused", "restarting"):
+            running += 1
+        elif st in ("exited", "dead", "removing") or "exited" in st:
+            exited += 1
+        if (c.get("health_status") or "").lower() == "unhealthy":
+            unhealthy += 1
+    state["running_count"] = running
+    state["exited_count"] = exited
+    state["unhealthy_count"] = unhealthy
+
+
 async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -> None:
     docker_gateway = DockerGateway()
     active_ids: set[str] = set(container_ids)
+    pre_stats_exit = frozenset({"exited", "dead", "removing", "not_found"})
 
     while active_ids:
         if await _is_stop_requested(user_id, job_id):
@@ -723,6 +796,16 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
 
         newly_exited: list[str] = []
         for container_id in list(active_ids):
+            try:
+                cstate = await docker_gateway.inspect_container_state(container_id)
+            except Exception:
+                continue
+
+            st = (cstate.get("status") or "").lower()
+            if st in pre_stats_exit:
+                newly_exited.append(container_id)
+                continue
+
             try:
                 metrics = await docker_gateway.inspect_container_metrics(container_id)
             except (docker.errors.NotFound, docker.errors.APIError):
@@ -741,7 +824,6 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
                 )
             )
 
-        # Handle any containers that just exited
         for container_id in newly_exited:
             active_ids.discard(container_id)
             try:
@@ -758,27 +840,31 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
                 )
             )
 
-            # Update deploy state to record exited container
             state = await _get_deploy_state(user_id, job_id) or {}
-            containers_state: list[dict] = state.get("containers", [])
-            # Remove old entry for this container if present, then add updated
+            containers_state = [c for c in state.get("containers", []) if isinstance(c, dict)]
+            old = next((c for c in containers_state if c.get("id") == container_id), None)
             containers_state = [c for c in containers_state if c.get("id") != container_id]
+
+            raw_logs = final_state.get("last_logs")
+            log_list = raw_logs if isinstance(raw_logs, list) else []
+
             containers_state.append({
                 "id": container_id,
-                "name": final_state.get("container_name"),
-                "image": final_state.get("image"),
+                "name": final_state.get("container_name") or (old or {}).get("name"),
+                "service": (old or {}).get("service"),
+                "image": final_state.get("image") or (old or {}).get("image"),
                 "status": "exited",
+                "health_status": (old or {}).get("health_status"),
                 "exit_code": final_state.get("exit_code"),
+                "error": final_state.get("error"),
                 "started_at": final_state.get("started_at"),
                 "finished_at": final_state.get("finished_at"),
                 "restart_count": final_state.get("restart_count"),
                 "oom_killed": final_state.get("oom_killed"),
+                "last_logs": log_list,
             })
             state["containers"] = containers_state
-            state["exited_count"] = state.get("exited_count", 0) + 1
-            # Decrement running_count
-            if state.get("running_count", 0) > 0:
-                state["running_count"] = state["running_count"] - 1
+            _reconcile_deploy_counts(state)
             await _set_deploy_state(user_id, job_id, state)
 
         # If all containers exited, publish runtime stopped
@@ -821,7 +907,7 @@ async def _set_stop_requested(user_id: str, job_id: str) -> None:
 
 async def _is_stop_requested(user_id: str, job_id: str) -> bool:
     raw = await redis_client.get(_deploy_stop_key(user_id, job_id))
-    return raw == "1"
+    return str(raw or "") == "1"
 
 
 async def _clear_deploy_state(user_id: str, job_id: str) -> None:

@@ -251,6 +251,7 @@ class ContainerStateInfo(BaseModel):
     status: str | None = None
     health_status: str | None = None
     exit_code: int | None = None
+    error: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
     restart_count: int | None = None

@@ -121,15 +121,62 @@ export function Monitoring() {
       try {
         const status = await composeApi.deployStatus(jobId);
         if (cancelled) return;
-        if (status.active && status.container_ids.length > 0) {
-          setContainerIds(status.container_ids);
-          if (!selectedContainerId || !status.container_ids.includes(selectedContainerId)) {
-            setSelectedContainerId(status.container_ids[0]);
-          }
+
+        const fromIds =
+          status.container_ids.length > 0
+            ? status.container_ids
+            : (status.containers?.map((c) => c.id).filter(Boolean) as string[]) ?? [];
+
+        const ids =
+          fromIds.length > 0 ? fromIds : routeContainerId ? [routeContainerId] : [];
+
+        if (ids.length > 0) {
+          setContainerIds(ids);
+          setSelectedContainerId((sel) =>
+            sel && ids.includes(sel) ? sel : ids[0],
+          );
         } else if (routeContainerId) {
           setContainerIds([routeContainerId]);
           setSelectedContainerId(routeContainerId);
         }
+
+        const fromDeploy = status.containers ?? [];
+        if (fromDeploy.length === 0) return;
+
+        setContainerStates((prev) => {
+          const next = { ...prev };
+          for (const c of fromDeploy) {
+            if (!c.id || c.status !== "exited") continue;
+            const existing = next[c.id] ?? {
+              points: [],
+              logs: [],
+              latestPayload: null,
+              connected: false,
+            };
+            const lastLogs = (c.last_logs ?? []).filter(
+              (l): l is string => typeof l === "string",
+            );
+            const tailLogs: TerminalLogEntry[] = lastLogs.map((line) => ({
+              message: `[deploy] ${line}`,
+              tone: "info" as const,
+            }));
+            next[c.id] = {
+              ...existing,
+              connected: false,
+              exited: {
+                exit_code: c.exit_code,
+                error: c.error ?? null,
+                started_at: c.started_at ?? null,
+                finished_at: c.finished_at ?? null,
+                restart_count: c.restart_count ?? null,
+                oom_killed: c.oom_killed ?? null,
+                last_logs: lastLogs,
+              },
+              logs: [...existing.logs.slice(-200), ...tailLogs.slice(-80)],
+            };
+          }
+          return next;
+        });
       } catch {
         if (routeContainerId) {
           setContainerIds([routeContainerId]);
@@ -137,7 +184,9 @@ export function Monitoring() {
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [jobId, routeContainerId]);
 
   useEffect(() => {
@@ -385,6 +434,16 @@ export function Monitoring() {
                     <span>Restarts: {exitedState.restart_count}</span>
                   )}
                 </div>
+                {Array.isArray(exitedState.last_logs) && exitedState.last_logs.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-slate-400 cursor-pointer select-none">
+                      Last logs ({exitedState.last_logs.length} lines)
+                    </summary>
+                    <pre className="mt-1 max-h-40 overflow-auto rounded border border-slate-800 bg-slate-950 p-2 text-[10px] text-slate-300 whitespace-pre-wrap font-mono">
+                      {exitedState.last_logs.join("\n")}
+                    </pre>
+                  </details>
+                )}
                 {chartData.length === 0 && (
                   <p className="text-xs text-slate-500 mt-1 italic">
                     Container exited before metrics were collected.
@@ -476,7 +535,9 @@ export function Monitoring() {
             <h3 className="text-xs font-semibold text-slate-400 mb-2">CPU (%)</h3>
             {chartData.length === 0 ? (
               <div className="h-40 flex items-center justify-center text-slate-500 text-xs">
-                Waiting for metrics...
+                {exitedState
+                  ? "Container exited before metrics were collected."
+                  : "Waiting for metrics..."}
               </div>
             ) : (
               <div className="h-40">
@@ -499,7 +560,9 @@ export function Monitoring() {
             <h3 className="text-xs font-semibold text-slate-400 mb-2">Memory (MB)</h3>
             {chartData.length === 0 ? (
               <div className="h-40 flex items-center justify-center text-slate-500 text-xs">
-                Waiting for metrics...
+                {exitedState
+                  ? "Container exited before metrics were collected."
+                  : "Waiting for metrics..."}
               </div>
             ) : (
               <div className="h-40">

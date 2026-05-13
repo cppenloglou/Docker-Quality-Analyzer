@@ -27,6 +27,16 @@ _SAFE_METADATA_KEYS: frozenset[str] = frozenset(
 # Top-level result fields that are safe to expose directly.
 _SAFE_RESULT_SCALAR_KEYS: frozenset[str] = frozenset({"score", "grade"})
 
+
+def strip_source_preview_recursive(obj: Any) -> Any:
+    """Remove ``source_preview`` keys at any nesting depth (defense in depth for research API)."""
+    if isinstance(obj, dict):
+        return {k: strip_source_preview_recursive(v) for k, v in obj.items() if k != "source_preview"}
+    if isinstance(obj, list):
+        return [strip_source_preview_recursive(v) for v in obj]
+    return obj
+
+
 # Issue list keys whose items we summarise (count + code extraction).
 _ISSUE_LIST_KEYS: tuple[str, ...] = ("errors", "warnings", "suggestions", "securityIssues")
 
@@ -77,6 +87,8 @@ def sanitize_research_result(result: dict[str, Any] | None) -> dict[str, Any] | 
     if not result or not isinstance(result, dict):
         return None
 
+    result = strip_source_preview_recursive(result)
+
     safe: dict[str, Any] = {}
 
     # Copy safe scalar fields.
@@ -115,4 +127,4 @@ def sanitize_research_result(result: dict[str, Any] | None) -> dict[str, Any] | 
     if doc_urls:
         safe["doc_urls"] = list(dict.fromkeys(doc_urls))  # deduplicated, order preserved
 
-    return safe
+    return strip_source_preview_recursive(safe)

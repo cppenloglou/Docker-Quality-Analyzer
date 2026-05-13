@@ -159,6 +159,20 @@ class DockerGateway:
             "last_logs": last_logs,
         }
 
+    async def inspect_container_state(self, container_id: str) -> dict[str, Any]:
+        """Return container State.Status without collecting stats (cheap pre-check for lifecycle)."""
+        return await asyncio.to_thread(self._inspect_container_state_sync, container_id)
+
+    def _inspect_container_state_sync(self, container_id: str) -> dict[str, Any]:
+        try:
+            container = self.client.containers.get(container_id)
+        except docker.errors.NotFound:
+            return {"container_id": container_id, "status": "not_found"}
+        attrs = container.attrs or {}
+        state = attrs.get("State") or {}
+        status = str(state.get("Status") or "").lower()
+        return {"container_id": container_id, "status": status}
+
     # ── Container metrics ─────────────────────────────────────────────────────
 
     async def inspect_container_metrics(self, container_id: str) -> dict[str, Any]:

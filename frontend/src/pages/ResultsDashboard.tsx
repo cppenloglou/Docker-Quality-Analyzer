@@ -174,8 +174,57 @@ export function ResultsDashboard() {
         const status = await composeApi.deployStatus(job.id);
         if (cancelled) return;
 
-        if (!status.active) {
-          // Check if containers have exited state even when inactive
+        const rs = status.runtime_state ?? "none";
+        const sessionStopping =
+          typeof sessionStorage !== "undefined" &&
+          sessionStorage.getItem("dqa:containerStatus") === "stopping";
+
+        const treatAsStopping =
+          rs === "stopping" ||
+          Boolean(status.active && sessionStopping);
+
+        if (treatAsStopping) {
+          setContainerStatus("stopping");
+          for (let i = 0; i < 30; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            if (cancelled) return;
+            try {
+              const poll = await composeApi.deployStatus(job.id);
+              const pr = poll.runtime_state ?? "none";
+              if (pr !== "stopping") {
+                if (pr === "exited") {
+                  setContainerStatus("exited");
+                } else {
+                  setContainerStatus("stopped");
+                }
+                sessionStorage.removeItem("dqa:containerStatus");
+                if (pr === "none" || pr === "exited") {
+                  toast.success(
+                    pr === "exited"
+                      ? "Containers exited"
+                      : "Containers stopped",
+                  );
+                }
+                return;
+              }
+            } catch {
+              break;
+            }
+          }
+          setContainerStatus("stopped");
+          sessionStorage.removeItem("dqa:containerStatus");
+          return;
+        }
+
+        if (rs === "running") {
+          setContainerStatus("running");
+        } else if (rs === "partial") {
+          setContainerStatus("partial");
+        } else if (rs === "unhealthy") {
+          setContainerStatus("unhealthy");
+        } else if (rs === "exited") {
+          setContainerStatus("exited");
+        } else if (rs === "none") {
           const exitedCount = status.exited_count ?? 0;
           const runningCount = status.running_count ?? 0;
           if (exitedCount > 0 && runningCount === 0) {
@@ -184,28 +233,19 @@ export function ResultsDashboard() {
             setContainerStatus("stopped");
             sessionStorage.removeItem("dqa:containerStatus");
           }
-        } else if (containerStatus === "stopping") {
-          for (let i = 0; i < 30; i++) {
-            await new Promise((r) => setTimeout(r, 2000));
-            if (cancelled) return;
-            try {
-              const poll = await composeApi.deployStatus(job.id);
-              if (!poll.active) {
-                setContainerStatus("stopped");
-                sessionStorage.removeItem("dqa:containerStatus");
-                toast.success("Containers stopped");
-                return;
-              }
-            } catch { break; }
-          }
-          setContainerStatus("stopped");
-          sessionStorage.removeItem("dqa:containerStatus");
         } else {
-          // Derive state from counts
-          const runningCount = status.running_count ?? status.container_ids.length;
+          const runningCount =
+            status.running_count ?? status.container_ids.length;
           const exitedCount = status.exited_count ?? 0;
           const unhealthyCount = status.unhealthy_count ?? 0;
-          if (unhealthyCount > 0) {
+          if (!status.active) {
+            if (exitedCount > 0 && runningCount === 0) {
+              setContainerStatus("exited");
+            } else {
+              setContainerStatus("stopped");
+              sessionStorage.removeItem("dqa:containerStatus");
+            }
+          } else if (unhealthyCount > 0) {
             setContainerStatus("unhealthy");
           } else if (exitedCount > 0 && runningCount > 0) {
             setContainerStatus("partial");
@@ -219,7 +259,9 @@ export function ResultsDashboard() {
         // ignore
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [job]);
 
   const standardResult = useMemo<AnalysisResult | null>(() => {

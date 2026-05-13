@@ -31,7 +31,8 @@ async def analyze(
 
 ## Rules
 
-- Never import SQLAlchemy models or engine directly in routers — use repositories/services.
+- Routers **may** import lightweight SQLAlchemy model types or enums (e.g. `UserModel` for `Depends` typing, `JobType` / `JobStatus` for comparisons).
+- Routers **must not** run raw SQLAlchemy queries, `session.execute`, or ad-hoc ORM loads—**DB access goes through repositories/services**.
 - Return Pydantic schema instances directly (FastAPI serializes them).
 - File uploads use `File(...)` / `UploadFile` with manual size checks before handing off to services.
 - Each router file: `router = APIRouter(prefix=..., tags=[...])` at module level.

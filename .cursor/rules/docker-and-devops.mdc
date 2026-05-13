@@ -5,7 +5,9 @@ alwaysApply: true
 
 # Docker & DevOps
 
-## 7-Service Compose Stack
+## 6-Service Compose Stack
+
+Stack is defined in `docker-compose.yaml` at the repo root.
 
 | Service | Role | Port |
 |---|---|---|

@@ -129,8 +129,17 @@ export interface RuntimeContainerState {
   last_logs?: string[] | null;
 }
 
+export type DeployRuntimeState =
+  | "none"
+  | "running"
+  | "partial"
+  | "exited"
+  | "unhealthy"
+  | "stopping";
+
 export interface DeployStatusResponse {
   active: boolean;
+  runtime_state?: DeployRuntimeState;
   container_ids: string[];
   project_name: string | null;
   containers?: RuntimeContainerState[];

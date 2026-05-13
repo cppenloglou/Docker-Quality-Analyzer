@@ -1,5 +1,6 @@
 import json
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -120,12 +121,30 @@ async def stop_compose_deploy(
 
 class DeployStatusResponse(BaseModel):
     active: bool
+    runtime_state: Literal["none", "running", "partial", "exited", "unhealthy", "stopping"] = "none"
     container_ids: list[str] = []
     project_name: str | None = None
     containers: list[ContainerStateInfo] = []
     running_count: int = 0
     exited_count: int = 0
     unhealthy_count: int = 0
+
+
+def _deploy_stop_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
+    return f"deploy-stop:{user_id}:{job_id}"
+
+
+def _recompute_container_counts(containers: list[ContainerStateInfo]) -> tuple[int, int, int]:
+    running = exited = unhealthy = 0
+    for c in containers:
+        st = (c.status or "").lower()
+        if st in ("running", "paused", "restarting"):
+            running += 1
+        elif st in ("exited", "dead", "removing") or "exited" in st:
+            exited += 1
+        if (c.health_status or "").lower() == "unhealthy":
+            unhealthy += 1
+    return running, exited, unhealthy
 
 
 @router.get("/deploy/status/{job_id}", response_model=DeployStatusResponse)
@@ -136,35 +155,57 @@ async def get_deploy_status(
     key = f"deploy:{current_user.id}:{job_id}"
     raw = await redis_client.get(key)
     if not raw:
-        return DeployStatusResponse(active=False)
+        return DeployStatusResponse(active=False, runtime_state="none")
+
     try:
         state = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return DeployStatusResponse(active=False)
+        return DeployStatusResponse(active=False, runtime_state="none")
 
     raw_containers: list[dict] = state.get("containers", [])
     containers = [ContainerStateInfo(**c) for c in raw_containers if isinstance(c, dict)]
-    running_count = state.get("running_count", 0)
-    exited_count = state.get("exited_count", 0)
-    unhealthy_count = state.get("unhealthy_count", 0)
+    container_ids: list[str] = list(state.get("container_ids", []) or [])
 
-    # If counts not stored yet, derive from containers list
-    if not running_count and not exited_count and containers:
-        for c in containers:
-            if c.status in ("running",):
-                running_count += 1
-            elif c.status in ("exited", "dead", "removing"):
-                exited_count += 1
-            if c.health_status == "unhealthy":
-                unhealthy_count += 1
+    if containers:
+        running_count, exited_count, unhealthy_count = _recompute_container_counts(containers)
+    else:
+        running_count = int(state.get("running_count", 0) or 0)
+        exited_count = int(state.get("exited_count", 0) or 0)
+        unhealthy_count = int(state.get("unhealthy_count", 0) or 0)
 
-    # Determine active: active if stop not explicitly requested and containers exist
-    # Use stored active flag if present; fall back to container_ids existence
-    active = bool(state.get("container_ids") or state.get("containers"))
+    has_tracked = bool(container_ids) or bool(containers)
+    stop_raw = await redis_client.get(_deploy_stop_key(current_user.id, job_id))
+    stop_pending = str(stop_raw or "") == "1" or bool(state.get("stopping"))
+
+    runtime_state: Literal["none", "running", "partial", "exited", "unhealthy", "stopping"] = "none"
+    active = False
+
+    if not has_tracked:
+        runtime_state = "none"
+        active = False
+    elif stop_pending:
+        runtime_state = "stopping"
+        active = True
+    elif running_count == 0 and exited_count > 0:
+        runtime_state = "exited"
+        active = False
+    elif unhealthy_count > 0 and running_count > 0:
+        runtime_state = "unhealthy"
+        active = True
+    elif running_count > 0 and exited_count > 0:
+        runtime_state = "partial"
+        active = True
+    elif running_count > 0:
+        runtime_state = "running"
+        active = True
+    else:
+        runtime_state = "none"
+        active = False
 
     return DeployStatusResponse(
         active=active,
-        container_ids=state.get("container_ids", []),
+        runtime_state=runtime_state,
+        container_ids=container_ids,
         project_name=state.get("project_name"),
         containers=containers,
         running_count=running_count,

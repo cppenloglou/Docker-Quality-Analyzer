@@ -1,0 +1,32 @@
+---
+description: Results dashboards vs project results; monitoring states and live metrics honesty
+globs:
+  - frontend/src/pages/ResultsDashboard.tsx
+  - frontend/src/pages/Monitoring.tsx
+  - frontend/src/pages/AnalysisProgress.tsx
+  - frontend/src/pages/ContainerExecution.tsx
+  - frontend/src/components/FileAnalysisDetail.tsx
+  - frontend/src/components/IssueTabs.tsx
+  - frontend/src/components/IssueCard.tsx
+alwaysApply: false
+---
+
+# Results & Monitoring
+
+## Types
+
+- Standard Dockerfile / single-file Compose flows use **`AnalysisResult`** (and related single-job shapes).
+- **Project** (ZIP / multi-file) outcomes use **`ProjectAnalysisResult`**.
+- **Do not** gate project views behind the same **errors/warnings** type guards that only fit single-file analysis—project payloads are structured differently.
+
+## Project UI
+
+- Show **`per_file_results`**, **`service_mappings`**, **`project_summary`**, **`image_build_results`** when present.
+- **Per-file** rows should feel like the standard analysis experience (issues, scores, file identity) within the project shell.
+- **Image build** cards: show **image metadata** (name/tag/digest when available) and **logs** (or log summary + expand).
+
+## Monitoring
+
+- Surface **running**, **exited**, **unhealthy**, **partial**, and **disconnected** (WS/client) states **clearly**—different copy, color, and icons; no ambiguous “active” for dead processes.
+- If a container **exits before metrics** exist, show an explicit message (no empty chart pretending health).
+- **Do not** label exited containers **“Live”** or imply continuous metrics when the process has stopped.
