@@ -10,6 +10,7 @@ import {
   Play,
   ShieldAlert,
   Square,
+  XCircle,
 } from "lucide-react";
 
 import { DockerLoader, useMinLoader } from "../components/DockerLoader";
@@ -46,7 +47,7 @@ const BASE_TIMELINE: TimelineEntry[] = [
 ];
 const EXECUTION_STATE_TTL_MS = 1000 * 60 * 60 * 6;
 
-type DeployPhase = "idle" | "deploying" | "running" | "failed";
+type DeployPhase = "idle" | "deploying" | "running" | "failed" | "exited";
 
 interface ComposeUpProgress {
   total: number;
@@ -311,6 +312,19 @@ export function ContainerExecution() {
             pushNotification("success", "Containers Running", `${ids.length || 1} container(s) are now running`);
           } else if (parsed.event_name === "container.metrics") {
             setTimelineStatus("metrics", "running", "Metrics streaming");
+          } else if (parsed.event_name === "container.exited") {
+            const p = parsed.payload as { container_id?: string; container_name?: string; exit_code?: number; error?: string };
+            const name = p.container_name ?? p.container_id?.slice(0, 12) ?? "container";
+            const exitMsg = `Container exited: ${name} (code ${p.exit_code ?? "??"})${p.error ? ` — ${p.error}` : ""}`;
+            setTimelineStatus("start", "error", exitMsg);
+            pushLog({ message: exitMsg, timestamp: parsed.timestamp, tone: "error" });
+          } else if (parsed.event_name === "project.runtime_stopped") {
+            setTimelineStatus("metrics", "done", "All containers exited");
+            setStackRunning(false);
+            setDeployPhase("exited");
+            clearDeployTimeout();
+            pushLog({ message: "All containers have exited.", timestamp: parsed.timestamp, tone: "info" });
+            pushNotification("warning", "Runtime Stopped", "All containers have exited");
           } else if (parsed.event_name === "container.stopped") {
             setTimelineStatus("metrics", "done", "Stack stopped");
             setStackRunning(false);
@@ -518,11 +532,15 @@ export function ContainerExecution() {
                       ? "Deploy in progress..."
                       : deployPhase === "failed"
                         ? "Previous deploy failed. Click to retry."
-                        : "Trigger deploy"
+                        : deployPhase === "exited"
+                          ? "All containers exited. Click to run again."
+                          : "Trigger deploy"
                 }
               >
                 {deployPhase === "deploying" || stopping ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : deployPhase === "exited" ? (
+                  <XCircle className="w-4 h-4 mr-2 text-amber-300" />
                 ) : (
                   <Play className="w-4 h-4 mr-2" />
                 )}
@@ -532,7 +550,9 @@ export function ContainerExecution() {
                     ? "Running"
                     : deployPhase === "deploying"
                       ? "Deploying..."
-                      : "Deploy"}
+                      : deployPhase === "exited"
+                        ? "Exited — Run Again"
+                        : "Deploy"}
               </Button>
               <Button
                 onClick={handleStop}

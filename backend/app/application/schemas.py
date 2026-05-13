@@ -211,3 +211,48 @@ class ProjectAnalysisResult(BaseModel):
     per_file_results: list[PerFileAnalysisResult] = []
     service_mappings: list[ServiceBuildMapping] = []
     project_recommendations: list[str] = []
+    image_build_results: list["ImageBuildResult"] = []
+
+
+class ImageBuildResult(BaseModel):
+    dockerfile_path: str
+    build_context: str
+    image_tag: str
+    image_id: str | None = None
+    status: Literal["success", "failed", "skipped"] = "skipped"
+    build_started_at: str | None = None
+    build_finished_at: str | None = None
+    build_duration_ms: int | None = None
+    image_size_bytes: int | None = None
+    image_size_human: str | None = None
+    layer_count: int | None = None
+    base_image: str | None = None
+    exposed_ports: list[str] = []
+    env_keys: list[str] = []
+    labels: dict[str, str] = {}
+    entrypoint: list[str] | None = None
+    cmd: list[str] | None = None
+    user: str | None = None
+    workdir: str | None = None
+    architecture: str | None = None
+    os: str | None = None
+    created_at: str | None = None
+    repo_tags: list[str] = []
+    repo_digests: list[str] = []
+    build_logs: list[str] = []
+    error_message: str | None = None
+
+
+class ContainerStateInfo(BaseModel):
+    id: str
+    name: str | None = None
+    service: str | None = None
+    image: str | None = None
+    status: str | None = None
+    health_status: str | None = None
+    exit_code: int | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    restart_count: int | None = None
+    oom_killed: bool | None = None
+    last_logs: list[str] = []

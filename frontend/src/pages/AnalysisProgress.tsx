@@ -76,6 +76,18 @@ const PROJECT_STEPS: AnalysisStep[] = [
     status: "pending",
   },
   {
+    id: "project.image_build",
+    label: "Building Images",
+    description: "Building Docker images from selected Dockerfiles",
+    status: "pending",
+  },
+  {
+    id: "project.compose_run",
+    label: "Running Stack",
+    description: "Starting compose stack for runtime analysis",
+    status: "pending",
+  },
+  {
     id: "finalize",
     label: "Complete",
     description: "Project analysis report ready",
@@ -90,6 +102,13 @@ const PROJECT_EVENT_TO_STEP: Record<string, string> = {
   "project.file_analysis_completed": "project.file_analysis",
   "project.merge_started": "project.merge_started",
   "project.analysis_completed": "finalize",
+  "project.image_build_started": "project.image_build",
+  "project.image_build_log": "project.image_build",
+  "project.image_build_completed": "project.image_build",
+  "project.image_build_failed": "project.image_build",
+  "container.started": "project.compose_run",
+  "container.exited": "project.compose_run",
+  "project.runtime_stopped": "project.compose_run",
 };
 
 function progressForStatus(status: Job["status"], stepsCompleted: number): number {
@@ -290,16 +309,29 @@ export function AnalysisProgress() {
               setCurrentFile(null);
             } else if (parsed.event_name === "deploy.compose_up_log" && pl.line) {
               logMsg = String(pl.line);
+            } else if (parsed.event_name === "project.image_build_started") {
+              logMsg = `Building image: ${pl.dockerfile_path ?? pl.image_tag ?? ""}`;
+            } else if (parsed.event_name === "project.image_build_log") {
+              logMsg = String(pl.line ?? "");
+            } else if (parsed.event_name === "project.image_build_completed") {
+              logMsg = `Built ${pl.image_tag ?? ""} (${pl.image_id ?? ""})`;
+            } else if (parsed.event_name === "project.image_build_failed") {
+              logMsg = `Build failed: ${pl.dockerfile_path ?? ""} — ${pl.error ?? "unknown error"}`;
+            } else if (parsed.event_name === "container.exited") {
+              logMsg = `Container exited (code ${pl.exit_code ?? "??"})`;
+            } else if (parsed.event_name === "project.runtime_stopped") {
+              logMsg = "All containers exited.";
             }
 
-            pushLog({ message: logMsg, timestamp: parsed.timestamp, tone });
+            if (logMsg) {
+              pushLog({ message: logMsg, timestamp: parsed.timestamp, tone });
+            }
 
             // Update steps for project events
-            if (parsed.event_name.startsWith("project.")) {
+            if (parsed.event_name.startsWith("project.") || parsed.event_name === "container.started" || parsed.event_name === "container.exited" || parsed.event_name === "project.runtime_stopped") {
               setIsProjectJob(true);
               setSteps(prev => {
-                // Ensure we're on project steps
-                if (prev.length !== PROJECT_STEPS.length) {
+                if (!prev.some(s => s.id === "project.file_analysis")) {
                   return PROJECT_STEPS.map(s => ({ ...s }));
                 }
                 return prev;
@@ -326,6 +358,24 @@ export function AnalysisProgress() {
                 } else if (parsed.event_name === "project.analysis_failed") {
                   const message = (parsed.payload as { message?: string })?.message ?? "Project analysis failed.";
                   handleFailed(message);
+                } else if (parsed.event_name === "project.image_build_started") {
+                  setStep("project.merge_started", "complete");
+                  setStep("project.image_build", "running");
+                  setProgressValue(85);
+                } else if (parsed.event_name === "project.image_build_completed") {
+                  // Keep running until all builds done — will advance on analysis_completed
+                } else if (parsed.event_name === "project.image_build_failed") {
+                  // Mark as error but don't fail job
+                  setStep("project.image_build", "error");
+                } else if (parsed.event_name === "container.started") {
+                  setStep("project.image_build", "complete");
+                  setStep("project.compose_run", "running");
+                  setProgressValue(90);
+                } else if (parsed.event_name === "container.exited") {
+                  setStep("project.compose_run", "error");
+                } else if (parsed.event_name === "project.runtime_stopped") {
+                  setStep("project.compose_run", "complete");
+                  setProgressValue(95);
                 }
               }
             } else if (parsed.event_name === "user.analysis.started") {

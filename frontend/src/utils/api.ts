@@ -113,10 +113,59 @@ export interface JobEnqueueResponse {
   status: string;
 }
 
+export interface RuntimeContainerState {
+  id: string;
+  name?: string | null;
+  service?: string | null;
+  image?: string | null;
+  status?: string | null;
+  health_status?: string | null;
+  exit_code?: number | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  restart_count?: number | null;
+  oom_killed?: boolean | null;
+  last_logs?: string[] | null;
+}
+
 export interface DeployStatusResponse {
   active: boolean;
   container_ids: string[];
   project_name: string | null;
+  containers?: RuntimeContainerState[];
+  running_count?: number;
+  exited_count?: number;
+  unhealthy_count?: number;
+}
+
+export interface ImageBuildResult {
+  dockerfile_path: string;
+  build_context: string;
+  image_tag: string;
+  image_id?: string | null;
+  status: "success" | "failed" | "skipped";
+  build_started_at?: string | null;
+  build_finished_at?: string | null;
+  build_duration_ms?: number | null;
+  image_size_bytes?: number | null;
+  image_size_human?: string | null;
+  layer_count?: number | null;
+  base_image?: string | null;
+  exposed_ports?: string[];
+  env_keys?: string[];
+  labels?: Record<string, string>;
+  entrypoint?: string[] | null;
+  cmd?: string[] | null;
+  user?: string | null;
+  workdir?: string | null;
+  architecture?: string | null;
+  os?: string | null;
+  created_at?: string | null;
+  repo_tags?: string[];
+  repo_digests?: string[];
+  build_logs?: string[];
+  error_message?: string | null;
 }
 
 export interface ApiKey {
@@ -594,6 +643,7 @@ export interface PerFileAnalysisResult {
   securityIssues: Issue[];
   suggestions: Issue[];
   meta?: Record<string, unknown>;
+  source_preview?: string | null;
 }
 
 export interface ServiceBuildMapping {
@@ -626,6 +676,7 @@ export interface ProjectAnalysisResult extends AnalysisResult {
   service_mappings: ServiceBuildMapping[];
   project_summary: ProjectSummary;
   project_recommendations: string[];
+  image_build_results?: ImageBuildResult[];
 }
 
 export const project = {

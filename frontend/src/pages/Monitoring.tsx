@@ -11,6 +11,7 @@ import {
   Network,
   PlugZap,
   Server,
+  XCircle,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -45,11 +46,22 @@ interface MetricPoint {
   memoryMb: number | null;
 }
 
+interface ContainerExitedState {
+  exit_code?: number | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  restart_count?: number | null;
+  oom_killed?: boolean | null;
+  last_logs?: string[] | null;
+}
+
 interface ContainerState {
   points: MetricPoint[];
   logs: TerminalLogEntry[];
   latestPayload: ContainerMetricsPayload | null;
   connected: boolean;
+  exited?: ContainerExitedState | null;
 }
 
 interface MonitoringPersistedState {
@@ -152,6 +164,26 @@ export function Monitoring() {
       socket.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data as string) as DomainEvent;
+
+          if (parsed.event_name === "container.exited") {
+            const p = parsed.payload as ContainerExitedState & { container_id?: string };
+            setContainerStates((prev) => {
+              const existing = prev[cid] ?? { points: [], logs: [], latestPayload: null, connected: false };
+              const exitMsg = `Container exited (code ${p.exit_code ?? "??"})${p.oom_killed ? " [OOM killed]" : ""}${p.error ? ` — ${p.error}` : ""}`;
+              const lastLogEntries: TerminalLogEntry[] = (p.last_logs ?? []).map(l => ({ message: l, tone: "error" as const }));
+              return {
+                ...prev,
+                [cid]: {
+                  ...existing,
+                  connected: false,
+                  exited: p,
+                  logs: [...existing.logs.slice(-200), { message: exitMsg, tone: "error" as const }, ...lastLogEntries],
+                },
+              };
+            });
+            return;
+          }
+
           if (parsed.event_name !== "container.metrics") return;
           const payload = parsed.payload as ContainerMetricsPayload;
           const cpu = typeof payload.cpu_percent === "number" ? payload.cpu_percent : null;
@@ -236,6 +268,7 @@ export function Monitoring() {
   const chartData = useMemo(() => currentState?.points ?? [], [currentState?.points]);
   const latestPayload = currentState?.latestPayload ?? null;
   const connected = currentState?.connected ?? false;
+  const exitedState = currentState?.exited ?? null;
   const latest = chartData[chartData.length - 1] ?? null;
   const netTotals = latestPayload?.network?.totals;
   const ioStats = latestPayload?.io;
@@ -278,13 +311,15 @@ export function Monitoring() {
           </div>
           <span
             className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs ${
-              connected
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                : "border-slate-700 bg-slate-900 text-slate-400"
+              exitedState
+                ? "border-red-500/40 bg-red-500/10 text-red-300"
+                : connected
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-slate-700 bg-slate-900 text-slate-400"
             }`}
           >
-            <PlugZap className="w-3 h-3" />
-            {connected ? "Live" : "Disconnected"}
+            {exitedState ? <XCircle className="w-3 h-3" /> : <PlugZap className="w-3 h-3" />}
+            {exitedState ? `Exited (${exitedState.exit_code ?? "?"})` : connected ? "Live" : "Disconnected"}
           </span>
         </div>
 
@@ -294,6 +329,7 @@ export function Monitoring() {
               const isSelected = cid === selectedContainerId;
               const cState = containerStates[cid];
               const isConnected = cState?.connected ?? false;
+              const isExited = !!cState?.exited;
               return (
                 <button
                   key={cid}
@@ -307,15 +343,56 @@ export function Monitoring() {
                   <span className="flex items-center gap-1.5">
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${
-                        isConnected ? "bg-emerald-400" : "bg-slate-600"
+                        isExited ? "bg-red-500" : isConnected ? "bg-emerald-400" : "bg-slate-600"
                       }`}
                     />
                     {cState?.latestPayload?.container?.name || cid.slice(0, 12)}
+                    {isExited && <span className="text-red-400 ml-0.5">✕</span>}
                   </span>
                 </button>
               );
             })}
           </div>
+        )}
+
+        {exitedState && (
+          <Card className="p-4 bg-red-950/20 border-red-800/50 mb-3">
+            <div className="flex items-start gap-3">
+              <XCircle className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-1 flex-wrap">
+                  <span className="text-sm font-semibold text-red-300">Container Exited</span>
+                  {exitedState.exit_code != null && (
+                    <span className="text-xs font-mono px-2 py-0.5 bg-red-900/50 rounded text-red-200">
+                      exit code: {exitedState.exit_code}
+                    </span>
+                  )}
+                  {exitedState.oom_killed && (
+                    <span className="text-xs px-2 py-0.5 bg-orange-900/50 rounded text-orange-300">OOM Killed</span>
+                  )}
+                </div>
+                {exitedState.error && (
+                  <p className="text-xs text-red-300 mb-1 font-mono">{exitedState.error}</p>
+                )}
+                <div className="flex gap-4 text-xs text-slate-400">
+                  {exitedState.started_at && (
+                    <span>Started: {new Date(exitedState.started_at).toLocaleString()}</span>
+                  )}
+                  {exitedState.finished_at && (
+                    <span>Finished: {new Date(exitedState.finished_at).toLocaleString()}</span>
+                  )}
+                  {exitedState.restart_count != null && exitedState.restart_count > 0 && (
+                    <span>Restarts: {exitedState.restart_count}</span>
+                  )}
+                </div>
+                {chartData.length === 0 && (
+                  <p className="text-xs text-slate-500 mt-1 italic">
+                    Container exited before metrics were collected.
+                  </p>
+                )}
+              </div>
+            </div>
+          </Card>
         )}
 
         <StaggerList className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">

@@ -1,9 +1,12 @@
 import asyncio
+import hashlib
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import docker.errors
 import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +23,7 @@ from app.infrastructure.events.bus import publish_event, redis_client
 settings = get_settings()
 DEPLOY_STATE_TTL_SECONDS = 60 * 60 * 6
 METRICS_INTERVAL_SECONDS = 2
+SOURCE_PREVIEW_MAX_LINES = 500
 
 
 async def run_dockerfile_analysis(ctx, payload: dict) -> dict:
@@ -45,6 +49,7 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
         project_path = Path(payload["project_path"])
         dockerfiles: list[str] = payload.get("dockerfiles", [])
         compose_files: list[str] = payload.get("compose_files", [])
+        build_selected_images: bool = bool(payload.get("build_selected_images", False))
         repo = JobRepository(session)
         svc = AnalysisService(session)
 
@@ -84,12 +89,18 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
             )
             try:
                 content = df_path.read_text(encoding="utf-8", errors="ignore")
+                source_preview = "\n".join(content.splitlines()[:SOURCE_PREVIEW_MAX_LINES])
                 file_result = await svc.analyze_content(
                     content,
                     content_type="dockerfile",
                     context_extras={"project_path": str(project_path)},
                 )
-                file_entry: dict[str, Any] = {"file_path": df_rel, "file_type": "dockerfile", **file_result}
+                file_entry: dict[str, Any] = {
+                    "file_path": df_rel,
+                    "file_type": "dockerfile",
+                    "source_preview": source_preview,
+                    **file_result,
+                }
                 per_file_results.append(file_entry)
                 all_scores.append(file_result["score"])
             except Exception as exc:
@@ -123,12 +134,18 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
             )
             try:
                 content = cf_path.read_text(encoding="utf-8", errors="ignore")
+                source_preview = "\n".join(content.splitlines()[:SOURCE_PREVIEW_MAX_LINES])
                 file_result = await svc.analyze_content(
                     content,
                     content_type="compose",
                     context_extras={"project_path": str(project_path)},
                 )
-                file_entry = {"file_path": cf_rel, "file_type": "compose", **file_result}
+                file_entry = {
+                    "file_path": cf_rel,
+                    "file_type": "compose",
+                    "source_preview": source_preview,
+                    **file_result,
+                }
                 per_file_results.append(file_entry)
                 all_scores.append(file_result["score"])
             except Exception as exc:
@@ -194,6 +211,95 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
             r.setdefault("security_count", len(r.get("securityIssues", [])))
             r.setdefault("suggestions_count", len(r.get("suggestions", [])))
 
+        # ── Optional image build phase ────────────────────────────────────────
+        image_build_results: list[dict[str, Any]] = []
+        if build_selected_images and dockerfiles:
+            gateway = DockerGateway()
+            job_id_hex = str(job_id).replace("-", "")
+            for df_rel in dockerfiles:
+                df_path = project_path / df_rel
+                df_hash = hashlib.md5(df_rel.encode()).hexdigest()[:8]
+                image_tag = f"dqa-{job_id_hex[:12]}-{df_hash}"
+                # Build context is the directory containing the Dockerfile, or project root
+                build_ctx = str(df_path.parent) if df_path.parent != project_path else str(project_path)
+                build_entry: dict[str, Any] = {
+                    "dockerfile_path": df_rel,
+                    "build_context": build_ctx,
+                    "image_tag": image_tag,
+                    "status": "skipped",
+                    "build_logs": [],
+                }
+                started_at = datetime.now(timezone.utc).isoformat()
+                build_entry["build_started_at"] = started_at
+                await publish_event(
+                    DomainEvent(
+                        "project.image_build_started",
+                        str(user_id),
+                        str(job_id),
+                        payload={"dockerfile_path": df_rel, "image_tag": image_tag},
+                    )
+                )
+                try:
+                    async def _stream_build_log(line: str) -> None:
+                        build_entry["build_logs"].append(line)
+                        await publish_event(
+                            DomainEvent(
+                                "project.image_build_log",
+                                str(user_id),
+                                str(job_id),
+                                payload={"dockerfile_path": df_rel, "image_tag": image_tag, "line": line},
+                            )
+                        )
+
+                    # Collect logs via the generator, streaming each line as an event
+                    image_obj, log_lines = await gateway.build_image(
+                        path=build_ctx,
+                        dockerfile=str(df_path),
+                        tag=image_tag,
+                    )
+                    for line in log_lines:
+                        await _stream_build_log(line)
+
+                    finished_at = datetime.now(timezone.utc).isoformat()
+                    started_dt = datetime.fromisoformat(started_at)
+                    finished_dt = datetime.fromisoformat(finished_at)
+                    duration_ms = int((finished_dt - started_dt).total_seconds() * 1000)
+
+                    # Inspect the built image for metadata
+                    image_meta = await gateway.inspect_image(image_tag)
+
+                    build_entry.update({
+                        "status": "success",
+                        "build_finished_at": finished_at,
+                        "build_duration_ms": duration_ms,
+                        **image_meta,
+                    })
+                    await publish_event(
+                        DomainEvent(
+                            "project.image_build_completed",
+                            str(user_id),
+                            str(job_id),
+                            payload={"dockerfile_path": df_rel, "image_tag": image_tag, "image_id": image_meta.get("image_id")},
+                        )
+                    )
+                except Exception as exc:
+                    finished_at = datetime.now(timezone.utc).isoformat()
+                    build_entry.update({
+                        "status": "failed",
+                        "build_finished_at": finished_at,
+                        "error_message": str(exc),
+                    })
+                    await publish_event(
+                        DomainEvent(
+                            "project.image_build_failed",
+                            str(user_id),
+                            str(job_id),
+                            payload={"dockerfile_path": df_rel, "image_tag": image_tag, "error": str(exc)},
+                        )
+                    )
+
+                image_build_results.append(build_entry)
+
         result = {
             "score": overall_score,
             "grade": overall_grade,
@@ -213,6 +319,7 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
                 "worst_score_file": worst_file,
             },
             "project_recommendations": project_recommendations,
+            "image_build_results": image_build_results,
         }
 
         await repo.update_status(job_id, user_id, JobStatus.done, result=result)
@@ -246,6 +353,8 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
             container_ids = await _compose_ps_ids(deploy_spec)
             if container_ids:
                 primary_container_id = container_ids[0]
+                # Build initial per-container state entries
+                initial_containers = [{"id": cid, "status": "running"} for cid in container_ids]
                 await _set_deploy_state(
                     user_id,
                     job_id,
@@ -253,6 +362,10 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
                         **deploy_spec,
                         "container_id": primary_container_id,
                         "container_ids": container_ids,
+                        "containers": initial_containers,
+                        "running_count": len(container_ids),
+                        "exited_count": 0,
+                        "unhealthy_count": 0,
                     },
                 )
 
@@ -602,14 +715,22 @@ async def _run_subprocess_streaming(
 
 async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -> None:
     docker_gateway = DockerGateway()
-    while True:
+    active_ids: set[str] = set(container_ids)
+
+    while active_ids:
         if await _is_stop_requested(user_id, job_id):
             break
-        for container_id in container_ids:
+
+        newly_exited: list[str] = []
+        for container_id in list(active_ids):
             try:
                 metrics = await docker_gateway.inspect_container_metrics(container_id)
+            except (docker.errors.NotFound, docker.errors.APIError):
+                newly_exited.append(container_id)
+                continue
             except Exception:
                 continue
+
             payload = {"container_id": container_id, **metrics}
             await publish_event(
                 DomainEvent(
@@ -619,6 +740,63 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
                     payload=payload,
                 )
             )
+
+        # Handle any containers that just exited
+        for container_id in newly_exited:
+            active_ids.discard(container_id)
+            try:
+                final_state = await docker_gateway.inspect_container_final_state(container_id)
+            except Exception as exc:
+                final_state = {"container_id": container_id, "error": str(exc), "exit_code": -1}
+
+            await publish_event(
+                DomainEvent(
+                    "container.exited",
+                    user_id=user_id,
+                    job_id=job_id,
+                    payload=final_state,
+                )
+            )
+
+            # Update deploy state to record exited container
+            state = await _get_deploy_state(user_id, job_id) or {}
+            containers_state: list[dict] = state.get("containers", [])
+            # Remove old entry for this container if present, then add updated
+            containers_state = [c for c in containers_state if c.get("id") != container_id]
+            containers_state.append({
+                "id": container_id,
+                "name": final_state.get("container_name"),
+                "image": final_state.get("image"),
+                "status": "exited",
+                "exit_code": final_state.get("exit_code"),
+                "started_at": final_state.get("started_at"),
+                "finished_at": final_state.get("finished_at"),
+                "restart_count": final_state.get("restart_count"),
+                "oom_killed": final_state.get("oom_killed"),
+            })
+            state["containers"] = containers_state
+            state["exited_count"] = state.get("exited_count", 0) + 1
+            # Decrement running_count
+            if state.get("running_count", 0) > 0:
+                state["running_count"] = state["running_count"] - 1
+            await _set_deploy_state(user_id, job_id, state)
+
+        # If all containers exited, publish runtime stopped
+        if not active_ids:
+            await publish_event(
+                DomainEvent(
+                    "project.runtime_stopped",
+                    user_id=user_id,
+                    job_id=job_id,
+                    payload={"reason": "all_containers_exited"},
+                )
+            )
+            # Mark final state but keep active=False so UI knows
+            state = await _get_deploy_state(user_id, job_id) or {}
+            state["all_exited"] = True
+            await _set_deploy_state(user_id, job_id, state)
+            break
+
         await asyncio.sleep(METRICS_INTERVAL_SECONDS)
 
 

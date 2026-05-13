@@ -8,23 +8,26 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock,
   Cpu,
   Download,
-  FileCode,
-  FileText,
   HardDrive,
   Info,
   Layers,
   Loader2,
   Package,
   Play,
+  RefreshCw,
   Shield,
   Square,
+  Terminal,
+  XCircle,
 } from "lucide-react";
 
 import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
+import { FileAnalysisDetail } from "../components/FileAnalysisDetail";
 import { MotionPage, AnimatedNumber, StaggerList, StaggerItem } from "../components/motion";
 import { motion, useReducedMotion } from "motion/react";
 import { scoreVariants, scoreTransition, badgePopVariants, badgePopTransition } from "../components/motion/variants";
@@ -42,9 +45,9 @@ import {
   compose as composeApi,
   jobs as jobsApi,
   type AnalysisResult,
+  type ImageBuildResult,
   type Issue,
   type Job,
-  type PerFileAnalysisResult,
   type ProjectAnalysisResult,
   type ServiceBuildMapping,
 } from "../utils/api";
@@ -102,7 +105,7 @@ export function ResultsDashboard() {
   const ready = useMinLoader(!loading);
   const reducedMotion = useReducedMotion();
   const [error, setError] = useState<string | null>(null);
-  const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping">(() => {
+  const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping" | "exited" | "partial" | "unhealthy">(() => {
     const stored = sessionStorage.getItem("dqa:containerStatus");
     if (stored === "stopping") return "stopping";
     return "stopped";
@@ -170,9 +173,17 @@ export function ResultsDashboard() {
       try {
         const status = await composeApi.deployStatus(job.id);
         if (cancelled) return;
+
         if (!status.active) {
-          setContainerStatus("stopped");
-          sessionStorage.removeItem("dqa:containerStatus");
+          // Check if containers have exited state even when inactive
+          const exitedCount = status.exited_count ?? 0;
+          const runningCount = status.running_count ?? 0;
+          if (exitedCount > 0 && runningCount === 0) {
+            setContainerStatus("exited");
+          } else {
+            setContainerStatus("stopped");
+            sessionStorage.removeItem("dqa:containerStatus");
+          }
         } else if (containerStatus === "stopping") {
           for (let i = 0; i < 30; i++) {
             await new Promise((r) => setTimeout(r, 2000));
@@ -190,7 +201,19 @@ export function ResultsDashboard() {
           setContainerStatus("stopped");
           sessionStorage.removeItem("dqa:containerStatus");
         } else {
-          setContainerStatus("running");
+          // Derive state from counts
+          const runningCount = status.running_count ?? status.container_ids.length;
+          const exitedCount = status.exited_count ?? 0;
+          const unhealthyCount = status.unhealthy_count ?? 0;
+          if (unhealthyCount > 0) {
+            setContainerStatus("unhealthy");
+          } else if (exitedCount > 0 && runningCount > 0) {
+            setContainerStatus("partial");
+          } else if (exitedCount > 0 && runningCount === 0) {
+            setContainerStatus("exited");
+          } else {
+            setContainerStatus("running");
+          }
         }
       } catch {
         // ignore
@@ -444,7 +467,7 @@ export function ResultsDashboard() {
                 <Download className="w-4 h-4 mr-2" />
                 Export Report (Markdown)
               </Button>
-              {(isComposeJob || isProjectJob) && containerStatus === "stopped" && (
+              {(isComposeJob || isProjectJob) && (containerStatus === "stopped") && (
                 <Button
                   onClick={handleRunContainers}
                   disabled={!composeRunnable}
@@ -459,13 +482,31 @@ export function ResultsDashboard() {
                   Run Containers
                 </Button>
               )}
-              {(isComposeJob || isProjectJob) && containerStatus === "running" && (
+              {(isComposeJob || isProjectJob) && (containerStatus === "exited") && (
                 <>
                   <Button
                     onClick={handleRunContainers}
-                    className="bg-emerald-600 hover:bg-emerald-700"
+                    className="bg-blue-600 hover:bg-blue-700"
                   >
-                    Inspect your Containers
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Run Again
+                  </Button>
+                  <Button
+                    onClick={() => job && navigate(`/execution?jobId=${job.id}`)}
+                    variant="outline"
+                    className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    View Runtime Details
+                  </Button>
+                </>
+              )}
+              {(isComposeJob || isProjectJob) && (containerStatus === "running" || containerStatus === "partial" || containerStatus === "unhealthy") && (
+                <>
+                  <Button
+                    onClick={handleRunContainers}
+                    className={containerStatus === "unhealthy" ? "bg-amber-600 hover:bg-amber-700" : "bg-emerald-600 hover:bg-emerald-700"}
+                  >
+                    {containerStatus === "unhealthy" ? "View Unhealthy Containers" : "Inspect Containers"}
                     <Loader2 className="w-3 h-3 ml-2 animate-spin" />
                   </Button>
                   <Button
@@ -729,6 +770,65 @@ export function ResultsDashboard() {
             </Card>
           )}
 
+        {/* Exited containers card */}
+        {(isComposeJob || isProjectJob) && containerStatus === "exited" && (
+          <Card className="p-5 bg-amber-950/20 border-amber-800/50 mb-6">
+            <div className="flex items-start gap-3">
+              <XCircle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-amber-300 mb-1">Containers Exited</h3>
+                <p className="text-sm text-amber-200/70">
+                  All containers have stopped running. You can view runtime details or run the stack again.
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/execution?jobId=${job.id}`)}
+                  className="border-amber-700 text-amber-300 hover:bg-amber-900/30"
+                >
+                  View Runtime Details
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleRunContainers}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Run Again
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Partial / unhealthy containers card */}
+        {(isComposeJob || isProjectJob) && (containerStatus === "partial" || containerStatus === "unhealthy") && (
+          <Card className={`p-5 mb-6 ${
+            containerStatus === "unhealthy"
+              ? "bg-red-950/20 border-red-800/50"
+              : "bg-amber-950/20 border-amber-800/50"
+          }`}>
+            <div className="flex items-center gap-3">
+              <AlertTriangle className={`w-5 h-5 shrink-0 ${containerStatus === "unhealthy" ? "text-red-400" : "text-amber-400"}`} />
+              <p className={`text-sm font-semibold ${containerStatus === "unhealthy" ? "text-red-300" : "text-amber-300"}`}>
+                {containerStatus === "partial"
+                  ? "Some containers have exited — stack is running partially."
+                  : "One or more containers are unhealthy."}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate(`/monitoring?jobId=${job.id}`)}
+                className="ml-auto border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                View Metrics
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {isProjectJob && projectResult && <ProjectResultsSection result={projectResult} job={job} />}
 
         {standardResult && (
@@ -799,68 +899,7 @@ export function ResultsDashboard() {
 // Project-specific results section
 // ─────────────────────────────────────────────────────────────────────────────
 
-function FileResultCard({ file }: { file: PerFileAnalysisResult }) {
-  const [expanded, setExpanded] = useState(false);
-  const allIssues = [
-    ...(file.errors ?? []),
-    ...(file.warnings ?? []),
-    ...(file.securityIssues ?? []),
-    ...(file.suggestions ?? []),
-  ];
-  return (
-    <Card className="bg-slate-900 border-slate-800 overflow-hidden">
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="w-full p-4 flex items-center gap-3 text-left hover:bg-slate-800/50 motion-safe:transition-colors"
-      >
-        {file.file_type === "dockerfile" ? (
-          <FileCode className="w-4 h-4 text-blue-400 shrink-0" />
-        ) : (
-          <FileText className="w-4 h-4 text-green-400 shrink-0" />
-        )}
-        <span className="flex-1 font-mono text-sm text-white truncate">{file.file_path}</span>
-        <div className="flex items-center gap-3 shrink-0">
-          <span className={`text-sm font-bold ${scoreColor(file.score)}`}>{file.score}</span>
-          <Badge className={`text-xs ${gradeColor(file.grade)}`}>Grade {file.grade}</Badge>
-          {file.errors_count > 0 && (
-            <span className="text-xs text-red-400">{file.errors_count}E</span>
-          )}
-          {file.warnings_count > 0 && (
-            <span className="text-xs text-yellow-400">{file.warnings_count}W</span>
-          )}
-          {file.security_count > 0 && (
-            <span className="text-xs text-orange-400">{file.security_count}S</span>
-          )}
-          {expanded ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
-        </div>
-      </button>
-      {expanded && allIssues.length > 0 && (
-        <div className="border-t border-slate-800 p-4 space-y-2 max-h-72 overflow-y-auto">
-          {allIssues.map((issue, i) => (
-            <div key={i} className={`flex items-start gap-2 text-xs p-2 rounded border ${
-              issue.severity === "error" ? "border-red-800/50 bg-red-950/20" :
-              issue.severity === "warning" ? "border-yellow-800/50 bg-yellow-950/20" :
-              "border-slate-800 bg-slate-950/50"
-            }`}>
-              <span className={`font-mono shrink-0 ${
-                issue.severity === "error" ? "text-red-400" :
-                issue.severity === "warning" ? "text-yellow-400" :
-                "text-slate-400"
-              }`}>{issue.code}</span>
-              <span className="text-slate-300 flex-1">{issue.message}</span>
-              {issue.line && issue.line > 1 && (
-                <span className="text-slate-600 shrink-0">L{issue.line}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {expanded && allIssues.length === 0 && (
-        <div className="border-t border-slate-800 p-4 text-sm text-slate-500 italic">No issues found.</div>
-      )}
-    </Card>
-  );
-}
+// FileResultCard is replaced by FileAnalysisDetail from components/FileAnalysisDetail.tsx
 
 function ServiceMappingCard({ mapping }: { mapping: ServiceBuildMapping }) {
   return (
@@ -885,6 +924,174 @@ function ServiceMappingCard({ mapping }: { mapping: ServiceBuildMapping }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Image Build Section
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ImageBuildSection({ builds }: { builds: ImageBuildResult[] }) {
+  if (builds.length === 0) {
+    return (
+      <Card className="p-8 bg-slate-900 border-slate-800 text-center">
+        <p className="text-slate-400 text-sm">
+          No images were built. Enable <span className="font-mono text-slate-300">"Build selected images"</span> in the project plan to generate image metadata.
+        </p>
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {builds.map((b, i) => (
+        <ImageBuildCard key={i} build={b} />
+      ))}
+    </div>
+  );
+}
+
+function ImageBuildCard({ build }: { build: ImageBuildResult }) {
+  const [showLogs, setShowLogs] = useState(false);
+  const [showMeta, setShowMeta] = useState(false);
+
+  const statusBadge = build.status === "success"
+    ? "bg-green-500/20 text-green-400 border-green-500/30"
+    : build.status === "failed"
+      ? "bg-red-500/20 text-red-400 border-red-500/30"
+      : "bg-slate-500/20 text-slate-400 border-slate-500/30";
+
+  const durationSec = build.build_duration_ms != null
+    ? `${(build.build_duration_ms / 1000).toFixed(1)}s`
+    : null;
+
+  const shortId = build.image_id ? build.image_id.slice(0, 12) : null;
+
+  return (
+    <Card className="bg-slate-900 border-slate-800 overflow-hidden">
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <Badge className={`text-xs ${statusBadge}`}>{build.status.toUpperCase()}</Badge>
+              <span className="font-mono text-sm text-white truncate">{build.dockerfile_path}</span>
+            </div>
+            <div className="text-xs text-slate-500 font-mono truncate">{build.image_tag}</div>
+          </div>
+          {durationSec && (
+            <div className="flex items-center gap-1 text-xs text-slate-400 shrink-0">
+              <Clock className="w-3.5 h-3.5" />
+              {durationSec}
+            </div>
+          )}
+        </div>
+
+        {build.status === "failed" && build.error_message && (
+          <div className="p-3 rounded bg-red-950/30 border border-red-800/50 text-xs text-red-300 mb-3 font-mono">
+            {build.error_message}
+          </div>
+        )}
+
+        {build.status === "success" && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-3">
+            {shortId && (
+              <div className="p-2 bg-slate-950 rounded border border-slate-800">
+                <div className="text-slate-500">Image ID</div>
+                <div className="text-slate-200 font-mono">{shortId}</div>
+              </div>
+            )}
+            {build.image_size_human && (
+              <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center gap-2">
+                <HardDrive className="w-3.5 h-3.5 text-purple-400" />
+                <div>
+                  <div className="text-slate-500">Size</div>
+                  <div className="text-slate-200">{build.image_size_human}</div>
+                </div>
+              </div>
+            )}
+            {build.layer_count != null && (
+              <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-blue-400" />
+                <div>
+                  <div className="text-slate-500">Layers</div>
+                  <div className="text-slate-200">{build.layer_count}</div>
+                </div>
+              </div>
+            )}
+            {build.architecture && (
+              <div className="p-2 bg-slate-950 rounded border border-slate-800 flex items-center gap-2">
+                <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+                <div>
+                  <div className="text-slate-500">Arch</div>
+                  <div className="text-slate-200">{build.architecture}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {build.status === "success" && (
+          <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+            {build.user && <span>User: <span className="text-slate-300 font-mono">{build.user}</span></span>}
+            {build.workdir && <span>Workdir: <span className="text-slate-300 font-mono">{build.workdir}</span></span>}
+            {(build.exposed_ports ?? []).length > 0 && (
+              <span>Ports: <span className="text-slate-300 font-mono">{build.exposed_ports!.join(", ")}</span></span>
+            )}
+            {(build.entrypoint ?? []).length > 0 && (
+              <span>Entrypoint: <span className="text-slate-300 font-mono">{(build.entrypoint!).join(" ")}</span></span>
+            )}
+            {(build.cmd ?? []).length > 0 && (
+              <span>CMD: <span className="text-slate-300 font-mono">{(build.cmd!).join(" ")}</span></span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Build logs */}
+      {(build.build_logs ?? []).length > 0 && (
+        <div className="border-t border-slate-800">
+          <button
+            onClick={() => setShowLogs(v => !v)}
+            className="w-full flex items-center gap-2 px-4 py-2 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors"
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            Build logs ({build.build_logs!.length} lines)
+            {showLogs ? <ChevronDown className="w-3 h-3 ml-auto" /> : <ChevronRight className="w-3 h-3 ml-auto" />}
+          </button>
+          {showLogs && (
+            <div className="px-4 pb-4 max-h-64 overflow-y-auto">
+              <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap leading-relaxed">
+                {build.build_logs!.join("\n")}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Raw metadata */}
+      {build.status === "success" && (
+        <div className="border-t border-slate-800">
+          <button
+            onClick={() => setShowMeta(v => !v)}
+            className="w-full flex items-center gap-2 px-4 py-2 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors"
+          >
+            <Info className="w-3.5 h-3.5" />
+            Raw image metadata
+            {showMeta ? <ChevronDown className="w-3 h-3 ml-auto" /> : <ChevronRight className="w-3 h-3 ml-auto" />}
+          </button>
+          {showMeta && (
+            <div className="px-4 pb-4 max-h-64 overflow-y-auto">
+              <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap">
+                {JSON.stringify(
+                  { image_id: build.image_id, architecture: build.architecture, os: build.os, created_at: build.created_at, repo_tags: build.repo_tags, labels: build.labels, env_keys: build.env_keys },
+                  null,
+                  2,
+                )}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 interface ProjectResultsSectionProps {
   result: ProjectAnalysisResult;
   job: Job;
@@ -895,6 +1102,7 @@ function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
   const serviceMappings = result.service_mappings ?? [];
   const projectSummary = result.project_summary;
   const recommendations = result.project_recommendations ?? [];
+  const imageBuildResults = result.image_build_results ?? [];
 
   const dfResults = perFileResults.filter(r => r.file_type === "dockerfile");
   const cfResults = perFileResults.filter(r => r.file_type === "compose");
@@ -948,25 +1156,32 @@ function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
               <TabsTrigger value="all-files">All Files ({perFileResults.length})</TabsTrigger>
               {dfResults.length > 0 && <TabsTrigger value="dockerfiles">Dockerfiles ({dfResults.length})</TabsTrigger>}
               {cfResults.length > 0 && <TabsTrigger value="compose">Compose ({cfResults.length})</TabsTrigger>}
+              <TabsTrigger value="image-builds">
+                Image Builds {imageBuildResults.length > 0 ? `(${imageBuildResults.length})` : ""}
+              </TabsTrigger>
               {serviceMappings.length > 0 && <TabsTrigger value="mapping">Service Mapping</TabsTrigger>}
               {recommendations.length > 0 && <TabsTrigger value="recommendations">Recommendations</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="all-files" className="space-y-3">
-              {perFileResults.map(f => <FileResultCard key={f.file_path} file={f} />)}
+              {perFileResults.map(f => <FileAnalysisDetail key={f.file_path} file={f} />)}
             </TabsContent>
 
             {dfResults.length > 0 && (
               <TabsContent value="dockerfiles" className="space-y-3">
-                {dfResults.map(f => <FileResultCard key={f.file_path} file={f} />)}
+                {dfResults.map(f => <FileAnalysisDetail key={f.file_path} file={f} />)}
               </TabsContent>
             )}
 
             {cfResults.length > 0 && (
               <TabsContent value="compose" className="space-y-3">
-                {cfResults.map(f => <FileResultCard key={f.file_path} file={f} />)}
+                {cfResults.map(f => <FileAnalysisDetail key={f.file_path} file={f} />)}
               </TabsContent>
             )}
+
+            <TabsContent value="image-builds">
+              <ImageBuildSection builds={imageBuildResults} />
+            </TabsContent>
 
             {serviceMappings.length > 0 && (
               <TabsContent value="mapping">
@@ -1127,6 +1342,24 @@ function buildMarkdownReport(
       lines.push("");
     }
 
+    if ((projectResult.image_build_results ?? []).length > 0) {
+      lines.push("## Image Build Results");
+      lines.push("");
+      for (const b of projectResult.image_build_results!) {
+        lines.push(`### ${b.dockerfile_path}`);
+        lines.push("");
+        lines.push(`- **Status:** ${b.status}`);
+        lines.push(`- **Image Tag:** \`${b.image_tag}\``);
+        if (b.image_id) lines.push(`- **Image ID:** \`${b.image_id}\``);
+        if (b.image_size_human) lines.push(`- **Size:** ${b.image_size_human}`);
+        if (b.layer_count != null) lines.push(`- **Layers:** ${b.layer_count}`);
+        if (b.build_duration_ms != null) lines.push(`- **Build time:** ${(b.build_duration_ms / 1000).toFixed(1)}s`);
+        if (b.architecture) lines.push(`- **Arch:** ${b.architecture}/${b.os ?? ""}`);
+        if (b.error_message) lines.push(`- **Error:** ${b.error_message}`);
+        lines.push("");
+      }
+    }
+
     if ((projectResult.project_recommendations ?? []).length > 0) {
       lines.push("## Project Recommendations");
       lines.push("");
@@ -1202,9 +1435,14 @@ function renderIssues(issues: Issue[]) {
       </Card>
     );
   }
-
   return issues.map((issue, index) => (
-    <Card key={index} className="p-4 bg-slate-900 border-slate-800">
+    <IssueCardInline key={index} issue={issue} />
+  ));
+}
+
+function IssueCardInline({ issue }: { issue: Issue }) {
+  return (
+    <Card className="p-4 bg-slate-900 border-slate-800">
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 mt-1">
           {issue.severity === "error" && (
@@ -1223,56 +1461,35 @@ function renderIssues(issues: Issue[]) {
             </div>
           )}
         </div>
-
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
-            <Badge
-              variant="outline"
-              className="border-slate-700 text-slate-400"
-            >
-              Line {issue.line}
-            </Badge>
-            <Badge
-              variant="outline"
-              className="border-slate-700 text-slate-400 font-mono text-xs"
-            >
-              {issue.code}
-            </Badge>
-            <Badge
-              className={
-                issue.severity === "error"
-                  ? "bg-red-500/20 text-red-400 border-red-500/30"
-                  : issue.severity === "warning"
-                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                    : "bg-blue-500/20 text-blue-400 border-blue-500/30"
-              }
-            >
+            <Badge variant="outline" className="border-slate-700 text-slate-400">Line {issue.line}</Badge>
+            <Badge variant="outline" className="border-slate-700 text-slate-400 font-mono text-xs">{issue.code}</Badge>
+            <Badge className={
+              issue.severity === "error"
+                ? "bg-red-500/20 text-red-400 border-red-500/30"
+                : issue.severity === "warning"
+                  ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                  : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+            }>
               {issue.severity.toUpperCase()}
             </Badge>
           </div>
-
           <h4 className="text-white font-medium mb-2">{issue.message}</h4>
-
           {(issue.suggestion || issue.doc_url) && (
             <div className="bg-slate-950 border border-slate-800 rounded p-3 mt-3">
               <div className="text-sm text-green-400 mb-1">Recommended Fix</div>
-              {issue.suggestion ? (
-                <p className="text-sm text-slate-300">{issue.suggestion}</p>
-              ) : null}
-              {issue.doc_url ? (
-                <a
-                  href={issue.doc_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex text-sm text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline mt-2"
-                >
+              {issue.suggestion && <p className="text-sm text-slate-300">{issue.suggestion}</p>}
+              {issue.doc_url && (
+                <a href={issue.doc_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex text-sm text-sky-400 hover:text-sky-300 underline-offset-2 hover:underline mt-2">
                   Rule documentation
                 </a>
-              ) : null}
+              )}
             </div>
           )}
         </div>
       </div>
     </Card>
-  ));
+  );
 }

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.application.schemas import AnalysisEnqueueResponse
+from app.application.schemas import AnalysisEnqueueResponse, ContainerStateInfo
 from app.application.services.analysis_service import AnalysisService
 from app.infrastructure.db.models import JobStatus, JobType, UserModel
 from app.infrastructure.db.repositories import JobRepository
@@ -122,6 +122,10 @@ class DeployStatusResponse(BaseModel):
     active: bool
     container_ids: list[str] = []
     project_name: str | None = None
+    containers: list[ContainerStateInfo] = []
+    running_count: int = 0
+    exited_count: int = 0
+    unhealthy_count: int = 0
 
 
 @router.get("/deploy/status/{job_id}", response_model=DeployStatusResponse)
@@ -137,8 +141,33 @@ async def get_deploy_status(
         state = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         return DeployStatusResponse(active=False)
+
+    raw_containers: list[dict] = state.get("containers", [])
+    containers = [ContainerStateInfo(**c) for c in raw_containers if isinstance(c, dict)]
+    running_count = state.get("running_count", 0)
+    exited_count = state.get("exited_count", 0)
+    unhealthy_count = state.get("unhealthy_count", 0)
+
+    # If counts not stored yet, derive from containers list
+    if not running_count and not exited_count and containers:
+        for c in containers:
+            if c.status in ("running",):
+                running_count += 1
+            elif c.status in ("exited", "dead", "removing"):
+                exited_count += 1
+            if c.health_status == "unhealthy":
+                unhealthy_count += 1
+
+    # Determine active: active if stop not explicitly requested and containers exist
+    # Use stored active flag if present; fall back to container_ids existence
+    active = bool(state.get("container_ids") or state.get("containers"))
+
     return DeployStatusResponse(
-        active=True,
+        active=active,
         container_ids=state.get("container_ids", []),
         project_name=state.get("project_name"),
+        containers=containers,
+        running_count=running_count,
+        exited_count=exited_count,
+        unhealthy_count=unhealthy_count,
     )
