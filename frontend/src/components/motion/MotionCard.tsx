@@ -35,7 +35,7 @@ export function MotionCard({
           ? { y: -3, boxShadow: "0 8px 28px rgba(0,0,0,0.4), 0 0 0 1px rgba(59,130,246,0.12)" }
           : undefined
       }
-      className={cn("will-change-transform", className)}
+      className={cn(className)}
       style={style}
     >
       {children}

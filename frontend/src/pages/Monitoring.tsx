@@ -29,7 +29,7 @@ import { DockerLoader } from "../components/DockerLoader";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
 import { useAuth } from "../auth/AuthProvider";
 import { MotionPage, StaggerList, StaggerItem } from "../components/motion";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   compose as composeApi,
   ws,
@@ -75,6 +75,7 @@ function formatBytes(bytes: number | null | undefined): string {
 
 export function Monitoring() {
   const navigate = useNavigate();
+  const reducedMotion = useReducedMotion();
   const { jobId, containerId: routeContainerId } = useParams<{
     jobId: string;
     containerId?: string;
@@ -383,7 +384,7 @@ export function Monitoring() {
               {currentState?.connected && (
                 <motion.span
                   className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"
-                  animate={{ scale: [1, 1.4, 1], opacity: [0.7, 1, 0.7] }}
+                  animate={reducedMotion ? {} : { scale: [1, 1.4, 1], opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                 />
               )}

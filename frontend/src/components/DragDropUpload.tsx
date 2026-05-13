@@ -71,8 +71,8 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
           className={`p-4 rounded-full ${isDragging ? "bg-blue-500/20" : "bg-slate-800"}`}
         >
           <motion.div
-            animate={isDragging ? { y: [-3, 0, -3] } : { y: 0 }}
-            transition={isDragging ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
+            animate={isDragging && !reducedMotion ? { y: [-3, 0, -3] } : { y: 0 }}
+            transition={isDragging && !reducedMotion ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 }}
           >
           <Upload
             className={`w-8 h-8 ${isDragging ? "text-blue-400" : "text-slate-400"}`}

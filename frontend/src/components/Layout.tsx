@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { FileCode, History, Home, LogOut, BarChart3 } from "lucide-react";
+import { FileCode, History, Home, KeyRound, LogOut, BarChart3 } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { NotificationPanel } from "./NotificationPanel";
 import { Button } from "./ui/button";
@@ -65,6 +65,10 @@ export function Layout({ children }: LayoutProps) {
               <Link to="/research" className={navLinkClass("/research")}>
                 <BarChart3 className="w-4 h-4" />
                 <span className="hidden sm:inline">Research</span>
+              </Link>
+              <Link to="/settings/api-keys" className={navLinkClass("/settings/api-keys")}>
+                <KeyRound className="w-4 h-4" />
+                <span className="hidden sm:inline">API Keys</span>
               </Link>
               <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
                 <NotificationPanel />

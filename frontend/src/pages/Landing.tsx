@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { Layout } from "../components/Layout";
 import { DragDropUpload } from "../components/DragDropUpload";
 import { QuickDemo } from "../components/QuickDemo";
@@ -19,6 +19,7 @@ import { detectFileKind, type DockerFileKind } from "../utils/fileType";
 
 export function Landing() {
   const navigate = useNavigate();
+  const reducedMotion = useReducedMotion();
 
   const handleFileSelect = (file: File, hint?: DockerFileKind) => {
     const reader = new FileReader();
@@ -124,7 +125,7 @@ export function Landing() {
           >
             Analysis Pipeline
           </motion.h2>
-          <StaggerList className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <StaggerList className="grid grid-cols-1 md:grid-cols-7 gap-4">
             <StaggerItem>
               <MotionCard>
               <Card className="p-6 bg-slate-900 border-slate-800 h-full">
@@ -143,7 +144,7 @@ export function Landing() {
 
             <StaggerItem className="hidden md:flex items-center justify-center">
               <motion.div
-                animate={{ x: [0, 4, 0] }}
+                animate={reducedMotion ? {} : { x: [0, 4, 0] }}
                 transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
               >
                 <ArrowRight className="w-6 h-6 text-slate-500" />
@@ -168,7 +169,7 @@ export function Landing() {
 
             <StaggerItem className="hidden md:flex items-center justify-center">
               <motion.div
-                animate={{ x: [0, 4, 0] }}
+                animate={reducedMotion ? {} : { x: [0, 4, 0] }}
                 transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
               >
                 <ArrowRight className="w-6 h-6 text-slate-500" />
@@ -193,7 +194,7 @@ export function Landing() {
 
             <StaggerItem className="hidden md:flex items-center justify-center">
               <motion.div
-                animate={{ x: [0, 4, 0] }}
+                animate={reducedMotion ? {} : { x: [0, 4, 0] }}
                 transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", delay: 0.8 }}
               >
                 <ArrowRight className="w-6 h-6 text-slate-500" />

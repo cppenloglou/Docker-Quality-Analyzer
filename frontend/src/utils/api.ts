@@ -123,6 +123,18 @@ export interface DeployStatusResponse {
   project_name: string | null;
 }
 
+export interface ApiKey {
+  id: string;
+  key_prefix: string;
+  created_at: string;
+}
+
+export interface ApiKeyCreated {
+  id: string;
+  key: string;
+  key_prefix: string;
+}
+
 export interface DomainEvent {
   event_name: string;
   user_id: string;
@@ -417,6 +429,19 @@ export const auth = {
   },
   async me(): Promise<User> {
     return request<User>("/auth/me");
+  },
+};
+
+// ---------- api keys ----------
+export const apiKeys = {
+  async list(): Promise<ApiKey[]> {
+    return request<ApiKey[]>("/api/v1/users/me/api-keys");
+  },
+  async create(): Promise<ApiKeyCreated> {
+    return request<ApiKeyCreated>("/api/v1/users/me/api-keys", { method: "POST" });
+  },
+  async revoke(keyId: string): Promise<void> {
+    return request<void>(`/api/v1/users/me/api-keys/${keyId}`, { method: "DELETE" });
   },
 };
 
