@@ -64,6 +64,18 @@ interface ExecutionPersistedState {
   deployPhase?: DeployPhase;
 }
 
+interface ExitedContainerSummary {
+  container_id?: string;
+  container_name?: string;
+  exit_code?: number | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  restart_count?: number | null;
+  oom_killed?: boolean | null;
+  last_logs?: string[] | null;
+}
+
 const DEPLOY_TIMEOUT_MS = 120_000;
 
 function ensureAnalysis(job: Job | null): AnalysisResult | null {
@@ -113,6 +125,8 @@ export function ContainerExecution() {
   );
   const [logs, setLogs] = useState<TerminalLogEntry[]>(persisted?.logs ?? []);
   const [composeProgress, setComposeProgress] = useState<ComposeUpProgress | null>(null);
+  const [exitedContainers, setExitedContainers] = useState<ExitedContainerSummary[]>([]);
+  const [metricsSeenContainerIds, setMetricsSeenContainerIds] = useState<string[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
   const deployTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -227,6 +241,8 @@ export function ContainerExecution() {
     setDeployPhase("deploying");
     clearDeployTimeout();
     setComposeProgress(null);
+    setExitedContainers([]);
+    setMetricsSeenContainerIds([]);
     setTimeline(BASE_TIMELINE.map((entry) => ({ ...entry })));
     setTimelineStatus("enqueue", "running", "Submitting deploy request...");
     try {
@@ -311,13 +327,29 @@ export function ContainerExecution() {
             );
             pushNotification("success", "Containers Running", `${ids.length || 1} container(s) are now running`);
           } else if (parsed.event_name === "container.metrics") {
+            const metricContainerId = String(
+              (parsed.payload as { container_id?: string })?.container_id ?? "",
+            );
+            if (metricContainerId) {
+              setMetricsSeenContainerIds((prev) =>
+                prev.includes(metricContainerId) ? prev : [...prev, metricContainerId],
+              );
+            }
             setTimelineStatus("metrics", "running", "Metrics streaming");
           } else if (parsed.event_name === "container.exited") {
-            const p = parsed.payload as { container_id?: string; container_name?: string; exit_code?: number; error?: string };
+            const p = parsed.payload as ExitedContainerSummary;
             const name = p.container_name ?? p.container_id?.slice(0, 12) ?? "container";
             const exitMsg = `Container exited: ${name} (code ${p.exit_code ?? "??"})${p.error ? ` — ${p.error}` : ""}`;
             setTimelineStatus("start", "error", exitMsg);
             pushLog({ message: exitMsg, timestamp: parsed.timestamp, tone: "error" });
+            setExitedContainers((prev) => {
+              const key = p.container_id ?? `${p.container_name ?? "container"}-${p.finished_at ?? ""}`;
+              const next = prev.filter((item) => {
+                const itemKey = item.container_id ?? `${item.container_name ?? "container"}-${item.finished_at ?? ""}`;
+                return itemKey !== key;
+              });
+              return [...next, p];
+            });
           } else if (parsed.event_name === "project.runtime_stopped") {
             setTimelineStatus("metrics", "done", "All containers exited");
             setStackRunning(false);
@@ -660,6 +692,72 @@ export function ContainerExecution() {
             ))}
           </StaggerList>
         </Card>
+
+        {deployPhase === "exited" && exitedContainers.length > 0 && (
+          <Card className="p-4 bg-red-950/20 border-red-800/50 mb-4">
+            <h3 className="text-sm font-semibold text-red-300 mb-3">Container Exit Summary</h3>
+            <div className="space-y-3">
+              {exitedContainers.map((containerExit, index) => {
+                const containerKey =
+                  containerExit.container_id ??
+                  `${containerExit.container_name ?? "container"}-${containerExit.finished_at ?? index}`;
+                const name =
+                  containerExit.container_name ??
+                  containerExit.container_id?.slice(0, 12) ??
+                  `container-${index + 1}`;
+                const hasMetrics =
+                  !!containerExit.container_id &&
+                  metricsSeenContainerIds.includes(containerExit.container_id);
+                return (
+                  <div key={containerKey} className="rounded border border-red-800/40 bg-slate-950 p-3">
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <span className="text-sm font-semibold text-red-200">{name}</span>
+                      {containerExit.exit_code != null && (
+                        <Badge className="bg-red-900/40 text-red-200 border-red-700/50 font-mono text-xs">
+                          exit code: {containerExit.exit_code}
+                        </Badge>
+                      )}
+                      {containerExit.oom_killed && (
+                        <Badge className="bg-orange-900/40 text-orange-300 border-orange-700/50 text-xs">
+                          OOM killed
+                        </Badge>
+                      )}
+                    </div>
+                    {containerExit.error && (
+                      <p className="text-xs text-red-300 font-mono mb-1.5">{containerExit.error}</p>
+                    )}
+                    <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                      {containerExit.started_at && (
+                        <span>Started: {new Date(containerExit.started_at).toLocaleString()}</span>
+                      )}
+                      {containerExit.finished_at && (
+                        <span>Finished: {new Date(containerExit.finished_at).toLocaleString()}</span>
+                      )}
+                      {containerExit.restart_count != null && (
+                        <span>Restarts: {containerExit.restart_count}</span>
+                      )}
+                    </div>
+                    {!hasMetrics && (
+                      <p className="text-xs text-slate-500 mt-1 italic">
+                        Container exited before metrics were collected.
+                      </p>
+                    )}
+                    {Array.isArray(containerExit.last_logs) && containerExit.last_logs.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="text-xs text-slate-400 cursor-pointer select-none">
+                          Last logs ({containerExit.last_logs.length} lines)
+                        </summary>
+                        <pre className="mt-1 max-h-40 overflow-auto rounded border border-slate-800 bg-black/20 p-2 text-[10px] text-slate-300 whitespace-pre-wrap font-mono">
+                          {containerExit.last_logs.join("\n")}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
 
         <TerminalLog
           logs={logs}

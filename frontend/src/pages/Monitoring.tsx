@@ -323,6 +323,8 @@ export function Monitoring() {
   const ioStats = latestPayload?.io;
   const pids = latestPayload?.pids;
   const container = latestPayload?.container;
+  const currentHealthStatus = String(container?.health_status ?? "").toLowerCase();
+  const isUnhealthyLive = !exitedState && connected && currentHealthStatus === "unhealthy";
   const interfaces = useMemo(() => {
     const raw = latestPayload?.network?.interfaces;
     if (!raw || typeof raw !== "object") return [];
@@ -362,13 +364,21 @@ export function Monitoring() {
             className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs ${
               exitedState
                 ? "border-red-500/40 bg-red-500/10 text-red-300"
-                : connected
+                : isUnhealthyLive
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                  : connected
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
                   : "border-slate-700 bg-slate-900 text-slate-400"
             }`}
           >
             {exitedState ? <XCircle className="w-3 h-3" /> : <PlugZap className="w-3 h-3" />}
-            {exitedState ? `Exited (${exitedState.exit_code ?? "?"})` : connected ? "Live" : "Disconnected"}
+            {exitedState
+              ? `Exited (${exitedState.exit_code ?? "?"})`
+              : isUnhealthyLive
+                ? "Unhealthy"
+                : connected
+                  ? "Live"
+                  : "Disconnected"}
           </span>
         </div>
 
@@ -379,6 +389,8 @@ export function Monitoring() {
               const cState = containerStates[cid];
               const isConnected = cState?.connected ?? false;
               const isExited = !!cState?.exited;
+              const cHealthStatus = String(cState?.latestPayload?.container?.health_status ?? "").toLowerCase();
+              const isUnhealthy = !isExited && isConnected && cHealthStatus === "unhealthy";
               return (
                 <button
                   key={cid}
@@ -392,7 +404,7 @@ export function Monitoring() {
                   <span className="flex items-center gap-1.5">
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${
-                        isExited ? "bg-red-500" : isConnected ? "bg-emerald-400" : "bg-slate-600"
+                        isExited ? "bg-red-500" : isUnhealthy ? "bg-amber-400" : isConnected ? "bg-emerald-400" : "bg-slate-600"
                       }`}
                     />
                     {cState?.latestPayload?.container?.name || cid.slice(0, 12)}
@@ -516,10 +528,10 @@ export function Monitoring() {
               <Server className="w-3.5 h-3.5 text-indigo-400" />
               <span className="text-xs text-slate-400">Status</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-300 font-mono">
+            <div className={`flex items-center gap-1.5 text-xs font-mono ${isUnhealthyLive ? "text-amber-300" : "text-slate-300"}`}>
               {currentState?.connected && (
                 <motion.span
-                  className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"
+                  className={`inline-block w-1.5 h-1.5 rounded-full ${isUnhealthyLive ? "bg-amber-400" : "bg-emerald-400"}`}
                   animate={reducedMotion ? {} : { scale: [1, 1.4, 1], opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                 />

@@ -294,9 +294,9 @@ export function History() {
           <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-blue-400">
-              {historyItems.filter((item) => item.jobType === "compose").length}
+              {historyItems.filter((item) => item.jobType === "compose" || item.jobType === "project").length}
             </div>
-            <div className="text-sm text-slate-400">Compose jobs</div>
+            <div className="text-sm text-slate-400">Container jobs</div>
           </Card>
           </StaggerItem>
         </StaggerList>

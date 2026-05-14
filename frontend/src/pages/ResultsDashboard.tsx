@@ -862,7 +862,7 @@ export function ResultsDashboard() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => navigate(`/monitoring?jobId=${job.id}`)}
+                onClick={() => navigate(`/monitoring/${job.id}`)}
                 className="ml-auto border-slate-700 text-slate-300 hover:bg-slate-800"
               >
                 View Metrics
