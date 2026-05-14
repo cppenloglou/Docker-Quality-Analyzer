@@ -1,20 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
+  Activity,
   ChevronRight,
   Clock,
   FileCode,
   FileText,
   FolderArchive,
-  Loader2,
 } from "lucide-react";
 
+import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { ApiError, jobs as jobsApi, type Job } from "../utils/api";
+import { ApiError, compose as composeApi, jobs as jobsApi, type Job } from "../utils/api";
+import { MotionPage, StaggerList, StaggerItem, MotionCard } from "../components/motion";
 
 interface HistoryItem {
   id: string;
@@ -27,6 +29,10 @@ interface HistoryItem {
   errors: number;
   warnings: number;
   securityIssues: number;
+  // project-specific
+  dockerfileCount?: number;
+  composeFileCount?: number;
+  archiveName?: string;
 }
 
 function scoreColor(score: number | null) {
@@ -75,7 +81,27 @@ export function History() {
   const navigate = useNavigate();
   const [jobList, setJobList] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const ready = useMinLoader(!loading);
   const [error, setError] = useState<string | null>(null);
+  const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
+  const jobListRef = useRef<Job[]>([]);
+
+  const pollRunningStatus = useCallback(async (jobs: Job[]) => {
+    const composeJobs = jobs.filter(
+      (j) => (j.type === "compose" || j.type === "project") && j.status === "done",
+    );
+    if (composeJobs.length === 0) return;
+    const activeIds = new Set<string>();
+    await Promise.all(
+      composeJobs.map(async (j) => {
+        try {
+          const status = await composeApi.deployStatus(j.id);
+          if (status.active) activeIds.add(j.id);
+        } catch { /* ignore */ }
+      }),
+    );
+    setRunningJobs(activeIds);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +110,8 @@ export function History() {
         const data = await jobsApi.history();
         if (!cancelled) {
           setJobList(data);
+          jobListRef.current = data;
+          await pollRunningStatus(data);
         }
       } catch (err) {
         if (cancelled) return;
@@ -102,7 +130,15 @@ export function History() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pollRunningStatus]);
+
+  useEffect(() => {
+    if (jobList.length === 0) return;
+    const interval = setInterval(() => {
+      pollRunningStatus(jobListRef.current);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [jobList, pollRunningStatus]);
 
   const historyItems = useMemo<HistoryItem[]>(
     () =>
@@ -110,26 +146,46 @@ export function History() {
         const result = (job.result ?? {}) as {
           score?: number;
           grade?: string;
+          overall_score?: number;
+          overall_grade?: string;
           errors?: unknown[];
           warnings?: unknown[];
           securityIssues?: unknown[];
+          project_summary?: { total_errors?: number; total_warnings?: number; total_security_issues?: number };
         };
+        const meta = job.input_metadata;
         const fileName =
-          (job.input_metadata?.filename as string | undefined) ??
+          (meta?.filename as string | undefined) ??
           `${job.type}-${job.id.slice(0, 6)}`;
+
+        // For project jobs, prefer overall_score
+        const score = typeof (result.overall_score ?? result.score) === "number"
+          ? (result.overall_score ?? result.score)!
+          : null;
+        const grade = typeof (result.overall_grade ?? result.grade) === "string"
+          ? (result.overall_grade ?? result.grade)!
+          : null;
+
+        // For project jobs, use project_summary counts if available
+        const summary = result.project_summary;
+        const errors = summary?.total_errors ?? (Array.isArray(result.errors) ? result.errors.length : 0);
+        const warnings = summary?.total_warnings ?? (Array.isArray(result.warnings) ? result.warnings.length : 0);
+        const securityIssues = summary?.total_security_issues ?? (Array.isArray(result.securityIssues) ? result.securityIssues.length : 0);
+
         return {
           id: job.id,
           fileName,
           jobType: job.type,
           status: job.status,
           timestamp: new Date(job.created_at),
-          score: typeof result.score === "number" ? result.score : null,
-          grade: typeof result.grade === "string" ? result.grade : null,
-          errors: Array.isArray(result.errors) ? result.errors.length : 0,
-          warnings: Array.isArray(result.warnings) ? result.warnings.length : 0,
-          securityIssues: Array.isArray(result.securityIssues)
-            ? result.securityIssues.length
-            : 0,
+          score,
+          grade,
+          errors,
+          warnings,
+          securityIssues,
+          dockerfileCount: Array.isArray(meta?.dockerfiles) ? (meta.dockerfiles as string[]).length : undefined,
+          composeFileCount: Array.isArray(meta?.compose_files) ? (meta.compose_files as string[]).length : undefined,
+          archiveName: job.type === "project" ? (meta?.filename as string | undefined) : undefined,
         };
       }),
     [jobList],
@@ -157,6 +213,7 @@ export function History() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-5xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">
@@ -167,47 +224,52 @@ export function History() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <StaggerList className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-white">
               {historyItems.length}
             </div>
             <div className="text-sm text-slate-400">Total jobs</div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-green-400">
               {historyItems.filter((item) => (item.score ?? 0) >= 80).length}
             </div>
             <div className="text-sm text-slate-400">Grade A</div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-white">
               {averageScore ?? "-"}
             </div>
             <div className="text-sm text-slate-400">Average score</div>
           </Card>
+          </StaggerItem>
+          <StaggerItem>
           <Card className="p-4 bg-slate-900 border-slate-800">
             <div className="text-2xl font-bold text-blue-400">
               {historyItems.filter((item) => item.jobType === "compose").length}
             </div>
             <div className="text-sm text-slate-400">Compose jobs</div>
           </Card>
-        </div>
+          </StaggerItem>
+        </StaggerList>
 
-        {loading && (
-          <div className="flex items-center justify-center py-12 text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
-            Loading your job history...
-          </div>
+        {!ready && (
+          <DockerLoader message="Loading your job history..." fullScreen={false} />
         )}
 
-        {!loading && error && (
+        {ready && error && (
           <Card className="p-6 bg-red-950/20 border-red-800 text-red-300 mb-6">
             {error}
           </Card>
         )}
 
-        {!loading && !error && historyItems.length === 0 && (
+        {ready && !error && historyItems.length === 0 && (
           <Card className="p-12 bg-slate-900 border-slate-800 text-center">
             <FileCode className="w-16 h-16 text-slate-700 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">
@@ -225,13 +287,17 @@ export function History() {
           </Card>
         )}
 
-        {!loading && historyItems.length > 0 && (
-          <div className="space-y-3">
+        {ready && historyItems.length > 0 && (
+          <StaggerList className="space-y-3">
             {historyItems.map((item) => (
+              <StaggerItem key={item.id}>
+              <MotionCard
+                noHover
+                className="rounded-xl"
+              >
               <Card
-                key={item.id}
                 onClick={() => openJob(item)}
-                className="p-5 bg-slate-900 border-slate-800 hover:border-slate-700 transition-all cursor-pointer group"
+                className="p-5 bg-slate-900 border-slate-800 hover:border-slate-700 transition-colors cursor-pointer group"
               >
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-start gap-4 flex-1 min-w-0">
@@ -256,6 +322,12 @@ export function History() {
                         <Badge className={statusColor(item.status)}>
                           {item.status}
                         </Badge>
+                        {runningJobs.has(item.id) && (
+                          <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            Containers Running
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-4 text-sm flex-wrap">
@@ -263,6 +335,22 @@ export function History() {
                           <Clock className="w-4 h-4" />
                           {formatTimestamp(item.timestamp)}
                         </div>
+                        {item.jobType === "project" && (
+                          <>
+                            {item.dockerfileCount != null && item.dockerfileCount > 0 && (
+                              <span className="text-blue-400 flex items-center gap-1">
+                                <FileCode className="w-3 h-3" />
+                                {item.dockerfileCount} Dockerfile{item.dockerfileCount !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                            {item.composeFileCount != null && item.composeFileCount > 0 && (
+                              <span className="text-green-400 flex items-center gap-1">
+                                <FileText className="w-3 h-3" />
+                                {item.composeFileCount} Compose
+                              </span>
+                            )}
+                          </>
+                        )}
                         {item.errors > 0 && (
                           <span className="text-red-400">
                             {item.errors} errors
@@ -301,10 +389,13 @@ export function History() {
                   </div>
                 </div>
               </Card>
+              </MotionCard>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerList>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }

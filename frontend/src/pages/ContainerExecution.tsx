@@ -6,17 +6,16 @@ import {
   ArrowLeft,
   CheckCircle2,
   Container,
-  ExternalLink,
   Loader2,
   Play,
-  PackageSearch,
-  Rocket,
   ShieldAlert,
   Square,
-  Upload,
+  XCircle,
 } from "lucide-react";
 
+import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
+import { MotionPage, StaggerList, StaggerItem } from "../components/motion";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -32,6 +31,7 @@ import {
   type RunnabilityMeta,
 } from "../utils/api";
 import { clearState, loadState, saveState } from "../utils/monitoringState";
+import { pushNotification } from "../utils/notifications";
 
 interface TimelineEntry {
   id: string;
@@ -41,24 +41,32 @@ interface TimelineEntry {
 }
 
 const BASE_TIMELINE: TimelineEntry[] = [
-  { id: "precheck", label: "Runnability precheck", status: "running" },
   { id: "enqueue", label: "Deploy job accepted", status: "pending" },
-  { id: "push", label: "Images pushed / available", status: "pending" },
   { id: "start", label: "Container started", status: "pending" },
   { id: "metrics", label: "Metrics streaming", status: "pending" },
 ];
 const EXECUTION_STATE_TTL_MS = 1000 * 60 * 60 * 6;
 
+type DeployPhase = "idle" | "deploying" | "running" | "failed" | "exited";
+
+interface ComposeUpProgress {
+  total: number;
+  created: number;
+  started: number;
+}
+
 interface ExecutionPersistedState {
-  containerId: string | null;
+  containerIds: string[];
   deployJobId: string | null;
   timeline: TimelineEntry[];
   logs: TerminalLogEntry[];
+  stackRunning: boolean;
+  deployPhase?: DeployPhase;
 }
 
-function ensureAnalysis(
-  job: Job | null,
-): AnalysisResult | null {
+const DEPLOY_TIMEOUT_MS = 120_000;
+
+function ensureAnalysis(job: Job | null): AnalysisResult | null {
   if (!job?.result) return null;
   if (typeof job.result !== "object") return null;
   if (Array.isArray((job.result as AnalysisResult).errors)) {
@@ -85,16 +93,18 @@ export function ContainerExecution() {
   const [job, setJob] = useState<Job | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const ready = useMinLoader(!loading);
 
-  const [pushPublicImages, setPushPublicImages] = useState(false);
-  const [runStack, setRunStack] = useState(true);
-  const [deploying, setDeploying] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [stackRunning, setStackRunning] = useState(persisted?.stackRunning ?? false);
+  const [deployPhase, setDeployPhase] = useState<DeployPhase>(
+    persisted?.deployPhase ?? (persisted?.stackRunning ? "running" : "idle"),
+  );
   const [deployJobId, setDeployJobId] = useState<string | null>(
     persisted?.deployJobId ?? null,
   );
-  const [containerId, setContainerId] = useState<string | null>(
-    persisted?.containerId ?? null,
+  const [containerIds, setContainerIds] = useState<string[]>(
+    persisted?.containerIds ?? [],
   );
   const [timeline, setTimeline] = useState<TimelineEntry[]>(
     persisted?.timeline && persisted.timeline.length > 0
@@ -102,7 +112,16 @@ export function ContainerExecution() {
       : BASE_TIMELINE.map((entry) => ({ ...entry })),
   );
   const [logs, setLogs] = useState<TerminalLogEntry[]>(persisted?.logs ?? []);
+  const [composeProgress, setComposeProgress] = useState<ComposeUpProgress | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const deployTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearDeployTimeout = () => {
+    if (deployTimeoutRef.current !== null) {
+      clearTimeout(deployTimeoutRef.current);
+      deployTimeoutRef.current = null;
+    }
+  };
 
   const analysis = useMemo(() => ensureAnalysis(job), [job]);
   const runnability: RunnabilityMeta | undefined = analysis?.meta?.runnability;
@@ -147,18 +166,21 @@ export function ContainerExecution() {
           setLoadError(
             `Job ${fetched.id} is a ${fetched.type} job and cannot be deployed.`,
           );
-          setTimelineStatus("precheck", "error", "Not a deployable job");
           return;
         }
-        const ok =
-          ensureAnalysis(fetched)?.meta?.runnability?.runnable === true;
-        setTimelineStatus(
-          "precheck",
-          ok ? "done" : "error",
-          ok
-            ? "Compose stack passes runnability rules"
-            : "Compose stack blocked by runnability rules",
-        );
+
+        const status = await composeApi.deployStatus(analysisJobId);
+        if (status.active) {
+          setStackRunning(true);
+          setDeployPhase("running");
+          setContainerIds(status.container_ids);
+          if (!deployJobId) setDeployJobId(analysisJobId);
+        } else {
+          setStackRunning(false);
+          setDeployPhase((prev) => (prev === "running" ? "idle" : prev));
+          setContainerIds([]);
+          setDeployJobId(null);
+        }
       } catch (err) {
         if (cancelled) return;
         const message =
@@ -168,7 +190,6 @@ export function ContainerExecution() {
               ? err.message
               : "Failed to load analysis job.";
         setLoadError(message);
-        setTimelineStatus("precheck", "error", message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -181,18 +202,21 @@ export function ContainerExecution() {
   useEffect(() => {
     return () => {
       closeSocket();
+      clearDeployTimeout();
     };
   }, []);
 
   useEffect(() => {
     if (!stateKey) return;
     saveState(stateKey, {
-      containerId,
+      containerIds,
       deployJobId,
       timeline,
       logs: logs.slice(-200),
+      stackRunning,
+      deployPhase,
     });
-  }, [containerId, deployJobId, timeline, logs, stateKey]);
+  }, [containerIds, deployJobId, timeline, logs, stateKey, stackRunning, deployPhase]);
 
   const handleDeploy = async () => {
     if (!job) return;
@@ -200,13 +224,15 @@ export function ContainerExecution() {
       toast.error("Compose stack is not runnable from a standalone file.");
       return;
     }
-    setDeploying(true);
+    setDeployPhase("deploying");
+    clearDeployTimeout();
+    setComposeProgress(null);
+    setTimeline(BASE_TIMELINE.map((entry) => ({ ...entry })));
     setTimelineStatus("enqueue", "running", "Submitting deploy request...");
     try {
       const response = await composeApi.deploy({
         job_id: job.id,
-        push_public_images: pushPublicImages,
-        run_stack: runStack,
+        run_stack: true,
       });
       setDeployJobId(response.job_id);
       setTimelineStatus(
@@ -219,6 +245,7 @@ export function ContainerExecution() {
         tone: "success",
       });
       toast.success("Deploy request accepted");
+      pushNotification("info", "Deploy Started", `Compose stack deploy queued for job ${job.id.slice(0, 8)}`);
 
       const socket = ws.connectJob(job.id);
       socketRef.current = socket;
@@ -231,46 +258,111 @@ export function ContainerExecution() {
       socket.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data as string) as DomainEvent;
-          pushLog({
-            message: `${parsed.event_name} ${
-              parsed.payload ? JSON.stringify(parsed.payload) : ""
-            }`,
-            timestamp: parsed.timestamp,
-            tone:
-              parsed.event_name === "user.analysis.failed"
-                ? "error"
-                : parsed.event_name === "container.metrics"
-                  ? "info"
-                  : "success",
-          });
-          if (parsed.event_name === "docker.image.pushed") {
-            setTimelineStatus(
-              "push",
-              "done",
-              String(
-                (parsed.payload as { registry_ref?: string })?.registry_ref ??
-                  "image pushed",
-              ),
+          if (
+            parsed.event_name !== "deploy.compose_up_log" &&
+            parsed.event_name !== "deploy.compose_up_progress"
+          ) {
+            pushLog({
+              message: `${parsed.event_name} ${
+                parsed.payload ? JSON.stringify(parsed.payload) : ""
+              }`,
+              timestamp: parsed.timestamp,
+              tone:
+                parsed.event_name === "user.analysis.failed"
+                  ? "error"
+                  : parsed.event_name === "container.metrics"
+                    || parsed.event_name === "deploy.cleanup_started"
+                    ? "info"
+                    : "success",
+            });
+          }
+          if (parsed.event_name === "deploy.compose_up_log") {
+            const line = String((parsed.payload as { line?: string })?.line ?? "");
+            if (line) {
+              pushLog({ message: line, timestamp: parsed.timestamp, tone: "info" });
+            }
+            return;
+          } else if (parsed.event_name === "deploy.compose_up_progress") {
+            const p = parsed.payload as
+              | { total_services?: number; created?: number; started?: number }
+              | undefined;
+            const total = Number(p?.total_services ?? 0);
+            const created = Number(p?.created ?? 0);
+            const started = Number(p?.started ?? 0);
+            if (total > 0) {
+              setComposeProgress({ total, created, started });
+            }
+            return;
+          }
+
+          if (parsed.event_name === "container.started") {
+            const ids = (parsed.payload as { container_ids?: string[] })?.container_ids ?? [];
+            const primaryId = String(
+              (parsed.payload as { container_id?: string })?.container_id ?? "",
             );
-          } else if (parsed.event_name === "container.started") {
-            const cid = String(
-              (parsed.payload as { container_id?: string })?.container_id ??
-                "",
-            );
-            setContainerId(cid || null);
+            setContainerIds(ids.length > 0 ? ids : primaryId ? [primaryId] : []);
+            setStackRunning(true);
+            setDeployPhase("running");
+            clearDeployTimeout();
             setTimelineStatus(
               "start",
               "done",
-              cid ? `Container ${cid}` : "Container started",
+              ids.length > 0 ? `${ids.length} container(s) started` : "Container started",
             );
+            pushNotification("success", "Containers Running", `${ids.length || 1} container(s) are now running`);
           } else if (parsed.event_name === "container.metrics") {
             setTimelineStatus("metrics", "running", "Metrics streaming");
+          } else if (parsed.event_name === "container.exited") {
+            const p = parsed.payload as { container_id?: string; container_name?: string; exit_code?: number; error?: string };
+            const name = p.container_name ?? p.container_id?.slice(0, 12) ?? "container";
+            const exitMsg = `Container exited: ${name} (code ${p.exit_code ?? "??"})${p.error ? ` — ${p.error}` : ""}`;
+            setTimelineStatus("start", "error", exitMsg);
+            pushLog({ message: exitMsg, timestamp: parsed.timestamp, tone: "error" });
+          } else if (parsed.event_name === "project.runtime_stopped") {
+            setTimelineStatus("metrics", "done", "All containers exited");
+            setStackRunning(false);
+            setDeployPhase("exited");
+            clearDeployTimeout();
+            pushLog({ message: "All containers have exited.", timestamp: parsed.timestamp, tone: "info" });
+            pushNotification("warning", "Runtime Stopped", "All containers have exited");
           } else if (parsed.event_name === "container.stopped") {
             setTimelineStatus("metrics", "done", "Stack stopped");
-            setContainerId(null);
+            setStackRunning(false);
+            setDeployPhase("idle");
+            clearDeployTimeout();
+            setContainerIds([]);
             setDeployJobId(null);
             if (stateKey) clearState(stateKey);
             toast.success("Compose stack stopped");
+            pushNotification("warning", "Containers Stopped", "All containers have been stopped");
+          } else if (parsed.event_name === "deploy.cleanup_started") {
+            const projectName = String(
+              (parsed.payload as { project_name?: string })?.project_name ?? "compose stack",
+            );
+            setStackRunning(false);
+            setContainerIds([]);
+            pushLog({
+              message: `Cleanup started for ${projectName}`,
+              timestamp: parsed.timestamp,
+              tone: "info",
+            });
+            toast.message("Stopping and removing stack resources...");
+            pushNotification("info", "Cleanup Started", "Removing containers created by the failed deploy");
+          } else if (parsed.event_name === "deploy.cleanup_completed") {
+            const projectName = String(
+              (parsed.payload as { project_name?: string })?.project_name ?? "compose stack",
+            );
+            setStackRunning(false);
+            setContainerIds([]);
+            setDeployJobId(null);
+            if (stateKey) clearState(stateKey);
+            pushLog({
+              message: `Cleanup completed for ${projectName}`,
+              timestamp: parsed.timestamp,
+              tone: "success",
+            });
+            toast.success("Failed deploy containers stopped and removed");
+            pushNotification("success", "Cleanup Completed", "Failed deploy containers were removed from the sandbox");
           } else if (parsed.event_name === "user.analysis.failed") {
             setTimelineStatus(
               "start",
@@ -279,6 +371,9 @@ export function ContainerExecution() {
                 (parsed.payload as { message?: string })?.message ?? "failed",
               ),
             );
+            setStackRunning(false);
+            setDeployPhase("failed");
+            clearDeployTimeout();
             toast.error("Deploy workflow reported a failure");
           }
         } catch {
@@ -289,6 +384,20 @@ export function ContainerExecution() {
         pushLog({ message: "Event stream error", tone: "error" });
       socket.onclose = () =>
         pushLog({ message: "Event stream closed", tone: "warning" });
+
+      deployTimeoutRef.current = setTimeout(() => {
+        setDeployPhase((current) => {
+          if (current !== "deploying") return current;
+          pushLog({
+            message: "No deploy lifecycle event received within 2 minutes - marking as failed.",
+            tone: "error",
+          });
+          setTimelineStatus("start", "error", "Deploy timed out waiting for events");
+          toast.error("Deploy timed out waiting for events");
+          return "failed";
+        });
+        deployTimeoutRef.current = null;
+      }, DEPLOY_TIMEOUT_MS);
     } catch (err) {
       if (err instanceof ApiError) {
         setTimelineStatus("enqueue", "error", err.message);
@@ -306,14 +415,17 @@ export function ContainerExecution() {
         toast.error(message);
         setTimelineStatus("enqueue", "error", message);
       }
-    } finally {
-      setDeploying(false);
+      setDeployPhase("failed");
+      clearDeployTimeout();
     }
   };
 
   const handleStop = async () => {
     if (!job || stopping) return;
     setStopping(true);
+    setStackRunning(false);
+    setContainerIds([]);
+    sessionStorage.setItem("dqa:containerStatus", "stopping");
     pushLog({ message: `Stop requested for deploy ${job.id}`, tone: "warning" });
     try {
       const response = await composeApi.stopDeploy({ job_id: job.id });
@@ -323,28 +435,38 @@ export function ContainerExecution() {
       });
       setTimelineStatus("metrics", "done", "Stop signal sent");
       toast.success("Stop request accepted");
+      pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for containers to shut down...");
+
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const status = await composeApi.deployStatus(job.id);
+          if (!status.active) {
+            setDeployJobId(null);
+            if (stateKey) clearState(stateKey);
+            sessionStorage.removeItem("dqa:containerStatus");
+            pushLog({ message: "Stack confirmed stopped", tone: "success" });
+            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped");
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to stop deployment";
       pushLog({ message, tone: "error" });
       toast.error(message);
+      setStackRunning(true);
     } finally {
       setStopping(false);
     }
   };
 
-  const goMonitoring = () => {
-    if (job && containerId) {
-      navigate(`/monitoring/${job.id}/${containerId}`);
-    }
-  };
-
-  if (loading) {
+  if (!ready) {
     return (
       <Layout>
-        <div className="max-w-3xl mx-auto py-16 flex flex-col items-center text-slate-400">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-400 mb-4" />
-          <p>Loading deployment context...</p>
-        </div>
+        <DockerLoader message="Loading deployment context..." fullScreen={false} />
       </Layout>
     );
   }
@@ -369,210 +491,174 @@ export function ContainerExecution() {
     );
   }
 
-  const yamlSnapshot =
-    (job?.input_metadata?.content as string | undefined) ??
-    (job?.input_metadata?.filename as string | undefined);
-
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-5xl mx-auto">
-        <div className="mb-8">
+        <div className="mb-6">
           <Button
             variant="ghost"
             onClick={() => navigate(`/results?jobId=${job?.id ?? ""}`)}
-            className="text-slate-400 hover:text-white mb-4"
+            className="text-slate-400 hover:text-white mb-2"
           >
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Results
           </Button>
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h1 className="text-3xl font-bold text-white mb-2">
+              <h1 className="text-2xl font-bold text-white">
                 Deploy Compose Stack
               </h1>
-              <p className="text-slate-400">
-                Trigger the backend deploy workflow and watch live events.
-              </p>
               {job && (
                 <p className="text-xs text-slate-500 mt-1">
-                  Analysis job: {job.id} ({job.type})
+                  Job: {job.id} ({job.type})
                 </p>
               )}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <Button
                 onClick={handleDeploy}
                 disabled={
                   !job ||
-                  deploying ||
-                  (job.type === "compose" && !runnable) ||
-                  !!deployJobId
+                  deployPhase === "deploying" ||
+                  deployPhase === "running" ||
+                  stopping ||
+                  (job.type === "compose" && !runnable)
                 }
                 className="bg-green-600 hover:bg-green-700"
                 title={
-                  !runnable && job?.type === "compose"
-                    ? "Compose stack is not runnable. Upload the full project instead."
-                    : "Trigger deploy"
+                  deployPhase === "running"
+                    ? "Stack is already running. Stop it first."
+                    : deployPhase === "deploying"
+                      ? "Deploy in progress..."
+                      : deployPhase === "failed"
+                        ? "Previous deploy failed. Click to retry."
+                        : deployPhase === "exited"
+                          ? "All containers exited. Click to run again."
+                          : "Trigger deploy"
                 }
               >
-                {deploying ? (
+                {deployPhase === "deploying" || stopping ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : deployPhase === "exited" ? (
+                  <XCircle className="w-4 h-4 mr-2 text-amber-300" />
                 ) : (
                   <Play className="w-4 h-4 mr-2" />
                 )}
-                {deployJobId ? "Deploy in flight" : "Deploy now"}
+                {stopping
+                  ? "Stopping..."
+                  : deployPhase === "running"
+                    ? "Running"
+                    : deployPhase === "deploying"
+                      ? "Deploying..."
+                      : deployPhase === "exited"
+                        ? "Exited — Run Again"
+                        : "Deploy"}
               </Button>
-              {deployJobId && (
-                <Button
-                  onClick={handleStop}
-                  disabled={stopping}
-                  variant="outline"
-                  className="border-red-700 text-red-300 hover:bg-red-600/20"
-                >
-                  {stopping ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Square className="w-4 h-4 mr-2" />
-                  )}
-                  Stop stack
-                </Button>
-              )}
-              {containerId && (
-                <Button
-                  onClick={goMonitoring}
-                  variant="outline"
-                  className="border-blue-600 text-blue-400 hover:bg-blue-500/10"
-                >
-                  <Activity className="w-4 h-4 mr-2" />
-                  Watch metrics
-                </Button>
-              )}
+              <Button
+                onClick={handleStop}
+                disabled={!stackRunning || stopping}
+                variant="outline"
+                className="border-red-700 text-red-300 hover:bg-red-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {stopping ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Square className="w-4 h-4 mr-2" />
+                )}
+                Stop
+              </Button>
+              <Button
+                onClick={() => navigate(`/monitoring/${job?.id}`)}
+                disabled={!stackRunning || stopping}
+                variant="outline"
+                className="border-blue-600 text-blue-400 hover:bg-blue-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Activity className="w-4 h-4 mr-2" />
+                Monitor
+              </Button>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-3 mb-6">
-          <Card className="p-5 bg-slate-900 border-slate-800 md:col-span-2">
-            <h2 className="text-lg font-semibold text-white mb-3">
-              Deploy options
-            </h2>
-            <div className="space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 accent-blue-500"
-                  checked={pushPublicImages}
-                  onChange={(e) => setPushPublicImages(e.target.checked)}
-                />
-                <div>
-                  <div className="text-slate-200 text-sm font-medium flex items-center gap-2">
-                    <Upload className="w-4 h-4" /> Push public images
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Publish images referenced by the compose stack to the
-                    configured registry.
-                  </p>
-                </div>
-              </label>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 accent-blue-500"
-                  checked={runStack}
-                  onChange={(e) => setRunStack(e.target.checked)}
-                />
-                <div>
-                  <div className="text-slate-200 text-sm font-medium flex items-center gap-2">
-                    <Rocket className="w-4 h-4" /> Run stack
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Bring up the compose stack and stream container metrics.
-                  </p>
-                </div>
-              </label>
-            </div>
-          </Card>
-
-          <Card className="p-5 bg-slate-900 border-slate-800">
-            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-amber-400" /> Runnability
-            </h2>
-            {job?.type === "project" ? (
-              <p className="text-sm text-slate-300">
-                Project deploys skip the standalone runnability gate.
-              </p>
-            ) : runnable ? (
-              <p className="text-sm text-emerald-300">
-                Compose stack passes all runnability rules.
-              </p>
-            ) : (
-              <>
-                <p className="text-sm text-amber-300 mb-2">
-                  Deploy is blocked until these rules pass:
-                </p>
-                <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
-                  {(runnability?.reasons ?? ["No runnability metadata."]).map(
-                    (reason, idx) => (
-                      <li key={idx}>{reason}</li>
-                    ),
-                  )}
-                </ul>
-              </>
-            )}
-          </Card>
-        </div>
-
-        <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <Container className="w-5 h-5 text-blue-400" /> Deploy timeline
+        <Card className="p-4 bg-slate-900 border-slate-800 mb-4">
+          <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+            <Container className="w-4 h-4 text-blue-400" /> Timeline
           </h2>
-          <div className="space-y-2">
+          <StaggerList className="space-y-1">
             {timeline.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-start gap-3 p-3 rounded border border-slate-800 bg-slate-950"
-              >
-                <div className="pt-0.5">
-                  {entry.status === "done" && (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  )}
-                  {entry.status === "running" && (
-                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                  )}
-                  {entry.status === "pending" && (
-                    <Container className="w-5 h-5 text-slate-600" />
-                  )}
-                  {entry.status === "error" && (
-                    <ShieldAlert className="w-5 h-5 text-red-400" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div
-                    className={`text-sm font-medium ${
-                      entry.status === "done"
-                        ? "text-emerald-300"
-                        : entry.status === "running"
-                          ? "text-blue-300"
-                          : entry.status === "error"
-                            ? "text-red-300"
-                            : "text-slate-400"
-                    }`}
-                  >
-                    {entry.label}
-                  </div>
-                  {entry.detail && (
-                    <div className="text-xs text-slate-400 mt-0.5 break-all">
-                      {entry.detail}
+              <StaggerItem key={entry.id}>
+                {entry.id === "start" &&
+                  (deployPhase === "deploying" || (composeProgress && composeProgress.started < composeProgress.total)) && (
+                    <div className="px-2 py-2 mb-1 rounded border border-slate-800 bg-slate-950">
+                      <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                        <span>docker-compose up progress</span>
+                        {composeProgress ? (
+                          <span className="font-mono">
+                            {composeProgress.created}/{composeProgress.total} created,{" "}
+                            {composeProgress.started}/{composeProgress.total} running
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 italic">waiting for output...</span>
+                        )}
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-800 rounded overflow-hidden">
+                        {composeProgress && composeProgress.total > 0 ? (
+                          <div
+                            className="h-full bg-blue-500 transition-all duration-300"
+                            style={{
+                              width: `${Math.min(100, Math.round((composeProgress.started / composeProgress.total) * 100))}%`,
+                            }}
+                          />
+                        ) : (
+                          <div className="h-full w-1/3 bg-blue-500/60 animate-pulse" />
+                        )}
+                      </div>
                     </div>
                   )}
+              <div
+                className="flex items-center gap-2 px-2 py-1.5 rounded border border-slate-800 bg-slate-950"
+              >
+                <div className="flex-shrink-0">
+                  {entry.status === "done" && (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  )}
+                  {entry.status === "running" && (
+                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                  )}
+                  {entry.status === "pending" && (
+                    <Container className="w-4 h-4 text-slate-600" />
+                  )}
+                  {entry.status === "error" && (
+                    <ShieldAlert className="w-4 h-4 text-red-400" />
+                  )}
                 </div>
-                {entry.id === "start" && containerId && (
-                  <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 font-mono text-xs">
-                    {containerId}
+                <span
+                  className={`text-xs font-medium ${
+                    entry.status === "done"
+                      ? "text-emerald-300"
+                      : entry.status === "running"
+                        ? "text-blue-300"
+                        : entry.status === "error"
+                          ? "text-red-300"
+                          : "text-slate-400"
+                  }`}
+                >
+                  {entry.label}
+                </span>
+                {entry.detail && (
+                  <span className="text-xs text-slate-500 truncate">
+                    — {entry.detail}
+                  </span>
+                )}
+                {entry.id === "start" && containerIds.length > 0 && (
+                  <Badge className="ml-auto bg-blue-500/20 text-blue-300 border-blue-500/30 font-mono text-xs">
+                    {containerIds.length}
                   </Badge>
                 )}
               </div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerList>
         </Card>
 
         <TerminalLog
@@ -581,34 +667,8 @@ export function ContainerExecution() {
           emptyLabel="Deploy has not started yet."
           maxHeight="360px"
         />
-
-        {yamlSnapshot && typeof yamlSnapshot === "string" && (
-          <Card className="mt-6 p-5 bg-slate-900 border-slate-800">
-            <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
-              <PackageSearch className="w-5 h-5 text-slate-300" /> Input summary
-            </h3>
-            <p className="text-sm text-slate-400 font-mono break-all">
-              {yamlSnapshot}
-            </p>
-          </Card>
-        )}
-
-        {containerId && (
-          <Card className="mt-6 p-4 bg-blue-500/10 border-blue-500/30 flex items-center justify-between">
-            <p className="text-sm text-blue-200">
-              Container <span className="font-mono">{containerId}</span> is up.
-              Open live metrics to inspect CPU and memory.
-            </p>
-            <Button
-              size="sm"
-              onClick={goMonitoring}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <ExternalLink className="w-4 h-4 mr-2" /> Open monitoring
-            </Button>
-          </Card>
-        )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }

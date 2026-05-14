@@ -65,6 +65,69 @@ class AnalysisService:
         await self.session.commit()
         return job.id
 
+    async def analyze_content(
+        self,
+        content: str,
+        content_type: str,
+        context_extras: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Run plugins on raw file content and return scored results without touching any job in the DB.
+
+        Used by run_project_analysis to analyze individual files within a project.
+        ``content_type`` is either ``"dockerfile"`` or ``"compose"``.
+        """
+        context: dict[str, Any] = {
+            "dockerfile_content": content if content_type == "dockerfile" else "",
+            "compose_content": content if content_type == "compose" else "",
+        }
+        if context_extras:
+            context.update(context_extras)
+
+        if content_type == "dockerfile":
+            plugin_names_list: list[str] = ["hadolint", "security_scanner", "resource_estimation"]
+        else:
+            plugin_names_list = ["compose_validator", "compose_runnability", "security_scanner", "resource_estimation"]
+
+        plugins: list[BasePlugin] = load_plugins(plugin_names_list)
+        aggregate: list[dict[str, Any]] = []
+        meta: dict[str, Any] = {}
+        for plugin in plugins:
+            output = await plugin.run(context)
+            findings = output.get("findings", [])
+            if isinstance(findings, dict):
+                findings = findings.get("diagnostics", [])
+            if isinstance(findings, list):
+                aggregate.extend(findings)
+            for key, value in output.items():
+                if key != "findings":
+                    meta[key] = value
+
+        issues = [self._normalize_issue(item) for item in aggregate]
+        errors = [i for i in issues if i.severity == "error"]
+        warnings = [i for i in issues if i.severity == "warning"]
+        suggestions = [i for i in issues if i.severity == "info"]
+        security = [i for i in issues if i.code.startswith("SEC")]
+
+        line_count = max(1, len(content.splitlines()))
+        raw_penalty = len(errors) * 15 + len(warnings) * 8 + len(suggestions) * 3 + len(security) * 10
+        density_factor = min(1.0, 50.0 / line_count)
+        score = max(0, min(100, round(100 - raw_penalty * density_factor)))
+
+        return {
+            "score": score,
+            "grade": _grade(score),
+            "line_count": line_count,
+            "errors_count": len(errors),
+            "warnings_count": len(warnings),
+            "security_count": len(security),
+            "suggestions_count": len(suggestions),
+            "errors": [i.model_dump() for i in errors],
+            "warnings": [i.model_dump() for i in warnings],
+            "suggestions": [i.model_dump() for i in suggestions],
+            "securityIssues": [i.model_dump() for i in security],
+            "meta": meta,
+        }
+
     async def run_job_with_plugins(
         self, user_id: uuid.UUID, job_id: uuid.UUID, context: dict[str, Any], plugin_names: Iterable[str]
     ) -> dict[str, Any]:
@@ -93,10 +156,15 @@ class AnalysisService:
             suggestions = [i for i in issues if i.severity == "info"]
             security = [i for i in issues if i.code.startswith("SEC")]
 
-            score = max(0, 100 - (len(errors) * 15 + len(warnings) * 8 + len(suggestions) * 3 + len(security) * 10))
+            source = context.get("dockerfile_content") or context.get("compose_content") or ""
+            line_count = max(1, len(source.splitlines()))
+            raw_penalty = len(errors) * 15 + len(warnings) * 8 + len(suggestions) * 3 + len(security) * 10
+            density_factor = min(1.0, 50.0 / line_count)
+            score = max(0, min(100, round(100 - raw_penalty * density_factor)))
             result = {
                 "score": score,
                 "grade": _grade(score),
+                "line_count": line_count,
                 "errors": [i.model_dump() for i in errors],
                 "warnings": [i.model_dump() for i in warnings],
                 "suggestions": [i.model_dump() for i in suggestions],

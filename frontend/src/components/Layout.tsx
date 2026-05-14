@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { FileCode, History, Home, KeyRound, LogOut } from "lucide-react";
+import { FileCode, History, Home, KeyRound, LogOut, BarChart3 } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
+import { NotificationPanel } from "./NotificationPanel";
 import { Button } from "./ui/button";
 import { checkHealth } from "../utils/api";
 
@@ -41,7 +42,7 @@ export function Layout({ children }: LayoutProps) {
     }`;
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-950 flex flex-col">
       <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -61,14 +62,16 @@ export function Layout({ children }: LayoutProps) {
                 <History className="w-4 h-4" />
                 <span className="hidden sm:inline">History</span>
               </Link>
-              <Link
-                to="/settings/api-keys"
-                className={navLinkClass("/settings/api-keys")}
-              >
+              <Link to="/research" className={navLinkClass("/research")}>
+                <BarChart3 className="w-4 h-4" />
+                <span className="hidden sm:inline">Research</span>
+              </Link>
+              <Link to="/settings/api-keys" className={navLinkClass("/settings/api-keys")}>
                 <KeyRound className="w-4 h-4" />
                 <span className="hidden sm:inline">API Keys</span>
               </Link>
               <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+                <NotificationPanel />
                 <span
                   className={`inline-block h-2 w-2 rounded-full ${
                     apiHealthy === null
@@ -103,10 +106,10 @@ export function Layout({ children }: LayoutProps) {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">{children}</main>
+      <main className="container mx-auto px-4 py-8 flex-1">{children}</main>
 
-      <footer className="border-t border-slate-800 mt-16 py-6">
-        <div className="container mx-auto px-4 text-center text-slate-500 text-sm">
+      <footer className="border-t border-slate-800 py-6">
+        <div className="container mx-auto px-4 text-center text-sm text-slate-400">
           Docker Analyzer - Lint and analyze your Docker configurations
         </div>
       </footer>

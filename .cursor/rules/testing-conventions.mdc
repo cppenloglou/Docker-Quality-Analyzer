@@ -1,0 +1,61 @@
+---
+description: Testing patterns and conventions for backend (pytest) and frontend (lint + build)
+alwaysApply: true
+---
+
+# Testing Conventions
+
+## Backend (pytest)
+
+- **Flat structure**: All tests in `backend/tests/`, no nested directories.
+- **No real DB**: Every test uses mocked sessions and repositories.
+
+### Key Fixtures from `conftest.py`
+
+- `app` — FastAPI instance with no-op lifespan (skips DB table creation)
+- `client` — `TestClient(app)`
+- `fake_session` — `AsyncMock` standing in for `AsyncSession`
+- `auth_header_for(user_id)` — creates a valid JWT Bearer header
+- `make_user()` — creates a `UserModel` instance without touching the DB
+
+### Dependency Override Pattern
+
+```python
+app.dependency_overrides[get_db_session] = fake_db_session_dependency
+app.dependency_overrides[get_current_user] = lambda: user
+# ... run test ...
+app.dependency_overrides.clear()  # always clean up
+```
+
+### Monkeypatch over Mocks
+
+Prefer `monkeypatch.setattr("app.api.routers.compose.JobRepository", FakeRepo)` with inline fake classes over complex `unittest.mock` setups.
+
+### Coverage expectations
+
+When touching these areas, keep or extend tests in:
+
+- **`test_project_scan.py`** — project ZIP scan behavior
+- **`test_project_build.py`** — optional image builds, failure isolation
+- **`test_container_lifecycle.py`** — start/stop, exit, unhealthy states
+- **`test_research_privacy.py`** — research responses leak no forbidden fields
+
+### Running Tests
+
+```bash
+cd backend
+pytest -q                                    # all tests
+pytest tests/test_plugins.py -v -k "test_name"  # single test
+```
+
+## Frontend
+
+No test runner — validation is done via linting and type-checked builds:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+**CI / pre-merge:** run **`npm run build`** (not only `lint`) so TypeScript and bundling stay green.

@@ -1,0 +1,147 @@
+name: microservices-platform
+
+services:
+  api-gateway:
+    image: nginx:1.27-alpine
+    depends_on:
+      product-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    ports:
+      - target: 80
+        published: "8000"
+        host_ip: "127.0.0.1"
+        protocol: tcp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      KAFKA_NODE_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    hostname: kafka
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - target: 8025
+        published: "8025"
+        host_ip: "127.0.0.1"
+        protocol: tcp
+    restart: unless-stopped
+
+  notification-service:
+    image: alpine:3.20
+    command: sh -c "while true; do echo 'notification-service alive'; sleep 30; done"
+    restart: unless-stopped
+
+  payment-service:
+    image: alpine:3.20
+    command: sh -c "while true; do echo 'payment-service alive'; sleep 30; done"
+    restart: unless-stopped
+
+  product-db:
+    image: mongo:7.0
+    volumes:
+      - product_db_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  product-service:
+    image: python:3.12-alpine3.20
+    depends_on:
+      product-db:
+        condition: service_healthy
+    command: >
+      python -m http.server 3003 --bind 0.0.0.0
+    working_dir: /tmp
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:3003').read()\""
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  shared-cache:
+    image: redis:7-alpine3.20
+    volumes:
+      - cache_data:/data
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-db:
+    image: postgres:16-alpine3.20
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: users
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_USER: users
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U users"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-service:
+    image: node:20-alpine3.20
+    depends_on:
+      shared-cache:
+        condition: service_healthy
+      user-db:
+        condition: service_healthy
+    command: >
+      sh -c "echo 'const http=require(\"http\");http.createServer((req,res)=>{if(req.url===\"/health\"){res.writeHead(200);res.end(\"OK\");}else{res.end(\"user-service\");}}).listen(3001,\"0.0.0.0\")' > index.js && node index.js"
+    working_dir: /app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  cache_data:
+  kafka_data:
+  product_db_data:
+  user_db_data:

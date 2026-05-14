@@ -1,0 +1,46 @@
+---
+description: Docker Compose stack, service topology, and DevOps conventions
+alwaysApply: true
+---
+
+# Docker & DevOps
+
+## 6-Service Compose Stack
+
+Stack is defined in `docker-compose.yaml` at the repo root.
+
+| Service | Role | Port |
+|---|---|---|
+| frontend | Nginx-served React SPA + reverse proxy | 3000:80 |
+| api | FastAPI HTTP server | 8000:8000 |
+| worker | arq task worker (same image as api, different CMD) | — |
+| dind | Docker-in-Docker daemon (privileged) | — |
+| redis | Job queue (arq) + pub/sub event bus | 6379 |
+| postgres | Primary relational DB | 5432 |
+
+## Dependency Chain (health-check gated)
+
+`frontend → api → redis, postgres` and `worker → dind, redis, postgres`
+
+## Key Patterns
+
+- **Single-image, dual-role backend**: Same Dockerfile produces `api` (uvicorn) and `worker` (arq CMD override).
+- **Shared volume**: `uploads_data` mounted in both `api` and `worker` for uploaded file access.
+- **DinD isolation**: Worker talks to `dind` sidecar via `DOCKER_HOST=tcp://dind:2375` (no TLS). Never exposes host Docker socket.
+
+## Essential Commands
+
+```bash
+cp backend/.env.example backend/.env      # one-time setup
+docker compose up --build                  # start full stack
+docker compose exec api alembic upgrade head  # run DB migrations
+docker compose logs -f frontend api worker # tail logs
+docker compose down -v                     # stop + wipe volumes
+```
+
+## Configuration
+
+Backend settings loaded by `pydantic-settings` from env vars or `backend/.env`. Key toggles:
+- `APP_ENV=dev` enables permissive CORS (`allow_origins=["*"]`)
+- `APP_ENV=prod` restricts CORS
+- `JWT_SECRET_KEY` must be changed in production

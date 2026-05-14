@@ -35,8 +35,21 @@ async def job_updates(
 
 
 @router.websocket("/ws/metrics/{container_id}")
-async def container_metrics(websocket: WebSocket, container_id: str) -> None:
+async def container_metrics(
+    websocket: WebSocket,
+    container_id: str,
+    token: str = Query(...),
+) -> None:
     await websocket.accept()
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            raise ValueError("wrong token type")
+        _ = uuid.UUID(payload["sub"])
+    except Exception:
+        await websocket.send_json({"error": "invalid token"})
+        await websocket.close(code=4401)
+        return
     try:
         async for event in subscribe(f"container:{container_id}:metrics"):
             await websocket.send_text(json.dumps(event))

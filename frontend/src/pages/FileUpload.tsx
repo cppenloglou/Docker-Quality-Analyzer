@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
+import { MotionPage } from "../components/motion";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { FileCode, Play, ArrowLeft } from "lucide-react";
@@ -32,6 +33,7 @@ export function FileUpload() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -118,6 +120,7 @@ export function FileUpload() {
           </Button>
         </div>
       </div>
+      </MotionPage>
     </Layout>
   );
 }

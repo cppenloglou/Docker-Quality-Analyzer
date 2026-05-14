@@ -1,0 +1,81 @@
+# Compose file with many runnability blockers
+# Expect: runnability FAILS with multiple reasons
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: myorg/app:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    volumes:
+      - ./app/src:/app/src
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+    network_mode: host
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    depends_on:
+      - db
+      - cache
+
+  worker:
+    build:
+      context: ./worker
+    image: myorg/worker
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SECRET_KEY: ${SECRET_KEY}
+    volumes:
+      - ../shared-libs:/app/libs
+      - ~/credentials:/app/creds:ro
+    pid: host
+    depends_on:
+      - db
+      - cache
+
+  scheduler:
+    build: ./scheduler
+    image: myorg/scheduler:latest
+    environment:
+      - CRON_SCHEDULE=${CRON_SCHEDULE}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+
+  db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  cache:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  monitoring:
+    image: grafana/grafana
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+
+volumes:
+  pg_data:
+    external: true
+
+networks:
+  backend:
+    external: true

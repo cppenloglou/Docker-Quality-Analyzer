@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     app_name: str = "docker-platform-api"
     app_env: Literal["dev", "test", "prod"] = "dev"
     app_debug: bool = False
-    api_prefix: str = "/api/v1"
 
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/docker_platform"

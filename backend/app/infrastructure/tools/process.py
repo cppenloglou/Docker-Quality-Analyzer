@@ -4,7 +4,12 @@ from asyncio.subprocess import PIPE
 from fastapi import HTTPException
 
 
-async def run_command(command: list[str], timeout: int = 45) -> str:
+async def run_command(
+    command: list[str],
+    timeout: int = 45,
+    *,
+    allow_empty_stdout: bool = False,
+) -> str:
     try:
         proc = await asyncio.create_subprocess_exec(*command, stdout=PIPE, stderr=PIPE)
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -15,6 +20,7 @@ async def run_command(command: list[str], timeout: int = 45) -> str:
     stdout_text = stdout.decode("utf-8", errors="ignore")
     stderr_text = stderr.decode("utf-8", errors="ignore").strip()
     # hadolint and dclint may exit non-zero when findings exist; keep stdout payload.
-    if proc.returncode not in (0, None) and not stdout_text:
+    # When dclint writes to ``-o file``, stdout is empty even on success with diagnostics.
+    if proc.returncode not in (0, None) and not stdout_text and not allow_empty_stdout:
         raise HTTPException(status_code=500, detail=stderr_text or "command failed")
     return stdout_text

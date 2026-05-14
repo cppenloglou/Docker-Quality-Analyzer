@@ -1,0 +1,23 @@
+---
+description: End-to-end project ZIP workflow — scan, select, analyze, merge, optional build/run, monitoring
+alwaysApply: true
+---
+
+# Project Workflow
+
+## Flow
+
+1. User uploads a **ZIP** archive.
+2. Backend **scans** the tree safely and reports **detected assets** (Dockerfiles, compose files, etc.).
+3. User **selects** which Dockerfiles / Compose files to analyze.
+4. Each **selected** file is analyzed **separately**; results are merged into a **project** job outcome.
+5. **Optional**: user-selected Dockerfile **image builds** (`build_selected_images=true`).
+6. **Optional**: **Compose deploy/run** only when the user explicitly triggers it.
+7. **Runtime monitoring** for running stacks: handle **exited**, **unhealthy**, and **partial** container states as first-class UI/backend states.
+
+## Rules
+
+- **Do not** analyze unselected files except when an **auto** or **full-project** fallback explicitly requires it.
+- **Do not** build images unless **`build_selected_images=true`** (user opt-in).
+- **Do not** run or deploy Compose unless the user **explicitly** triggers run/deploy.
+- Preserve merged payload fields: **`per_file_results`**, **`image_build_results`**, **`service_mappings`**, **`project_summary`**—do not drop or overwrite them unintentionally on merge or re-fetch.

@@ -1,0 +1,66 @@
+---
+description: Styling — Tailwind v4, semantic design tokens, contrast, shadcn/ui, forms & charts
+globs: frontend/src/**/*.{css,tsx}
+alwaysApply: false
+---
+
+# Frontend Styling Standards
+
+## Tailwind CSS v4
+
+- Utilities + `@import "./tailwind.css"` (see `src/styles/index.css`).
+- Theme colors map to CSS variables (`--background`, `--foreground`, `--card`, `--border`, `--primary`, `--destructive`, etc.) via `@theme inline`.
+- Prefer **semantic utilities** (`bg-card`, `text-foreground`, `border-border`) over raw `slate-*` on new UI. Legacy pages may still mix slate on layout chrome; migrate toward tokens when touching a file.
+
+## Theme Mode
+
+- `App.tsx` adds `dark` to `document.documentElement`. Tokens in `.dark { … }` define the live palette.
+- `html.dark { color-scheme: dark; }` (in `index.css`) keeps native controls (select menus) readable—do not strip this.
+- UI code should remain **theme-token-driven** so removing forced dark or adding a toggle does not require rewriting components.
+
+## Color & Contrast (required)
+
+- **Never** hardcode `text-black`, `border-black`, or `hover:bg-black/*` on shared primitives—it breaks dark backgrounds (see `Button` in `components/ui/button.tsx`: uses `text-primary-foreground`, `text-foreground`, `border-input`, etc.).
+- **`text-muted-foreground`** on near-black panels can fail WCAG at small sizes. For critical secondary copy (table headers, chart axes, captions, pagination), use explicit readable pairs, e.g. `text-slate-600 dark:text-slate-400` or `text-slate-700 dark:text-slate-300`, or lighten `--muted-foreground` in `index.css` with intent—not random one-offs.
+- **Charts (Recharts):** avoid `fill: "var(--muted-foreground)"` on SVG ticks—many browsers resolve this poorly. Wrap the chart in a container with a readable `text-*` color and use `tick={{ fill: "currentColor" }}` plus `CartesianGrid` with `stroke="currentColor"` and controlled opacity.
+
+## Semantic Roles (reference)
+
+| Role | Tailwind / token |
+|------|-------------------|
+| Page background | `bg-background` |
+| Surfaces / cards | `bg-card`, `text-card-foreground` |
+| Borders | `border-border` |
+| Primary CTA | `bg-primary`, `text-primary-foreground` |
+| Muted secondary | `bg-muted`, `text-muted-foreground` (with contrast checks) |
+| Destructive | `bg-destructive`, `text-destructive-foreground` |
+| Focus ring | `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background` |
+
+Accent hues (blue for primary nav, emerald/sky/destructive for status) stay **semantic**, not rainbow decoration.
+
+## Layout & rhythm
+
+- **8px grid**: spacing via `gap-4`, `p-4`, `py-6`, etc.
+- **Touch targets**: interactive controls ≥ **44px** height where practical (`min-h-[44px]`, `h-11`).
+- **Forms**: label stack uses clear separation (`gap-3` between label block and control); labels ≥ `text-sm font-medium text-foreground`; hints use readable muted slate utilities—not cramped `text-xs` glued to controls without spacing.
+
+## Class merging
+
+Use `cn()` from `src/components/ui/utils.ts` (relative imports from pages, e.g. `../components/ui/utils`):
+
+```tsx
+import { cn } from "../components/ui/utils";
+
+<div className={cn("rounded-xl border border-border p-4", isActive && "ring-2 ring-ring")} />
+```
+
+## UI primitives (`components/ui/`)
+
+- **Button**, **Badge**, **Card**, **Tabs**: CVA variants; extend with tokens, not raw black/white.
+- **Native selects**: use **`NativeSelectField`** from `components/ui/native-select.tsx` (chevron, spacing, popover-aligned trigger). Avoid bare `<select>` with ad-hoc classes unless justified.
+- No CSS Modules / styled-components—Tailwind utilities only.
+
+## Motion
+
+- UI motion libraries: **`creative-frontend-animation.mdc`** (Motion is default; GSAP/R3F/Rive/Lottie only if requested).
+- Prefer **`motion-safe:`** / **`motion-reduce:`** for transitions; avoid `transition-all`—animate specific properties (`colors`, `opacity`, `transform`, `box-shadow`).

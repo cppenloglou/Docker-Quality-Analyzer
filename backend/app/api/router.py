@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routers import api_keys, auth, compose, dockerfile, history, project, ws
+from app.api.routers import api_keys, auth, compose, dockerfile, history, project, research, ws
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -9,4 +9,5 @@ api_router.include_router(dockerfile.router)
 api_router.include_router(compose.router)
 api_router.include_router(project.router)
 api_router.include_router(history.router)
+api_router.include_router(research.router)
 api_router.include_router(ws.router)

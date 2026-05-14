@@ -10,7 +10,9 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { DockerLoader, useMinLoader } from "../components/DockerLoader";
 import { Layout } from "../components/Layout";
+import { MotionPage } from "../components/motion";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -23,6 +25,7 @@ import {
 export function ApiKeys() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
+  const ready = useMinLoader(!loading);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -123,6 +126,7 @@ export function ApiKeys() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-4xl mx-auto">
         <div className="mb-8 flex items-start justify-between flex-wrap gap-4">
           <div>
@@ -206,20 +210,17 @@ export function ApiKeys() {
           </Card>
         )}
 
-        {loading && (
-          <div className="flex items-center justify-center py-12 text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
-            Loading your API keys...
-          </div>
+        {!ready && (
+          <DockerLoader message="Loading your API keys..." fullScreen={false} />
         )}
 
-        {!loading && error && (
+        {ready && error && (
           <Card className="p-4 bg-red-950/20 border-red-800 text-red-300 mb-6">
             {error}
           </Card>
         )}
 
-        {!loading && !error && prefixBlocks.length === 0 && (
+        {ready && !error && prefixBlocks.length === 0 && (
           <Card className="p-12 bg-slate-900 border-slate-800 text-center">
             <KeyRound className="w-12 h-12 text-slate-700 mx-auto mb-4" />
             <p className="text-slate-400 mb-4">No API keys yet.</p>
@@ -233,7 +234,7 @@ export function ApiKeys() {
           </Card>
         )}
 
-        {!loading && prefixBlocks.length > 0 && (
+        {ready && prefixBlocks.length > 0 && (
           <div className="space-y-3">
             {prefixBlocks.map((item) => (
               <Card
@@ -275,6 +276,7 @@ export function ApiKeys() {
           </div>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }

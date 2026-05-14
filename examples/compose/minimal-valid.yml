@@ -1,0 +1,7 @@
+# Minimal valid compose - single service
+# Expect: runnability passes, minimal resources
+services:
+  app:
+    image: alpine:3.19
+    command: ["sh", "-c", "while true; do echo alive; sleep 30; done"]
+    restart: unless-stopped

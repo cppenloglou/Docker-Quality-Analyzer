@@ -4,10 +4,12 @@ import { toast } from "sonner";
 
 import { Layout } from "../components/Layout";
 import { ProgressStep } from "../components/ProgressStep";
+import { MotionPage } from "../components/motion";
 import { Card } from "../components/ui/card";
 import { Progress } from "../components/ui/progress";
 import { Button } from "../components/ui/button";
 import { TerminalLog, type TerminalLogEntry } from "../components/TerminalLog";
+import { pushNotification } from "../utils/notifications";
 import {
   ApiError,
   compose as composeApi,
@@ -48,6 +50,67 @@ const BASE_STEPS: AnalysisStep[] = [
   },
 ];
 
+const PROJECT_STEPS: AnalysisStep[] = [
+  {
+    id: "queued",
+    label: "Job Queued",
+    description: "Waiting for a worker to pick up the project analysis",
+    status: "running",
+  },
+  {
+    id: "project.analysis_started",
+    label: "Analysis Started",
+    description: "Preparing project files for analysis",
+    status: "pending",
+  },
+  {
+    id: "project.file_analysis",
+    label: "Analyzing Files",
+    description: "Running plugins on each Dockerfile and Compose file",
+    status: "pending",
+  },
+  {
+    id: "project.merge_started",
+    label: "Merging Results",
+    description: "Aggregating per-file results and computing project score",
+    status: "pending",
+  },
+  {
+    id: "project.image_build",
+    label: "Building Images",
+    description: "Building Docker images from selected Dockerfiles",
+    status: "pending",
+  },
+  {
+    id: "project.compose_run",
+    label: "Running Stack",
+    description: "Starting compose stack for runtime analysis",
+    status: "pending",
+  },
+  {
+    id: "finalize",
+    label: "Complete",
+    description: "Project analysis report ready",
+    status: "pending",
+  },
+];
+
+// Map project event names to step IDs
+const PROJECT_EVENT_TO_STEP: Record<string, string> = {
+  "project.analysis_started": "project.analysis_started",
+  "project.file_analysis_started": "project.file_analysis",
+  "project.file_analysis_completed": "project.file_analysis",
+  "project.merge_started": "project.merge_started",
+  "project.analysis_completed": "finalize",
+  "project.image_build_started": "project.image_build",
+  "project.image_build_log": "project.image_build",
+  "project.image_build_completed": "project.image_build",
+  "project.image_build_failed": "project.image_build",
+  "container.started": "project.compose_run",
+  "container.exited": "project.compose_run",
+  "project.runtime_stopped": "project.compose_run",
+};
+
 function progressForStatus(status: Job["status"], stepsCompleted: number): number {
   if (status === "done") return 100;
   if (status === "failed") return 100;
@@ -60,6 +123,7 @@ export function AnalysisProgress() {
   const [searchParams] = useSearchParams();
   const queryJobId = searchParams.get("jobId");
 
+  const [isProjectJob, setIsProjectJob] = useState(false);
   const [steps, setSteps] = useState<AnalysisStep[]>(() =>
     BASE_STEPS.map((step) => ({ ...step })),
   );
@@ -68,6 +132,7 @@ export function AnalysisProgress() {
   const [progressValue, setProgressValue] = useState<number>(queryJobId ? 15 : 5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [logs, setLogs] = useState<TerminalLogEntry[]>([]);
+  const [currentFile, setCurrentFile] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   const pushLog = (entry: TerminalLogEntry) => {
@@ -117,6 +182,7 @@ export function AnalysisProgress() {
       // sessionStorage may be blocked; safe to ignore
     }
     toast.success("Analysis complete");
+    pushNotification("success", "Analysis Complete", `Job ${latestJob.id.slice(0, 8)} finished successfully`);
     closeSocket();
     setTimeout(() => {
       navigate(`/results?jobId=${latestJob.id}`);
@@ -127,6 +193,7 @@ export function AnalysisProgress() {
     setJobStatus("failed");
     failAllRemaining(message);
     toast.error(message);
+    pushNotification("error", "Analysis Failed", message);
     closeSocket();
   };
 
@@ -181,6 +248,11 @@ export function AnalysisProgress() {
           const reconciled = await jobsApi.getEvents(activeJobId);
           if (cancelled) return;
           setJobStatus(reconciled.status);
+          // Switch to project step list if needed
+          if (reconciled.type === "project") {
+            setIsProjectJob(true);
+            setSteps(PROJECT_STEPS.map(s => ({ ...s })));
+          }
           if (reconciled.status === "done") {
             handleCompleted(reconciled);
             return;
@@ -220,17 +292,93 @@ export function AnalysisProgress() {
           try {
             const parsed = JSON.parse(event.data as string) as DomainEvent;
             const tone: TerminalLogEntry["tone"] =
-              parsed.event_name === "user.analysis.failed"
+              parsed.event_name === "user.analysis.failed" || parsed.event_name === "project.analysis_failed"
                 ? "error"
-                : parsed.event_name === "user.analysis.completed"
+                : parsed.event_name === "user.analysis.completed" || parsed.event_name === "project.analysis_completed"
                   ? "success"
                   : "info";
-            pushLog({
-              message: `${parsed.event_name}`,
-              timestamp: parsed.timestamp,
-              tone,
-            });
-            if (parsed.event_name === "user.analysis.started") {
+
+            // Build human-readable log message
+            let logMsg = parsed.event_name;
+            const pl = parsed.payload as Record<string, unknown>;
+            if (parsed.event_name === "project.file_analysis_started" && pl.file) {
+              logMsg = `Analyzing ${pl.type ?? "file"}: ${pl.file}`;
+              setCurrentFile(String(pl.file));
+            } else if (parsed.event_name === "project.file_analysis_completed" && pl.file) {
+              logMsg = `Completed: ${pl.file}`;
+              setCurrentFile(null);
+            } else if (parsed.event_name === "deploy.compose_up_log" && pl.line) {
+              logMsg = String(pl.line);
+            } else if (parsed.event_name === "project.image_build_started") {
+              logMsg = `Building image: ${pl.dockerfile_path ?? pl.image_tag ?? ""}`;
+            } else if (parsed.event_name === "project.image_build_log") {
+              logMsg = String(pl.line ?? "");
+            } else if (parsed.event_name === "project.image_build_completed") {
+              logMsg = `Built ${pl.image_tag ?? ""} (${pl.image_id ?? ""})`;
+            } else if (parsed.event_name === "project.image_build_failed") {
+              logMsg = `Build failed: ${pl.dockerfile_path ?? ""} — ${pl.error ?? "unknown error"}`;
+            } else if (parsed.event_name === "container.exited") {
+              logMsg = `Container exited (code ${pl.exit_code ?? "??"})`;
+            } else if (parsed.event_name === "project.runtime_stopped") {
+              logMsg = "All containers exited.";
+            }
+
+            if (logMsg) {
+              pushLog({ message: logMsg, timestamp: parsed.timestamp, tone });
+            }
+
+            // Update steps for project events
+            if (parsed.event_name.startsWith("project.") || parsed.event_name === "container.started" || parsed.event_name === "container.exited" || parsed.event_name === "project.runtime_stopped") {
+              setIsProjectJob(true);
+              setSteps(prev => {
+                if (!prev.some(s => s.id === "project.file_analysis")) {
+                  return PROJECT_STEPS.map(s => ({ ...s }));
+                }
+                return prev;
+              });
+              const targetStep = PROJECT_EVENT_TO_STEP[parsed.event_name];
+              if (targetStep) {
+                if (parsed.event_name === "project.analysis_started") {
+                  setStep("queued", "complete");
+                  setStep("project.analysis_started", "running");
+                  setJobStatus("running");
+                  setProgressValue(20);
+                } else if (parsed.event_name === "project.file_analysis_started") {
+                  setStep("project.analysis_started", "complete");
+                  setStep("project.file_analysis", "running");
+                  setProgressValue(45);
+                } else if (parsed.event_name === "project.merge_started") {
+                  setStep("project.file_analysis", "complete");
+                  setStep("project.merge_started", "running");
+                  setProgressValue(80);
+                } else if (parsed.event_name === "project.analysis_completed") {
+                  setStep("project.merge_started", "complete");
+                  setStep("finalize", "running");
+                  setProgressValue(95);
+                } else if (parsed.event_name === "project.analysis_failed") {
+                  const message = (parsed.payload as { message?: string })?.message ?? "Project analysis failed.";
+                  handleFailed(message);
+                } else if (parsed.event_name === "project.image_build_started") {
+                  setStep("project.merge_started", "complete");
+                  setStep("project.image_build", "running");
+                  setProgressValue(85);
+                } else if (parsed.event_name === "project.image_build_completed") {
+                  // Keep running until all builds done — will advance on analysis_completed
+                } else if (parsed.event_name === "project.image_build_failed") {
+                  // Mark as error but don't fail job
+                  setStep("project.image_build", "error");
+                } else if (parsed.event_name === "container.started") {
+                  setStep("project.image_build", "complete");
+                  setStep("project.compose_run", "running");
+                  setProgressValue(90);
+                } else if (parsed.event_name === "container.exited") {
+                  setStep("project.compose_run", "error");
+                } else if (parsed.event_name === "project.runtime_stopped") {
+                  setStep("project.compose_run", "complete");
+                  setProgressValue(95);
+                }
+              }
+            } else if (parsed.event_name === "user.analysis.started") {
               setStep("queued", "complete");
               setStep("running", "running");
               setJobStatus("running");
@@ -301,16 +449,22 @@ export function AnalysisProgress() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">
-            Analyzing Your Docker Configuration
+            {isProjectJob ? "Analyzing Project Archive" : "Analyzing Your Docker Configuration"}
           </h1>
           <p className="text-slate-400">
             {jobId
               ? `Live updates for job ${jobId}`
               : "Submitting your file to the analysis queue..."}
           </p>
+          {isProjectJob && currentFile && (
+            <p className="text-blue-400 text-sm mt-2 font-mono">
+              → {currentFile}
+            </p>
+          )}
         </div>
 
         <Card className="p-6 bg-slate-900 border-slate-800 mb-8">
@@ -376,6 +530,7 @@ export function AnalysisProgress() {
           </Card>
         )}
       </div>
+      </MotionPage>
     </Layout>
   );
 }

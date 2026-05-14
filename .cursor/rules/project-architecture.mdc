@@ -1,0 +1,58 @@
+---
+description: Core architecture overview — hexagonal layered backend, async job pipeline, and frontend SPA
+alwaysApply: true
+---
+
+# Project Architecture
+
+## Backend Layers (Hexagonal / Modular-Monolith)
+
+| Layer | Path | Responsibility |
+|---|---|---|
+| API | `backend/app/api/` | FastAPI routers + WebSocket endpoints |
+| Application | `backend/app/application/` | Use-case services (`AnalysisService`, `AuthService`) + Pydantic schemas |
+| Domain | `backend/app/domain/` | `DomainEvent` dataclass (thin domain layer) |
+| Infrastructure | `backend/app/infrastructure/` | DB (SQLAlchemy async), Docker gateway, Redis event bus, subprocess tools |
+
+**API ↔ DB:** Handlers may import **lightweight ORM types/enums** for auth and comparisons. **Persistent reads/writes** and queries go through **repositories/services**—routers **must not** run raw SQLAlchemy queries.
+
+## Async Job Pipeline
+
+1. API router receives upload → creates DB job → enqueues `arq` task via Redis
+2. Worker picks up task → runs `AnalysisService.run_job_with_plugins()`
+3. Worker publishes `DomainEvent`s to Redis pub/sub
+4. WebSocket endpoints subscribe to channels and stream events to the browser
+
+## Project Analysis Workflow
+
+ZIP upload → **safe scan** → user **selects** Dockerfiles/Compose files → **per-file plugin runs** → merged **`ProjectAnalysisResult`** (`per_file_results`, `project_summary`, `service_mappings`, optional **`image_build_results`**). Builds and Compose **run/deploy only on explicit user action** (`build_selected_images`, deploy controls). Details: **`project-workflow.mdc`**, **`project-runtime-safety.mdc`**.
+
+## Redis Channel Naming
+
+- `user:{user_id}:events` — all events for a user
+- `job:{job_id}:events` — events scoped to a specific job
+- `container:{container_id}:metrics` — container CPU/memory metrics
+- `user:{user_id}:container:{container_id}:metrics` — user-scoped container metrics
+
+## Plugin System
+
+Plugins live in `backend/app/plugins/`. Each extends `BasePlugin` (single `async run(context) → dict`). The `PLUGIN_MAP` in `registry.py` maps names to classes. Worker tasks select plugins by job type:
+- **Dockerfile**: hadolint, security_scanner, resource_estimation
+- **Compose**: compose_validator, compose_runnability, security_scanner, resource_estimation
+- **Project archive**: dynamic subset based on detected files
+
+## Docker-in-Docker (DinD)
+
+Worker uses `DOCKER_HOST=tcp://dind:2375` to reach an isolated DinD sidecar. All `docker-compose` subprocess calls execute inside the worker container — never the host socket.
+
+## Research Privacy
+
+Research endpoints and `ResearchAnalytics` UI expose **aggregated / anonymized** fields only (`anonymized_submitter`, `public_metadata`, `public_result`). See **`research-privacy.mdc`**.
+
+## Runtime Monitoring
+
+Workers and Docker gateway expose **metrics** and **final container state** (running, exited, unhealthy, partial). Frontend monitoring pages must distinguish states honestly—no “Live” for exited containers. See **`results-and-monitoring.mdc`** and **`project-runtime-safety.mdc`**.
+
+## Frontend
+
+React 19 SPA (`frontend/src/`). Pages in `src/pages/`, shared UI in `src/components/`, Radix-based primitives in `src/components/ui/`. **API:** only through `src/utils/api.ts` (`jobs`, `dockerfile`, `compose`, `project`, `research`, `auth`, `ws`, …). **Auth:** `src/auth/AuthProvider.tsx`. **Styling:** Tailwind v4 + CSS variables; prefer semantic tokens (`bg-card`, `text-foreground`, `border-border`) and the conventions in `.cursor/rules/frontend-styling.mdc` (contrast, native selects, charts).

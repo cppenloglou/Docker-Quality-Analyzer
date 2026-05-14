@@ -5,6 +5,9 @@ from app.core.security import create_token
 
 
 def test_ws_metrics_streams_container_events(client, monkeypatch):
+    user_id = uuid.uuid4()
+    token = create_token(str(user_id), "access", 30)
+
     async def fake_subscribe(channel: str):
         assert channel == "container:web-container:metrics"
         yield {
@@ -16,7 +19,7 @@ def test_ws_metrics_streams_container_events(client, monkeypatch):
 
     monkeypatch.setattr("app.api.routers.ws.subscribe", fake_subscribe)
 
-    with client.websocket_connect("/ws/metrics/web-container") as websocket:
+    with client.websocket_connect(f"/ws/metrics/web-container?token={token}") as websocket:
         message = websocket.receive_text()
         payload = json.loads(message)
         assert payload["event_name"] == "container.metrics"

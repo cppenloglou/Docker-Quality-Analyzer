@@ -17,11 +17,23 @@ export interface ResourceEstimateMeta {
   estimated_layers?: number;
   estimated_memory_mb?: number;
   estimated_cpu_millicores?: number;
+  total_estimated_memory_mb?: number;
+  total_estimated_cpu_millicores?: number;
+  service_count?: number;
+  explanation?: string;
+  services?: Array<{
+    name: string;
+    estimated_memory_mb: number;
+    estimated_cpu_millicores: number;
+    has_build_context: boolean;
+    image: string;
+  }>;
 }
 
 export interface AnalysisResult {
   score: number;
   grade: string;
+  line_count?: number;
   errors: Issue[];
   warnings: Issue[];
   suggestions: Issue[];
@@ -62,9 +74,107 @@ export interface Job {
   created_at: string;
 }
 
+export interface PublicResearchJob {
+  id: string;
+  anonymized_submitter: string;
+  type: JobType;
+  status: JobStatus;
+  public_metadata: Record<string, unknown>;
+  public_result: Record<string, unknown> | null;
+  created_at: string;
+  score: number | null;
+  grade: string | null;
+}
+
+export interface ResearchTimeBucket {
+  bucket_date: string;
+  count: number;
+}
+
+export interface ResearchSummary {
+  total_jobs: number;
+  count_by_type: Record<string, number>;
+  count_by_status: Record<string, number>;
+  jobs_last_7_days: number;
+  avg_score: number | null;
+  grade_distribution: Record<string, number>;
+  daily_buckets: ResearchTimeBucket[];
+}
+
+export interface PaginatedResearchJobsResponse {
+  items: PublicResearchJob[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface JobEnqueueResponse {
   job_id: string;
   status: string;
+}
+
+export interface RuntimeContainerState {
+  id: string;
+  name?: string | null;
+  service?: string | null;
+  image?: string | null;
+  status?: string | null;
+  health_status?: string | null;
+  exit_code?: number | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  restart_count?: number | null;
+  oom_killed?: boolean | null;
+  last_logs?: string[] | null;
+}
+
+export type DeployRuntimeState =
+  | "none"
+  | "running"
+  | "partial"
+  | "exited"
+  | "unhealthy"
+  | "stopping";
+
+export interface DeployStatusResponse {
+  active: boolean;
+  runtime_state?: DeployRuntimeState;
+  container_ids: string[];
+  project_name: string | null;
+  containers?: RuntimeContainerState[];
+  running_count?: number;
+  exited_count?: number;
+  unhealthy_count?: number;
+}
+
+export interface ImageBuildResult {
+  dockerfile_path: string;
+  build_context: string;
+  image_tag: string;
+  image_id?: string | null;
+  status: "success" | "failed" | "skipped";
+  build_started_at?: string | null;
+  build_finished_at?: string | null;
+  build_duration_ms?: number | null;
+  image_size_bytes?: number | null;
+  image_size_human?: string | null;
+  layer_count?: number | null;
+  base_image?: string | null;
+  exposed_ports?: string[];
+  env_keys?: string[];
+  labels?: Record<string, string>;
+  entrypoint?: string[] | null;
+  cmd?: string[] | null;
+  user?: string | null;
+  workdir?: string | null;
+  architecture?: string | null;
+  os?: string | null;
+  created_at?: string | null;
+  repo_tags?: string[];
+  repo_digests?: string[];
+  build_logs?: string[];
+  error_message?: string | null;
 }
 
 export interface ApiKey {
@@ -144,6 +254,14 @@ export interface ContainerMetricsPayload {
     status?: string;
     health_status?: string;
     restart_count?: number;
+    ip_address?: string;
+    ports?: Array<{
+      container_port?: string;
+      host_bindings?: Array<{
+        host_ip?: string;
+        host_port?: string;
+      }>;
+    }>;
     mounts?: Array<{
       type?: string;
       source?: string;
@@ -397,6 +515,36 @@ export const jobs = {
   },
 };
 
+export const research = {
+  async summary(chartDays = 90): Promise<ResearchSummary> {
+    const q = new URLSearchParams({ chart_days: String(chartDays) });
+    return request<ResearchSummary>(`/api/v1/research/summary?${q}`);
+  },
+  async jobs(params: {
+    limit?: number;
+    offset?: number;
+    job_type?: string;
+    status?: string;
+    created_after?: string;
+    created_before?: string;
+  }): Promise<PaginatedResearchJobsResponse> {
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set("limit", String(params.limit));
+    if (params.offset != null) q.set("offset", String(params.offset));
+    if (params.job_type) q.set("job_type", params.job_type);
+    if (params.status) q.set("status", params.status);
+    if (params.created_after) q.set("created_after", params.created_after);
+    if (params.created_before) q.set("created_before", params.created_before);
+    const suffix = q.toString();
+    return request<PaginatedResearchJobsResponse>(
+      `/api/v1/research/jobs${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+  async get(jobId: string): Promise<PublicResearchJob> {
+    return request<PublicResearchJob>(`/api/v1/research/jobs/${jobId}`);
+  },
+};
+
 // ---------- workflows ----------
 export const dockerfile = {
   async analyze(file: File): Promise<JobEnqueueResponse> {
@@ -420,13 +568,15 @@ export const compose = {
   },
   async deploy(payload: {
     job_id: string;
-    push_public_images: boolean;
     run_stack: boolean;
   }): Promise<JobEnqueueResponse> {
     return request<JobEnqueueResponse>("/api/v1/compose/deploy", {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+  async deployStatus(jobId: string): Promise<DeployStatusResponse> {
+    return request<DeployStatusResponse>(`/api/v1/compose/deploy/status/${jobId}`);
   },
   async stopDeploy(payload: {
     job_id: string;
@@ -439,7 +589,120 @@ export const compose = {
   },
 };
 
+// ---------- project scan types ----------
+export interface DetectedService {
+  name: string;
+  compose_file: string;
+  image?: string | null;
+  build_context?: string | null;
+  build_dockerfile?: string | null;
+  ports: unknown[];
+  depends_on: string[];
+  db_hints: string[];
+}
+
+export interface ProjectDetectedAssets {
+  dockerfiles: string[];
+  compose_files: string[];
+  dockerignore_files: string[];
+  env_examples: string[];
+  stacks: string[];
+  package_managers: string[];
+  services: DetectedService[];
+}
+
+export interface ProjectRecommendation {
+  analysis_mode: string;
+  primary_dockerfile?: string | null;
+  primary_compose_file?: string | null;
+  can_build: boolean;
+  can_run: boolean;
+  reasons: string[];
+}
+
+export interface ProjectScanResponse {
+  project_id: string;
+  archive_name: string;
+  detected: ProjectDetectedAssets;
+  recommendation: ProjectRecommendation;
+  warnings: string[];
+}
+
+export interface ProjectAnalyzeRequest {
+  project_id: string;
+  selected_dockerfiles: string[];
+  selected_compose_files: string[];
+  primary_compose_file?: string | null;
+  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
+  build_selected_images: boolean;
+  run_after_analysis: boolean;
+}
+
+export interface PerFileAnalysisResult {
+  file_path: string;
+  file_type: "dockerfile" | "compose";
+  score: number;
+  grade: string;
+  errors_count: number;
+  warnings_count: number;
+  security_count: number;
+  suggestions_count: number;
+  errors: Issue[];
+  warnings: Issue[];
+  securityIssues: Issue[];
+  suggestions: Issue[];
+  meta?: Record<string, unknown>;
+  source_preview?: string | null;
+}
+
+export interface ServiceBuildMapping {
+  service: string;
+  compose_file: string;
+  build_context?: string | null;
+  dockerfile?: string | null;
+  resolved_dockerfile?: string | null;
+  can_build: boolean;
+  can_run: boolean;
+  issues: string[];
+}
+
+export interface ProjectSummary {
+  total_files_analyzed: number;
+  dockerfiles_analyzed: number;
+  compose_files_analyzed: number;
+  total_errors: number;
+  total_warnings: number;
+  total_security_issues: number;
+  total_suggestions: number;
+  best_score_file?: string | null;
+  worst_score_file?: string | null;
+}
+
+export interface ProjectAnalysisResult extends AnalysisResult {
+  overall_score: number;
+  overall_grade: string;
+  per_file_results: PerFileAnalysisResult[];
+  service_mappings: ServiceBuildMapping[];
+  project_summary: ProjectSummary;
+  project_recommendations: string[];
+  image_build_results?: ImageBuildResult[];
+}
+
 export const project = {
+  async scan(file: File): Promise<ProjectScanResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ProjectScanResponse>("/api/v1/project/scan", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async analyze(payload: ProjectAnalyzeRequest): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>("/api/v1/project/analyze", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
   async upload(file: File): Promise<JobEnqueueResponse> {
     const formData = new FormData();
     formData.append("file", file);

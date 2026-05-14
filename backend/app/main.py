@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -14,6 +15,13 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.session import engine
+
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _normalize_path(path: str) -> str:
+    return _UUID_RE.sub(":id", path)
+
 
 request_counter = Counter("http_requests_total", "Total API requests", ["method", "path", "status"])
 request_latency = Histogram("http_request_duration_seconds", "API request latency", ["method", "path"])
@@ -32,10 +40,13 @@ def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 
+    allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    if settings.app_env == "dev":
+        allowed_origins = ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=allowed_origins,
+        allow_credentials=settings.app_env != "dev",
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -47,8 +58,9 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         duration = time.perf_counter() - start
         response.headers["x-request-id"] = request_id
-        request_counter.labels(request.method, request.url.path, str(response.status_code)).inc()
-        request_latency.labels(request.method, request.url.path).observe(duration)
+        normalized = _normalize_path(request.url.path)
+        request_counter.labels(request.method, normalized, str(response.status_code)).inc()
+        request_latency.labels(request.method, normalized).observe(duration)
         logging.getLogger("docker-platform-api").info(
             "request_complete",
             extra={"request_id": request_id},

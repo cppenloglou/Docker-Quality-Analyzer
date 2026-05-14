@@ -1,8 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { motion, useReducedMotion } from "motion/react";
 import { Layout } from "../components/Layout";
 import { DragDropUpload } from "../components/DragDropUpload";
 import { QuickDemo } from "../components/QuickDemo";
+import { MotionPage, StaggerList, StaggerItem, MotionCard } from "../components/motion";
 import {
   ArrowRight,
   FileCode,
@@ -17,6 +19,7 @@ import { detectFileKind, type DockerFileKind } from "../utils/fileType";
 
 export function Landing() {
   const navigate = useNavigate();
+  const reducedMotion = useReducedMotion();
 
   const handleFileSelect = (file: File, hint?: DockerFileKind) => {
     const reader = new FileReader();
@@ -53,17 +56,28 @@ export function Landing() {
 
   return (
     <Layout>
+      <MotionPage>
       <div className="max-w-5xl mx-auto">
         {/* Hero Section */}
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-white mb-4">
+          <motion.h1
+            className="text-5xl font-bold text-white mb-4"
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+          >
             Docker Analyzer
-          </h1>
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+          </motion.h1>
+          <motion.p
+            className="text-xl text-slate-400 max-w-2xl mx-auto"
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94], delay: 0.08 }}
+          >
             Upload your Dockerfile or docker-compose.yml to analyze for errors,
             security issues, and best practices. Get instant feedback from
             industry-standard linters.
-          </p>
+          </motion.p>
         </div>
 
         {/* Upload Area */}
@@ -103,107 +117,156 @@ export function Landing() {
 
         {/* Pipeline Visual */}
         <div className="mb-16">
-          <h2 className="text-2xl font-semibold text-white mb-6 text-center">
+          <motion.h2
+            className="text-2xl font-semibold text-white mb-6 text-center"
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, delay: 0.15 }}
+          >
             Analysis Pipeline
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="p-6 bg-slate-900 border-slate-800">
-              <div className="flex flex-col items-center text-center">
-                <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
-                  <FileCode className="w-6 h-6 text-blue-400" />
+          </motion.h2>
+          <StaggerList className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] gap-4">
+            <StaggerItem>
+              <MotionCard>
+              <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
+                    <FileCode className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">Upload</h3>
+                  <p className="text-sm text-slate-400">
+                    Upload your Docker configuration file
+                  </p>
                 </div>
-                <h3 className="font-semibold text-white mb-2">Upload</h3>
-                <p className="text-sm text-slate-400">
-                  Upload your Docker configuration file
-                </p>
-              </div>
-            </Card>
+              </Card>
+              </MotionCard>
+            </StaggerItem>
 
-            <div className="hidden md:flex items-center justify-center">
-              <ArrowRight className="w-6 h-6 text-slate-600" />
-            </div>
+            <StaggerItem className="hidden md:flex items-center justify-center">
+              <motion.div
+                animate={reducedMotion ? {} : { x: [0, 4, 0] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <ArrowRight className="w-6 h-6 text-slate-500" />
+              </motion.div>
+            </StaggerItem>
 
-            <Card className="p-6 bg-slate-900 border-slate-800">
-              <div className="flex flex-col items-center text-center">
-                <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center mb-4">
-                  <Shield className="w-6 h-6 text-purple-400" />
+            <StaggerItem>
+              <MotionCard>
+              <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center mb-4">
+                    <Shield className="w-6 h-6 text-purple-400" />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">Lint</h3>
+                  <p className="text-sm text-slate-400">
+                    Run security and best practice checks
+                  </p>
                 </div>
-                <h3 className="font-semibold text-white mb-2">Lint</h3>
-                <p className="text-sm text-slate-400">
-                  Run security and best practice checks
-                </p>
-              </div>
-            </Card>
+              </Card>
+              </MotionCard>
+            </StaggerItem>
 
-            <div className="hidden md:flex items-center justify-center">
-              <ArrowRight className="w-6 h-6 text-slate-600" />
-            </div>
+            <StaggerItem className="hidden md:flex items-center justify-center">
+              <motion.div
+                animate={reducedMotion ? {} : { x: [0, 4, 0] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
+              >
+                <ArrowRight className="w-6 h-6 text-slate-500" />
+              </motion.div>
+            </StaggerItem>
 
-            <Card className="p-6 bg-slate-900 border-slate-800">
-              <div className="flex flex-col items-center text-center">
-                <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
-                  <CheckCircle className="w-6 h-6 text-green-400" />
+            <StaggerItem>
+              <MotionCard>
+              <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
+                    <CheckCircle className="w-6 h-6 text-green-400" />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">Report</h3>
+                  <p className="text-sm text-slate-400">
+                    Get detailed analysis results
+                  </p>
                 </div>
-                <h3 className="font-semibold text-white mb-2">Report</h3>
-                <p className="text-sm text-slate-400">
-                  Get detailed analysis results
-                </p>
-              </div>
-            </Card>
+              </Card>
+              </MotionCard>
+            </StaggerItem>
 
-            <div className="hidden md:flex items-center justify-center">
-              <ArrowRight className="w-6 h-6 text-slate-600" />
-            </div>
+            <StaggerItem className="hidden md:flex items-center justify-center">
+              <motion.div
+                animate={reducedMotion ? {} : { x: [0, 4, 0] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", delay: 0.8 }}
+              >
+                <ArrowRight className="w-6 h-6 text-slate-500" />
+              </motion.div>
+            </StaggerItem>
 
-            <Card className="p-6 bg-slate-900 border-slate-800">
-              <div className="flex flex-col items-center text-center">
-                <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center mb-4">
-                  <Play className="w-6 h-6 text-orange-400" />
+            <StaggerItem>
+              <MotionCard>
+              <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center mb-4">
+                    <Play className="w-6 h-6 text-orange-400" />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">
+                    Run Containers
+                  </h3>
+                  <p className="text-sm text-slate-400">
+                    Execute and monitor containers
+                  </p>
                 </div>
-                <h3 className="font-semibold text-white mb-2">
-                  Run Containers
-                </h3>
-                <p className="text-sm text-slate-400">
-                  Execute and monitor containers
-                </p>
-              </div>
-            </Card>
-          </div>
+              </Card>
+              </MotionCard>
+            </StaggerItem>
+          </StaggerList>
         </div>
 
         {/* Features */}
-        <div className="grid md:grid-cols-3 gap-6">
-          <Card className="p-6 bg-slate-900 border-slate-800">
-            <h3 className="font-semibold text-white mb-3">Security Analysis</h3>
-            <p className="text-slate-400 text-sm">
-              Detect security vulnerabilities and risky configurations in your
-              Docker files
-            </p>
-          </Card>
+        <StaggerList className="grid md:grid-cols-3 gap-6">
+          <StaggerItem>
+            <MotionCard>
+            <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+              <h3 className="font-semibold text-white mb-3">Security Analysis</h3>
+              <p className="text-slate-400 text-sm">
+                Detect security vulnerabilities and risky configurations in your
+                Docker files
+              </p>
+            </Card>
+            </MotionCard>
+          </StaggerItem>
 
-          <Card className="p-6 bg-slate-900 border-slate-800">
-            <h3 className="font-semibold text-white mb-3">Best Practices</h3>
-            <p className="text-slate-400 text-sm">
-              Get recommendations based on Docker best practices and community
-              standards
-            </p>
-          </Card>
+          <StaggerItem>
+            <MotionCard>
+            <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+              <h3 className="font-semibold text-white mb-3">Best Practices</h3>
+              <p className="text-slate-400 text-sm">
+                Get recommendations based on Docker best practices and community
+                standards
+              </p>
+            </Card>
+            </MotionCard>
+          </StaggerItem>
 
-          <Card className="p-6 bg-slate-900 border-slate-800">
-            <h3 className="font-semibold text-white mb-3">
-              Container Execution
-            </h3>
-            <p className="text-slate-400 text-sm">
-              Run Docker Compose services and view real-time container logs
-            </p>
-          </Card>
-        </div>
+          <StaggerItem>
+            <MotionCard>
+            <Card className="p-6 bg-slate-900 border-slate-800 h-full">
+              <h3 className="font-semibold text-white mb-3">
+                Container Execution
+              </h3>
+              <p className="text-slate-400 text-sm">
+                Run Docker Compose services and view real-time container logs
+              </p>
+            </Card>
+            </MotionCard>
+          </StaggerItem>
+        </StaggerList>
 
         {/* Quick Demo */}
         <div className="mt-16">
           <QuickDemo />
         </div>
       </div>
+      </MotionPage>
     </Layout>
   );
 }

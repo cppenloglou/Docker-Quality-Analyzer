@@ -1,0 +1,39 @@
+---
+description: FastAPI router conventions — dependency injection, auth, and response patterns
+globs: backend/app/api/**/*.py
+alwaysApply: false
+---
+
+# API Router Conventions
+
+## Handler Signature
+
+All route handlers must be `async def` with explicit `response_model`:
+
+```python
+@router.post("/analyze", response_model=AnalysisEnqueueResponse)
+async def analyze(
+    file: UploadFile = File(...),
+    user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+```
+
+## Dependency Injection
+
+- **Auth**: `Depends(get_current_user)` — supports both Bearer JWT and `X-API-Key` header.
+- **Database**: `Depends(get_db_session)` — yields an `AsyncSession`.
+- **Services**: Instantiated in the handler body, not injected:
+  ```python
+  svc = AnalysisService(session)
+  result = await svc.enqueue_job(...)
+  ```
+
+## Rules
+
+- Routers **may** import lightweight SQLAlchemy model types or enums (e.g. `UserModel` for `Depends` typing, `JobType` / `JobStatus` for comparisons).
+- Routers **must not** run raw SQLAlchemy queries, `session.execute`, or ad-hoc ORM loads—**DB access goes through repositories/services**.
+- Return Pydantic schema instances directly (FastAPI serializes them).
+- File uploads use `File(...)` / `UploadFile` with manual size checks before handing off to services.
+- Each router file: `router = APIRouter(prefix=..., tags=[...])` at module level.
+- All routers aggregated in `app/api/router.py` via `api_router.include_router(...)`.

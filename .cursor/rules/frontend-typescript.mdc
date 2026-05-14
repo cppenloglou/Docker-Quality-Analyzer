@@ -1,0 +1,51 @@
+---
+description: TypeScript — strict compiler flags, verbatim imports, UI prop typing
+globs: frontend/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript Conventions (Frontend)
+
+## Compiler
+
+Strict mode with `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, `noUncheckedSideEffectImports`, `erasableSyntaxOnly`.
+
+## Imports
+
+`verbatimModuleSyntax` is on — use **`import type`** for type-only symbols:
+
+```typescript
+import type { ReactNode } from "react";
+import { useState } from "react";
+```
+
+There is **no** `@/` path alias—use relative imports (e.g. `../components/ui/utils`, `../utils/api`).
+
+## Types vs interfaces
+
+- **`interface`** for object props/shapes (e.g. component props with `children`).
+- **`type`** for unions and aliases; **no TypeScript enums**—use string literal unions.
+
+## UI components (shadcn/CVA pattern)
+
+Extend DOM props and merge variants:
+
+```typescript
+import type { ComponentProps } from "react";
+import type { VariantProps } from "class-variance-authority";
+
+function Button({
+  className,
+  variant,
+  size,
+  ...props
+}: ComponentProps<"button"> & VariantProps<typeof buttonVariants>) {
+```
+
+- Primitives use `data-slot` where applicable.
+- Merge classes with **`cn()`** from `components/ui/utils.ts` (not duplicated merge logic).
+
+## Runtime safety
+
+- Minimize `as` assertions; prefer type guards (`function isFoo(x): x is Foo`).
+- Narrow `JSON.parse` results before use.

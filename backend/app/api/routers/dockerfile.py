@@ -6,11 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.application.schemas import AnalysisEnqueueResponse
 from app.application.services.analysis_service import AnalysisService
+from app.core.config import get_settings
 from app.infrastructure.db.models import JobType, UserModel
 from app.infrastructure.db.session import get_db_session
 from app.workers.queue import enqueue_job
 
 router = APIRouter(prefix="/api/v1/dockerfile", tags=["dockerfile"])
+settings = get_settings()
+
+MAX_DOCKERFILE_BYTES = 2 * 1024 * 1024
 
 
 @router.post("/analyze", response_model=AnalysisEnqueueResponse)
@@ -21,7 +25,10 @@ async def analyze_dockerfile(
 ) -> AnalysisEnqueueResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required.")
-    content = (await file.read()).decode("utf-8")
+    raw = await file.read()
+    if len(raw) > MAX_DOCKERFILE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum 2 MB for Dockerfile analysis.")
+    content = raw.decode("utf-8")
     service = AnalysisService(session)
     job_id = await service.enqueue_job(
         current_user.id, JobType.dockerfile, {"filename": file.filename, "source": "upload"}

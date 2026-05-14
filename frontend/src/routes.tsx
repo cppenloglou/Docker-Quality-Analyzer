@@ -1,12 +1,9 @@
 import { createBrowserRouter } from "react-router-dom";
 import App from "./App";
+import { DockerLoader } from "./components/DockerLoader";
 import { RequireAuth } from "./components/RequireAuth";
 
-const routeHydrateFallbackElement = (
-  <div className="min-h-screen bg-slate-950 text-slate-300 grid place-items-center">
-    Loading...
-  </div>
-);
+const routeHydrateFallbackElement = <DockerLoader message="Loading page..." />;
 
 export const router = createBrowserRouter([
   {
@@ -100,6 +97,20 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: "research",
+        hydrateFallbackElement: routeHydrateFallbackElement,
+        lazy: async () => {
+          const m = await import("./pages/ResearchAnalytics");
+          return {
+            Component: () => (
+              <RequireAuth>
+                <m.ResearchAnalytics />
+              </RequireAuth>
+            ),
+          };
+        },
+      },
+      {
         path: "history",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
@@ -128,7 +139,7 @@ export const router = createBrowserRouter([
         },
       },
       {
-        path: "monitoring/:jobId/:containerId",
+        path: "monitoring/:jobId/:containerId?",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
           const m = await import("./pages/Monitoring");

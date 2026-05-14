@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "lucide-react";
 
 export interface TerminalLogEntry {
@@ -40,10 +40,21 @@ export function TerminalLog({
   maxHeight = "400px",
   emptyLabel = "No logs yet...",
 }: TerminalLogProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const userScrolledUp = useRef(false);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    userScrolledUp.current = !atBottom;
+  }, []);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!userScrolledUp.current) {
+      logsEndRef.current?.scrollIntoView({ block: "end" });
+    }
   }, [logs]);
 
   return (
@@ -53,7 +64,12 @@ export function TerminalLog({
         <span className="text-sm text-slate-300 font-mono">{title}</span>
       </div>
 
-      <div style={{ maxHeight }} className="overflow-auto p-4 font-mono text-sm">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        style={{ maxHeight }}
+        className="overflow-auto p-4 font-mono text-sm"
+      >
         {logs.length === 0 ? (
           <div className="text-slate-500 italic">{emptyLabel}</div>
         ) : (
