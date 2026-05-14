@@ -66,9 +66,18 @@ export function useNotifications(): { notifications: AppNotification[]; unreadCo
 
   useEffect(() => {
     const update = () => setNotifications(loadNotifications());
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY || event.key === null) {
+        update();
+      }
+    };
+
     listeners.push(update);
+    window.addEventListener("storage", handleStorage);
+
     return () => {
       listeners = listeners.filter((fn) => fn !== update);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
