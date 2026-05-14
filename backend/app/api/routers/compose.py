@@ -130,7 +130,11 @@ class DeployStatusResponse(BaseModel):
     unhealthy_count: int = 0
 
 
-def _deploy_stop_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
+def deploy_state_redis_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
+    return f"deploy:{user_id}:{job_id}"
+
+
+def deploy_stop_redis_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
     return f"deploy-stop:{user_id}:{job_id}"
 
 
@@ -147,12 +151,8 @@ def _recompute_container_counts(containers: list[ContainerStateInfo]) -> tuple[i
     return running, exited, unhealthy
 
 
-@router.get("/deploy/status/{job_id}", response_model=DeployStatusResponse)
-async def get_deploy_status(
-    job_id: uuid.UUID,
-    current_user: UserModel = Depends(get_current_user),
-) -> DeployStatusResponse:
-    key = f"deploy:{current_user.id}:{job_id}"
+async def compute_deploy_status(user_id: uuid.UUID, job_id: uuid.UUID) -> DeployStatusResponse:
+    key = deploy_state_redis_key(user_id, job_id)
     raw = await redis_client.get(key)
     if not raw:
         return DeployStatusResponse(active=False, runtime_state="none")
@@ -174,7 +174,7 @@ async def get_deploy_status(
         unhealthy_count = int(state.get("unhealthy_count", 0) or 0)
 
     has_tracked = bool(container_ids) or bool(containers)
-    stop_raw = await redis_client.get(_deploy_stop_key(current_user.id, job_id))
+    stop_raw = await redis_client.get(deploy_stop_redis_key(user_id, job_id))
     stop_pending = str(stop_raw or "") == "1" or bool(state.get("stopping"))
 
     runtime_state: Literal["none", "running", "partial", "exited", "unhealthy", "stopping"] = "none"
@@ -212,3 +212,11 @@ async def get_deploy_status(
         exited_count=exited_count,
         unhealthy_count=unhealthy_count,
     )
+
+
+@router.get("/deploy/status/{job_id}", response_model=DeployStatusResponse)
+async def get_deploy_status(
+    job_id: uuid.UUID,
+    current_user: UserModel = Depends(get_current_user),
+) -> DeployStatusResponse:
+    return await compute_deploy_status(current_user.id, job_id)

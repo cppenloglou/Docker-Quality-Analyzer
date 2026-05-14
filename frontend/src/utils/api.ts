@@ -513,6 +513,9 @@ export const jobs = {
   async getEvents(jobId: string): Promise<Job> {
     return request<Job>(`/api/v1/users/me/jobs/${jobId}/events`);
   },
+  async delete(jobId: string): Promise<void> {
+    return request<void>(`/api/v1/users/me/jobs/${jobId}`, { method: "DELETE" });
+  },
 };
 
 export const research = {

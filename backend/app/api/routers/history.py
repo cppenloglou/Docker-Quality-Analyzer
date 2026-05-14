@@ -1,13 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.api.routers.compose import compute_deploy_status, deploy_state_redis_key, deploy_stop_redis_key
 from app.application.schemas import JobRead
-from app.infrastructure.db.models import UserModel
+from app.infrastructure.db.models import JobStatus, JobType, UserModel
 from app.infrastructure.db.repositories import JobRepository
 from app.infrastructure.db.session import get_db_session
+from app.infrastructure.events.bus import redis_client
 
 router = APIRouter(prefix="/api/v1/users/me", tags=["history"])
 
@@ -72,6 +74,42 @@ async def get_job_events(
         result=job.result,
         created_at=job.created_at,
     )
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+async def delete_job(
+    job_id: uuid.UUID,
+    current_user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    repo = JobRepository(session)
+    job = await repo.get_job(job_id, current_user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job.status in (JobStatus.queued, JobStatus.running):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a job that is still queued or running. Wait for it to finish.",
+        )
+
+    if job.type in (JobType.compose, JobType.project):
+        deploy_status = await compute_deploy_status(current_user.id, job_id)
+        if deploy_status.active:
+            raise HTTPException(
+                status_code=409,
+                detail="Stop running containers for this job before deleting it.",
+            )
+
+    deleted = await repo.delete_job(job_id, current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    await session.commit()
+
+    await redis_client.delete(deploy_state_redis_key(current_user.id, job_id))
+    await redis_client.delete(deploy_stop_redis_key(current_user.id, job_id))
+
+    return Response(status_code=204)
 
 
 @router.get("/history", response_model=list[JobRead])

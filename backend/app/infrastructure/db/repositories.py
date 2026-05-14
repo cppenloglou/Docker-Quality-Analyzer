@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Date, Numeric, Select, and_, cast, func, select
+from sqlalchemy import Date, Numeric, Select, and_, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
@@ -105,6 +105,14 @@ class JobRepository:
         if not job or job.user_id != user_id:
             return None
         return job
+
+    async def delete_job(self, job_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        stmt = delete(AnalysisJobModel).where(
+            AnalysisJobModel.id == job_id,
+            AnalysisJobModel.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        return (result.rowcount or 0) > 0
 
     async def list_jobs(self, user_id: uuid.UUID) -> list[AnalysisJobModel]:
         stmt = select(AnalysisJobModel).where(AnalysisJobModel.user_id == user_id).order_by(AnalysisJobModel.created_at.desc())

@@ -8,6 +8,7 @@ import {
   FileCode,
   FileText,
   FolderArchive,
+  Trash2,
 } from "lucide-react";
 
 import { DockerLoader, useMinLoader } from "../components/DockerLoader";
@@ -211,6 +212,47 @@ export function History() {
     }
   };
 
+  const deleteJob = async (e: React.MouseEvent, item: HistoryItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const label = item.fileName || item.id.slice(0, 8);
+    if (!window.confirm(`Delete this analysis from history?\n\n${label}`)) {
+      return;
+    }
+    try {
+      await jobsApi.delete(item.id);
+      setJobList((prev) => {
+        const next = prev.filter((j) => j.id !== item.id);
+        jobListRef.current = next;
+        return next;
+      });
+      setRunningJobs((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      try {
+        if (sessionStorage.getItem("analysisJobId") === item.id) {
+          sessionStorage.removeItem("analysisJobId");
+        }
+        if (sessionStorage.getItem("projectJobId") === item.id) {
+          sessionStorage.removeItem("projectJobId");
+        }
+      } catch {
+        // ignore
+      }
+      toast.success("Analysis removed from history");
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to delete job.";
+      toast.error(message);
+    }
+  };
+
   return (
     <Layout>
       <MotionPage>
@@ -385,7 +427,17 @@ export function History() {
                         )}
                       </div>
                     )}
-                    <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-white" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0 border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-800 hover:bg-red-950/30"
+                      aria-label={`Delete analysis ${item.fileName}`}
+                      onClick={(e) => void deleteJob(e, item)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                    <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-white shrink-0" />
                   </div>
                 </div>
               </Card>

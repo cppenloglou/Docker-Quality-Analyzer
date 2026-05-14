@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import io
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import uuid
 import zipfile
@@ -655,3 +656,155 @@ def test_job_events_returns_404_for_missing_job(client, monkeypatch, app, fake_d
 
     app.dependency_overrides.clear()
     assert response.status_code == 404
+
+
+def test_delete_job_success_returns_204(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="delete-owner@example.com")
+    job_id = uuid.uuid4()
+    calls = {"deleted": False}
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, jid, uid):
+            if jid == job_id and uid == user.id:
+                return AnalysisJobModel(
+                    id=job_id,
+                    user_id=user.id,
+                    type=JobType.dockerfile,
+                    status=JobStatus.done,
+                    input_metadata={"filename": "Dockerfile"},
+                    result={"score": 90},
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                )
+            return None
+
+        async def delete_job(self, jid, uid):
+            assert jid == job_id and uid == user.id
+            calls["deleted"] = True
+            return True
+
+    redis_del = AsyncMock()
+    monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    monkeypatch.setattr("app.api.routers.history.redis_client.delete", redis_del)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.delete(
+        f"/api/v1/users/me/jobs/{job_id}",
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 204
+    assert response.content == b""
+    assert calls["deleted"] is True
+    assert redis_del.await_count == 2
+
+
+def test_delete_job_returns_404_when_missing(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="delete-missing@example.com")
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _jid, _uid):
+            return None
+
+        async def delete_job(self, *_a, **_k):
+            raise AssertionError("delete_job should not be called")
+
+    monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.delete(
+        f"/api/v1/users/me/jobs/{uuid.uuid4()}",
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("in_progress_status", [JobStatus.running, JobStatus.queued])
+def test_delete_job_returns_409_when_in_progress(
+    client, monkeypatch, app, fake_db_session_dependency, in_progress_status
+):
+    user = make_user(email="delete-busy@example.com")
+    job_id = uuid.uuid4()
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, jid, uid):
+            if jid == job_id and uid == user.id:
+                return AnalysisJobModel(
+                    id=job_id,
+                    user_id=user.id,
+                    type=JobType.dockerfile,
+                    status=in_progress_status,
+                    input_metadata={"filename": "Dockerfile"},
+                    result=None,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                )
+            return None
+
+        async def delete_job(self, *_a, **_k):
+            raise AssertionError("delete_job should not be called")
+
+    monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.delete(
+        f"/api/v1/users/me/jobs/{job_id}",
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 409
+
+
+def test_delete_job_returns_409_when_compose_deploy_active(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="delete-active-deploy@example.com")
+    job_id = uuid.uuid4()
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, jid, uid):
+            if jid == job_id and uid == user.id:
+                return AnalysisJobModel(
+                    id=job_id,
+                    user_id=user.id,
+                    type=JobType.compose,
+                    status=JobStatus.done,
+                    input_metadata={"filename": "docker-compose.yml"},
+                    result={"score": 88},
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                )
+            return None
+
+        async def delete_job(self, *_a, **_k):
+            raise AssertionError("delete_job should not be called")
+
+    async def fake_deploy_status(*_a, **_k):
+        return SimpleNamespace(active=True)
+
+    monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    monkeypatch.setattr("app.api.routers.history.compute_deploy_status", fake_deploy_status)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.delete(
+        f"/api/v1/users/me/jobs/{job_id}",
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 409
+    assert "Stop running containers" in response.json()["detail"]

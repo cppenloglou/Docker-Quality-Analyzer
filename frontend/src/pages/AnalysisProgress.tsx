@@ -50,7 +50,7 @@ const BASE_STEPS: AnalysisStep[] = [
   },
 ];
 
-const PROJECT_STEPS: AnalysisStep[] = [
+const PROJECT_CORE_STEPS: AnalysisStep[] = [
   {
     id: "queued",
     label: "Job Queued",
@@ -76,24 +76,77 @@ const PROJECT_STEPS: AnalysisStep[] = [
     status: "pending",
   },
   {
-    id: "project.image_build",
-    label: "Building Images",
-    description: "Building Docker images from selected Dockerfiles",
-    status: "pending",
-  },
-  {
-    id: "project.compose_run",
-    label: "Running Stack",
-    description: "Starting compose stack for runtime analysis",
-    status: "pending",
-  },
-  {
     id: "finalize",
     label: "Complete",
     description: "Project analysis report ready",
     status: "pending",
   },
 ];
+
+const PROJECT_IMAGE_BUILD_STEP_TEMPLATE: AnalysisStep = {
+  id: "project.image_build",
+  label: "Building Images",
+  description: "Building Docker images from selected Dockerfiles",
+  status: "pending",
+};
+
+const PROJECT_COMPOSE_RUN_STEP_TEMPLATE: AnalysisStep = {
+  id: "project.compose_run",
+  label: "Running Stack",
+  description: "Starting compose stack for runtime analysis",
+  status: "pending",
+};
+
+const PROJECT_IMAGE_BUILD_EVENTS = new Set([
+  "project.image_build_started",
+  "project.image_build_log",
+  "project.image_build_completed",
+  "project.image_build_failed",
+]);
+
+const PROJECT_RUNTIME_STEP_EVENTS = new Set([
+  "container.started",
+  "container.exited",
+  "project.runtime_stopped",
+]);
+
+function cloneSteps(steps: AnalysisStep[]): AnalysisStep[] {
+  return steps.map((s) => ({ ...s }));
+}
+
+function ensureProjectCoreSteps(prev: AnalysisStep[]): AnalysisStep[] {
+  if (prev.some((s) => s.id === "project.analysis_started")) {
+    return cloneSteps(prev);
+  }
+  return PROJECT_CORE_STEPS.map((s) => ({ ...s }));
+}
+
+/** Inserts a clone of template before `finalize` if that step id is not already present. */
+function insertOptionalStepBeforeFinalize(
+  steps: AnalysisStep[],
+  template: AnalysisStep,
+): AnalysisStep[] {
+  if (steps.some((s) => s.id === template.id)) {
+    return steps;
+  }
+  const fi = steps.findIndex((s) => s.id === "finalize");
+  if (fi === -1) {
+    return steps;
+  }
+  const row: AnalysisStep = { ...template, status: "pending" };
+  return [...steps.slice(0, fi), row, ...steps.slice(fi)];
+}
+
+function augmentProjectStepsForEvent(prev: AnalysisStep[], eventName: string): AnalysisStep[] {
+  let next = ensureProjectCoreSteps(prev);
+  if (PROJECT_IMAGE_BUILD_EVENTS.has(eventName)) {
+    next = insertOptionalStepBeforeFinalize(next, PROJECT_IMAGE_BUILD_STEP_TEMPLATE);
+  }
+  if (PROJECT_RUNTIME_STEP_EVENTS.has(eventName)) {
+    next = insertOptionalStepBeforeFinalize(next, PROJECT_COMPOSE_RUN_STEP_TEMPLATE);
+  }
+  return next;
+}
 
 // Map project event names to step IDs
 const PROJECT_EVENT_TO_STEP: Record<string, string> = {
@@ -167,9 +220,11 @@ export function AnalysisProgress() {
   };
 
   const handleCompleted = (latestJob: Job) => {
-    setStep("queued", "complete");
-    setStep("running", "complete");
-    setStep("finalize", "complete");
+    setSteps((prev) =>
+      prev.map((step) =>
+        step.status === "complete" ? step : { ...step, status: "complete" as StepStatus },
+      ),
+    );
     setProgressValue(100);
     setJobStatus("done");
     try {
@@ -251,7 +306,7 @@ export function AnalysisProgress() {
           // Switch to project step list if needed
           if (reconciled.type === "project") {
             setIsProjectJob(true);
-            setSteps(PROJECT_STEPS.map(s => ({ ...s })));
+            setSteps(PROJECT_CORE_STEPS.map((s) => ({ ...s })));
           }
           if (reconciled.status === "done") {
             handleCompleted(reconciled);
@@ -267,8 +322,12 @@ export function AnalysisProgress() {
           }
           if (reconciled.status === "running") {
             setStep("queued", "complete");
-            setStep("running", "running");
-            setProgressValue(50);
+            if (reconciled.type === "project") {
+              setProgressValue(50);
+            } else {
+              setStep("running", "running");
+              setProgressValue(50);
+            }
           }
         } catch (error) {
           if (error instanceof ApiError && error.status !== 404) {
@@ -330,52 +389,62 @@ export function AnalysisProgress() {
             // Update steps for project events
             if (parsed.event_name.startsWith("project.") || parsed.event_name === "container.started" || parsed.event_name === "container.exited" || parsed.event_name === "project.runtime_stopped") {
               setIsProjectJob(true);
-              setSteps(prev => {
-                if (!prev.some(s => s.id === "project.file_analysis")) {
-                  return PROJECT_STEPS.map(s => ({ ...s }));
-                }
-                return prev;
-              });
-              const targetStep = PROJECT_EVENT_TO_STEP[parsed.event_name];
-              if (targetStep) {
-                if (parsed.event_name === "project.analysis_started") {
-                  setStep("queued", "complete");
-                  setStep("project.analysis_started", "running");
-                  setJobStatus("running");
-                  setProgressValue(20);
-                } else if (parsed.event_name === "project.file_analysis_started") {
-                  setStep("project.analysis_started", "complete");
-                  setStep("project.file_analysis", "running");
-                  setProgressValue(45);
-                } else if (parsed.event_name === "project.merge_started") {
-                  setStep("project.file_analysis", "complete");
-                  setStep("project.merge_started", "running");
-                  setProgressValue(80);
-                } else if (parsed.event_name === "project.analysis_completed") {
-                  setStep("project.merge_started", "complete");
-                  setStep("finalize", "running");
-                  setProgressValue(95);
-                } else if (parsed.event_name === "project.analysis_failed") {
-                  const message = (parsed.payload as { message?: string })?.message ?? "Project analysis failed.";
-                  handleFailed(message);
-                } else if (parsed.event_name === "project.image_build_started") {
-                  setStep("project.merge_started", "complete");
-                  setStep("project.image_build", "running");
-                  setProgressValue(85);
-                } else if (parsed.event_name === "project.image_build_completed") {
-                  // Keep running until all builds done — will advance on analysis_completed
-                } else if (parsed.event_name === "project.image_build_failed") {
-                  // Mark as error but don't fail job
-                  setStep("project.image_build", "error");
-                } else if (parsed.event_name === "container.started") {
-                  setStep("project.image_build", "complete");
-                  setStep("project.compose_run", "running");
-                  setProgressValue(90);
-                } else if (parsed.event_name === "container.exited") {
-                  setStep("project.compose_run", "error");
-                } else if (parsed.event_name === "project.runtime_stopped") {
-                  setStep("project.compose_run", "complete");
-                  setProgressValue(95);
+              setSteps((prev) => augmentProjectStepsForEvent(prev, parsed.event_name));
+              if (parsed.event_name === "project.analysis_failed") {
+                const message = (parsed.payload as { message?: string })?.message ?? "Project analysis failed.";
+                handleFailed(message);
+              } else {
+                const targetStep = PROJECT_EVENT_TO_STEP[parsed.event_name];
+                if (targetStep) {
+                  if (parsed.event_name === "project.analysis_started") {
+                    setStep("queued", "complete");
+                    setStep("project.analysis_started", "running");
+                    setJobStatus("running");
+                    setProgressValue(20);
+                  } else if (parsed.event_name === "project.file_analysis_started") {
+                    setStep("project.analysis_started", "complete");
+                    setStep("project.file_analysis", "running");
+                    setProgressValue(45);
+                  } else if (parsed.event_name === "project.merge_started") {
+                    setStep("project.file_analysis", "complete");
+                    setStep("project.merge_started", "running");
+                    setProgressValue(80);
+                  } else if (parsed.event_name === "project.analysis_completed") {
+                    setStep("project.merge_started", "complete");
+                    setSteps((prev) =>
+                      prev.map((s) =>
+                        s.id === "project.image_build" && s.status !== "error"
+                          ? { ...s, status: "complete" as StepStatus }
+                          : s,
+                      ),
+                    );
+                    setStep("finalize", "running");
+                    setProgressValue(95);
+                  } else if (parsed.event_name === "project.image_build_started") {
+                    setStep("project.merge_started", "complete");
+                    setStep("project.image_build", "running");
+                    setProgressValue(85);
+                  } else if (parsed.event_name === "project.image_build_log" || parsed.event_name === "project.image_build_completed") {
+                    setStep("project.image_build", "running");
+                  } else if (parsed.event_name === "project.image_build_failed") {
+                    // Mark as error but don't fail job
+                    setStep("project.image_build", "error");
+                  } else if (parsed.event_name === "container.started") {
+                    setSteps((prev) =>
+                      prev.map((s) =>
+                        s.id === "project.image_build" && s.status !== "error"
+                          ? { ...s, status: "complete" as StepStatus }
+                          : s,
+                      ),
+                    );
+                    setStep("project.compose_run", "running");
+                    setProgressValue(90);
+                  } else if (parsed.event_name === "container.exited") {
+                    setStep("project.compose_run", "error");
+                  } else if (parsed.event_name === "project.runtime_stopped") {
+                    setStep("project.compose_run", "complete");
+                    setProgressValue(95);
+                  }
                 }
               }
             } else if (parsed.event_name === "user.analysis.started") {

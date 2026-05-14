@@ -126,6 +126,8 @@ async def analyze_project(
             raise HTTPException(status_code=400, detail=f"Compose file '{cf}' was not found in scan results.")
 
     # Update the job metadata with the user's selections
+    # run_after_analysis records intent to enable a post-analysis manual Compose run from the
+    # results UI; it does not auto-run or auto-deploy Compose (worker payload omits it on purpose).
     updated_meta = {
         **job.input_metadata,
         "selected_dockerfiles": payload.selected_dockerfiles,

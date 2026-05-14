@@ -572,9 +572,9 @@ export function ProjectUpload() {
                       <div>
                         <div className="flex items-center gap-2">
                           <Play className="w-3.5 h-3.5 text-green-400" />
-                          <p className="text-sm font-medium text-white">Run Compose stack after analysis</p>
+                          <p className="text-sm font-medium text-white">Enable Compose run after results</p>
                         </div>
-                        <p className="text-xs text-slate-400 mt-0.5">Deploy the selected Compose stack after a successful analysis</p>
+                        <p className="text-xs text-slate-400 mt-0.5">After analysis, the results page will let you run the selected Compose stack manually.</p>
                         {selectedCompose.length === 0 && <p className="text-xs text-slate-600 mt-0.5">Requires at least one Compose file</p>}
                       </div>
                     </label>
@@ -590,7 +590,7 @@ export function ProjectUpload() {
                     <div className="flex gap-2"><span className="text-slate-500">Compose:</span><span>{selectedCompose.length || "none selected"}</span></div>
                     <div className="flex gap-2"><span className="text-slate-500">Mode:</span><span>{analysisMode}</span></div>
                     {buildImages && <div className="flex gap-2"><span className="text-slate-500">Build images:</span><span className="text-blue-400">yes</span></div>}
-                    {runAfter && <div className="flex gap-2"><span className="text-slate-500">Run compose:</span><span className="text-green-400">yes (after analysis)</span></div>}
+                    {runAfter && <div className="flex gap-2"><span className="text-slate-500">Compose run:</span><span className="text-green-400">enabled from results page</span></div>}
                   </div>
                 </Card>
               </div>
