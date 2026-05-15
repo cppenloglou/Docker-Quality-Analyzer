@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from app.application.services.bind_mounts import validate_bind_mounts
+
 
 def map_compose_services(
     compose_file_rel: str,
@@ -106,22 +108,7 @@ def map_compose_services(
                 if not ef_path.exists():
                     issues.append(f"env_file '{ef}' does not exist in project.")
 
-        # Validate bind mounts
-        volumes = service_def.get("volumes", [])
-        if isinstance(volumes, list):
-            for vol in volumes:
-                if isinstance(vol, str):
-                    src = vol.split(":")[0].strip()
-                    if src.startswith(("./", "../", "/", "~")):
-                        mount_path = (project_root / src).resolve() if not src.startswith("/") else Path(src)
-                        if not mount_path.exists():
-                            issues.append(f"Bind mount source '{src}' does not exist.")
-                elif isinstance(vol, dict) and vol.get("type") == "bind":
-                    src = vol.get("source", "")
-                    if src and not src.startswith("/"):
-                        mount_path = (project_root / src).resolve()
-                        if not mount_path.exists():
-                            issues.append(f"Bind mount source '{src}' does not exist.")
+        issues.extend(validate_bind_mounts(str(service_name), service_def, project_root))
 
         # A service with a build context that resolves correctly can run (with build first)
         if build is not None and can_build and not image:

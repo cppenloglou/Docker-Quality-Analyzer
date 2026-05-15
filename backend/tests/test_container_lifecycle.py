@@ -361,3 +361,86 @@ async def test_stream_metrics_skips_inspect_metrics_when_already_exited():
     stored = redis_boxes.get("containers", [])
     assert len(stored) == 1
     assert stored[0]["last_logs"] == ["oops"]
+
+
+# ─── stopped_by_user vs self-exit state markers ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stream_metrics_sets_self_exit_markers():
+    """After all containers exit naturally, deploy state must carry explicit_runtime_state=exited and stopped_by_user=False."""
+    user_id = _uid()
+    job_id = _uid()
+
+    fake_gateway = MagicMock()
+    fake_gateway.inspect_container_state = AsyncMock(return_value={"status": "running"})
+    fake_gateway.inspect_container_metrics = AsyncMock(side_effect=docker.errors.NotFound("gone"))
+    fake_gateway.inspect_container_final_state = AsyncMock(
+        return_value={"container_id": "c1", "exit_code": 1, "oom_killed": False, "last_logs": []}
+    )
+
+    redis_boxes: dict = {}
+
+    async def fake_get_state(uid, jid):
+        return dict(redis_boxes)
+
+    async def fake_set_state(uid, jid, state):
+        redis_boxes.update(state)
+
+    with (
+        patch("app.workers.tasks.DockerGateway", return_value=fake_gateway),
+        patch("app.workers.tasks.publish_event", new=AsyncMock()),
+        patch("app.workers.tasks._is_stop_requested", new=AsyncMock(return_value=False)),
+        patch("app.workers.tasks._get_deploy_state", side_effect=fake_get_state),
+        patch("app.workers.tasks._set_deploy_state", side_effect=fake_set_state),
+    ):
+        from app.workers.tasks import _stream_metrics
+        await _stream_metrics(user_id, job_id, ["c1"])
+
+    assert redis_boxes.get("explicit_runtime_state") == "exited"
+    assert redis_boxes.get("stopped_by_user") is False
+    assert redis_boxes.get("exit_reason") == "all_containers_exited"
+
+
+@pytest.mark.asyncio
+async def test_deploy_status_differentiates_stopped_by_user_vs_self_exit():
+    """compute_deploy_status must return stopped_by_user for user stops and can_retry_runtime accordingly."""
+    import json
+    from app.api.routers.compose import compute_deploy_status
+
+    user_id = uuid.uuid4()
+    job_id = uuid.uuid4()
+
+    # Simulate user-stopped state
+    stopped_state = json.dumps({
+        "container_ids": ["c1"],
+        "containers": [{"id": "c1", "status": "exited"}],
+        "explicit_runtime_state": "stopped_by_user",
+        "stopped_by_user": True,
+        "stop_reason": "user_requested",
+    })
+
+    with patch("app.api.routers.compose.redis_client") as mock_redis:
+        mock_redis.get = AsyncMock(side_effect=[stopped_state.encode(), None])
+        result = await compute_deploy_status(user_id, job_id)
+
+    assert result.runtime_state == "stopped_by_user"
+    assert result.stopped_by_user is True
+    assert result.can_retry_runtime is True
+
+    # Simulate self-exit state
+    self_exit_state = json.dumps({
+        "container_ids": ["c1"],
+        "containers": [{"id": "c1", "status": "exited"}],
+        "explicit_runtime_state": "exited",
+        "stopped_by_user": False,
+        "exit_reason": "all_containers_exited",
+    })
+
+    with patch("app.api.routers.compose.redis_client") as mock_redis:
+        mock_redis.get = AsyncMock(side_effect=[self_exit_state.encode(), None])
+        result = await compute_deploy_status(user_id, job_id)
+
+    assert result.runtime_state == "exited"
+    assert result.stopped_by_user is False
+    assert result.can_retry_runtime is False

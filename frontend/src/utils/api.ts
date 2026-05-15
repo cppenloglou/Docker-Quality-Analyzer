@@ -59,7 +59,7 @@ export interface AuthResponse {
 }
 
 export type JobType = "dockerfile" | "compose" | "project";
-export type JobStatus = "queued" | "running" | "done" | "failed";
+export type JobStatus = "scanned" | "queued" | "running" | "done" | "failed";
 
 export interface Job {
   id: string;
@@ -134,8 +134,11 @@ export type DeployRuntimeState =
   | "running"
   | "partial"
   | "exited"
+  | "failed"
   | "unhealthy"
-  | "stopping";
+  | "stopping"
+  | "stopped_by_user"
+  | "cleanup_completed";
 
 export interface DeployStatusResponse {
   active: boolean;
@@ -146,6 +149,10 @@ export interface DeployStatusResponse {
   running_count?: number;
   exited_count?: number;
   unhealthy_count?: number;
+  stopped_by_user?: boolean;
+  stop_reason?: string | null;
+  exit_reason?: string | null;
+  can_retry_runtime?: boolean;
 }
 
 export interface ImageBuildResult {
@@ -623,12 +630,26 @@ export interface ProjectRecommendation {
   reasons: string[];
 }
 
+export interface ProjectSavedSelections {
+  workflow_step: "review" | "plan";
+  selected_dockerfiles: string[];
+  selected_compose_files: string[];
+  primary_compose_file?: string | null;
+  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
+  build_selected_images: boolean;
+  run_after_analysis: boolean;
+}
+
 export interface ProjectScanResponse {
   project_id: string;
   archive_name: string;
   detected: ProjectDetectedAssets;
   recommendation: ProjectRecommendation;
   warnings: string[];
+  workflow_step?: "review" | "plan";
+  saved_selections?: ProjectSavedSelections | null;
+  expires_at?: string | null;
+  expires_in_seconds?: number | null;
 }
 
 export interface ProjectAnalyzeRequest {
@@ -639,6 +660,29 @@ export interface ProjectAnalyzeRequest {
   analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
   build_selected_images: boolean;
   run_after_analysis: boolean;
+}
+
+export interface ProjectDraftSaveRequest {
+  workflow_step: "review" | "plan";
+  selected_dockerfiles: string[];
+  selected_compose_files: string[];
+  primary_compose_file?: string | null;
+  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
+  build_selected_images: boolean;
+  run_after_analysis: boolean;
+}
+
+export interface ProjectDraft {
+  project_id: string;
+  archive_name: string;
+  created_at: string;
+  dockerfiles: string[];
+  compose_files: string[];
+  stacks: string[];
+  service_count: number;
+  workflow_step?: "review" | "plan";
+  expires_at?: string | null;
+  expires_in_seconds?: number | null;
 }
 
 export interface PerFileAnalysisResult {
@@ -712,6 +756,18 @@ export const project = {
     return request<JobEnqueueResponse>("/api/v1/project/upload", {
       method: "POST",
       body: formData,
+    });
+  },
+  async drafts(): Promise<ProjectDraft[]> {
+    return request<ProjectDraft[]>("/api/v1/project/drafts");
+  },
+  async getScan(projectId: string): Promise<ProjectScanResponse> {
+    return request<ProjectScanResponse>(`/api/v1/project/${projectId}/scan`);
+  },
+  async saveDraft(projectId: string, payload: ProjectDraftSaveRequest): Promise<ProjectDraft> {
+    return request<ProjectDraft>(`/api/v1/project/${projectId}/draft`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     });
   },
 };

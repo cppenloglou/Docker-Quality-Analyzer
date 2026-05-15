@@ -184,11 +184,43 @@ export function ContainerExecution() {
         }
 
         const status = await composeApi.deployStatus(analysisJobId);
+        const rs = status.runtime_state ?? "none";
         if (status.active) {
           setStackRunning(true);
-          setDeployPhase("running");
+          if (rs === "stopping") {
+            setDeployPhase("deploying");
+          } else {
+            setDeployPhase("running");
+          }
           setContainerIds(status.container_ids);
           if (!deployJobId) setDeployJobId(analysisJobId);
+        } else if (rs === "exited" || rs === "failed" || rs === "cleanup_completed") {
+          setStackRunning(false);
+          setDeployPhase("exited");
+          setContainerIds(status.container_ids);
+          // Populate exited container summaries from persisted container info
+          if (status.containers && status.containers.length > 0) {
+            setExitedContainers(
+              status.containers
+                .filter((c) => c.status === "exited" || c.exit_code != null)
+                .map((c) => ({
+                  container_id: c.id,
+                  container_name: c.name ?? undefined,
+                  exit_code: c.exit_code ?? undefined,
+                  error: c.error ?? undefined,
+                  started_at: c.started_at ?? undefined,
+                  finished_at: c.finished_at ?? undefined,
+                  restart_count: c.restart_count ?? undefined,
+                  oom_killed: c.oom_killed ?? undefined,
+                  last_logs: c.last_logs ?? undefined,
+                })),
+            );
+          }
+        } else if (rs === "stopped_by_user") {
+          setStackRunning(false);
+          setDeployPhase("idle");
+          setContainerIds([]);
+          setDeployJobId(null);
         } else {
           setStackRunning(false);
           setDeployPhase((prev) => (prev === "running" ? "idle" : prev));

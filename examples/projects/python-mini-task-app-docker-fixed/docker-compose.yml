@@ -1,0 +1,46 @@
+# Build-based compose file for local development and testing.
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: local/python-mini-task-app:dev
+    ports:
+      - "5000:5000"
+    environment:
+      APP_ENV: development
+      DATABASE_PATH: /data/tasks.db
+    volumes:
+      - .:/usr/src/app
+      - task-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: local/python-mini-task-app:test
+    environment:
+      APP_ENV: test
+      DATABASE_PATH: /tmp/test-tasks.db
+    profiles: ["test"]
+
+  smoke:
+    build:
+      context: .
+      dockerfile: Dockerfile.smoke
+    image: local/python-mini-task-app:smoke
+    environment:
+      TARGET_URL: http://web:5000
+    depends_on:
+      web:
+        condition: service_healthy
+    profiles: ["test"]
+
+volumes:
+  task-data:

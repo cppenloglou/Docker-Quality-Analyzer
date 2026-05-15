@@ -60,8 +60,8 @@ class AnalysisService:
         self.session = session
         self.repo = JobRepository(session)
 
-    async def enqueue_job(self, user_id: uuid.UUID, job_type: JobType, metadata: dict[str, Any]) -> uuid.UUID:
-        job = await self.repo.create_job(user_id, job_type, metadata)
+    async def enqueue_job(self, user_id: uuid.UUID, job_type: JobType, metadata: dict[str, Any], initial_status: JobStatus = JobStatus.queued) -> uuid.UUID:
+        job = await self.repo.create_job(user_id, job_type, metadata, initial_status=initial_status)
         await self.session.commit()
         return job.id
 

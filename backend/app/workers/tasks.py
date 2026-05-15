@@ -460,7 +460,14 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
             )
         if deploy_spec is not None:
             try:
-                await _clear_deploy_state(user_id, job_id)
+                cleanup_state = await _get_deploy_state(user_id, job_id) or {}
+                cleanup_state.update({
+                    "active": False,
+                    "explicit_runtime_state": "cleanup_completed",
+                    "stopped_by_user": False,
+                    "exit_reason": f"deploy_failed: {exc}",
+                })
+                await _set_deploy_state(user_id, job_id, cleanup_state)
             except Exception:
                 pass
         fail_payload = {"message": str(exc)}
@@ -496,7 +503,18 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
             },
         )
     )
-    await _clear_deploy_state(user_id, job_id)
+    # Persist terminal state as stopped_by_user so refresh can distinguish from self-exit
+    terminal_state = {
+        **state,
+        "stopping": False,
+        "active": False,
+        "explicit_runtime_state": "stopped_by_user",
+        "stopped_by_user": True,
+        "stop_reason": "user_requested",
+        "stopped_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _set_deploy_state(user_id, job_id, terminal_state)
+    await redis_client.delete(_deploy_stop_key(user_id, job_id))
     return {"status": "stopped"}
 
 
@@ -877,9 +895,15 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
                     payload={"reason": "all_containers_exited"},
                 )
             )
-            # Mark final state but keep active=False so UI knows
+            # Persist explicit self-exit marker so refresh can distinguish from user stop
             state = await _get_deploy_state(user_id, job_id) or {}
+            was_user_stop = bool(state.get("stopped_by_user", False))
             state["all_exited"] = True
+            state["active"] = False
+            if not was_user_stop:
+                state["explicit_runtime_state"] = "exited"
+                state["stopped_by_user"] = False
+                state["exit_reason"] = "all_containers_exited"
             await _set_deploy_state(user_id, job_id, state)
             break
 

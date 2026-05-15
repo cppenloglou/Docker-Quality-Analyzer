@@ -106,6 +106,10 @@ def _is_compose_file(path: Path) -> bool:
         return True
     if name.endswith(".compose.yml") or name.endswith(".compose.yaml"):
         return True
+    if (name.startswith("docker-compose.") or name.startswith("docker-compose-")) and (
+        name.endswith(".yml") or name.endswith(".yaml")
+    ):
+        return True
     return False
 
 

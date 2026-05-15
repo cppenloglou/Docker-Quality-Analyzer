@@ -84,8 +84,8 @@ class JobRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def create_job(self, user_id: uuid.UUID, job_type: JobType, metadata: dict) -> AnalysisJobModel:
-        job = AnalysisJobModel(user_id=user_id, type=job_type, status=JobStatus.queued, input_metadata=metadata)
+    async def create_job(self, user_id: uuid.UUID, job_type: JobType, metadata: dict, initial_status: JobStatus = JobStatus.queued) -> AnalysisJobModel:
+        job = AnalysisJobModel(user_id=user_id, type=job_type, status=initial_status, input_metadata=metadata)
         self.session.add(job)
         await self.session.flush()
         return job
@@ -116,6 +116,29 @@ class JobRepository:
 
     async def list_jobs(self, user_id: uuid.UUID) -> list[AnalysisJobModel]:
         stmt = select(AnalysisJobModel).where(AnalysisJobModel.user_id == user_id).order_by(AnalysisJobModel.created_at.desc())
+        rows = await self.session.scalars(stmt)
+        return list(rows)
+
+    async def update_job_metadata(self, job_id: uuid.UUID, user_id: uuid.UUID, patch: dict) -> AnalysisJobModel | None:
+        """Shallow-merge *patch* into a job's input_metadata and flush."""
+        job = await self.session.get(AnalysisJobModel, job_id)
+        if not job or job.user_id != user_id:
+            return None
+        job.input_metadata = {**job.input_metadata, **patch}
+        await self.session.flush()
+        return job
+
+    async def list_scanned_project_drafts(self, user_id: uuid.UUID) -> list[AnalysisJobModel]:
+        """Return project jobs with status=scanned (uploaded but not yet analyzed) for a user."""
+        stmt = (
+            select(AnalysisJobModel)
+            .where(
+                AnalysisJobModel.user_id == user_id,
+                AnalysisJobModel.type == JobType.project,
+                AnalysisJobModel.status == JobStatus.scanned,
+            )
+            .order_by(AnalysisJobModel.created_at.desc())
+        )
         rows = await self.session.scalars(stmt)
         return list(rows)
 

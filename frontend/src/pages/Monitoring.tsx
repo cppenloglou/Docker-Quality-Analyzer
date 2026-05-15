@@ -122,6 +122,9 @@ export function Monitoring() {
         const status = await composeApi.deployStatus(jobId);
         if (cancelled) return;
 
+        const rs = status.runtime_state ?? "none";
+        const isTerminal = ["none", "stopped_by_user", "exited", "failed", "cleanup_completed"].includes(rs);
+
         const fromIds =
           status.container_ids.length > 0
             ? status.container_ids
@@ -138,6 +141,49 @@ export function Monitoring() {
         } else if (routeContainerId) {
           setContainerIds([routeContainerId]);
           setSelectedContainerId(routeContainerId);
+        }
+
+        // For terminal states with no active containers, don't attempt to open sockets
+        if (isTerminal && !status.active) {
+          // Pre-populate exited state so charts show offline state
+          const fromDeploy = status.containers ?? [];
+          if (fromDeploy.length > 0) {
+            setContainerStates((prev) => {
+              const next = { ...prev };
+              for (const c of fromDeploy) {
+                if (!c.id) continue;
+                const existing = next[c.id] ?? {
+                  points: [],
+                  logs: [],
+                  latestPayload: null,
+                  connected: false,
+                };
+                const lastLogs = (c.last_logs ?? []).filter(
+                  (l): l is string => typeof l === "string",
+                );
+                const tailLogs: TerminalLogEntry[] = lastLogs.map((line) => ({
+                  message: `[deploy] ${line}`,
+                  tone: "info" as const,
+                }));
+                next[c.id] = {
+                  ...existing,
+                  connected: false,
+                  exited: {
+                    exit_code: c.exit_code,
+                    error: c.error ?? null,
+                    started_at: c.started_at ?? null,
+                    finished_at: c.finished_at ?? null,
+                    restart_count: c.restart_count ?? null,
+                    oom_killed: c.oom_killed ?? null,
+                    last_logs: lastLogs,
+                  },
+                  logs: [...existing.logs.slice(-200), ...tailLogs.slice(-80)],
+                };
+              }
+              return next;
+            });
+          }
+          return;
         }
 
         const fromDeploy = status.containers ?? [];

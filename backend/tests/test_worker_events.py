@@ -96,7 +96,7 @@ async def test_run_compose_deploy_emits_expected_events(monkeypatch: pytest.Monk
 @pytest.mark.asyncio
 async def test_run_compose_deploy_clears_redis_when_compose_up_fails(monkeypatch: pytest.MonkeyPatch):
     emitted_events = []
-    cleared: list[tuple[str, str]] = []
+    set_state_calls: list[dict] = []
     down_calls: list[tuple[str, bool]] = []
 
     async def fake_publish(event):
@@ -122,11 +122,11 @@ async def test_run_compose_deploy_clears_redis_when_compose_up_fails(monkeypatch
 
             return _Job()
 
-    async def fake_clear(uid: str, jid: str):
-        cleared.append((uid, jid))
+    async def fake_set_deploy(uid: str, jid: str, state: dict):
+        set_state_calls.append(state)
 
-    async def fake_set_deploy(*_a, **_k):
-        return None
+    async def fake_get_deploy(uid: str, jid: str):
+        return {}
 
     monkeypatch.setattr("app.workers.tasks.SessionLocal", lambda: FakeSessionContext())
     monkeypatch.setattr("app.workers.tasks.JobRepository", FakeRepo)
@@ -139,13 +139,13 @@ async def test_run_compose_deploy_clears_redis_when_compose_up_fails(monkeypatch
         },
     )
     monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_deploy)
+    monkeypatch.setattr("app.workers.tasks._get_deploy_state", fake_get_deploy)
 
     async def failing_compose_up(_spec, **_kwargs):
         raise RuntimeError("docker-compose up failed: nope")
 
     monkeypatch.setattr("app.workers.tasks._compose_up", failing_compose_up)
     monkeypatch.setattr("app.workers.tasks._compose_down", record_down)
-    monkeypatch.setattr("app.workers.tasks._clear_deploy_state", fake_clear)
     monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
 
     user_id = str(uuid.uuid4())
@@ -156,7 +156,9 @@ async def test_run_compose_deploy_clears_redis_when_compose_up_fails(monkeypatch
             {"user_id": user_id, "job_id": job_id, "run_stack": True},
         )
 
-    assert cleared == [(user_id, job_id)]
+    # Cleanup state must mark cleanup_completed (not self-exit)
+    final_states = [s for s in set_state_calls if s.get("explicit_runtime_state") == "cleanup_completed"]
+    assert len(final_states) >= 1
     assert down_calls == [("dqa-proj", False)]
     assert [event.event_name for event in emitted_events] == [
         "deploy.cleanup_started",
@@ -168,7 +170,7 @@ async def test_run_compose_deploy_clears_redis_when_compose_up_fails(monkeypatch
 @pytest.mark.asyncio
 async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypatch: pytest.MonkeyPatch):
     emitted_events = []
-    cleared: list[tuple[str, str]] = []
+    set_state_calls: list[dict] = []
     down_calls: list[tuple[str, bool]] = []
 
     async def fake_publish(event):
@@ -194,8 +196,11 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
 
             return _Job()
 
-    async def fake_set_deploy(*_a, **_k):
-        return None
+    async def fake_set_deploy(uid: str, jid: str, state: dict):
+        set_state_calls.append(state)
+
+    async def fake_get_deploy(uid: str, jid: str):
+        return {}
 
     async def fake_compose_up(_spec, **_kwargs):
         return None
@@ -205,9 +210,6 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
 
     async def failing_stream_metrics(_user_id: str, _job_id: str, _container_ids: list[str]):
         raise RuntimeError("metrics failed after stack start")
-
-    async def fake_clear(uid: str, jid: str):
-        cleared.append((uid, jid))
 
     monkeypatch.setattr("app.workers.tasks.SessionLocal", lambda: FakeSessionContext())
     monkeypatch.setattr("app.workers.tasks.JobRepository", FakeRepo)
@@ -220,11 +222,11 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
         },
     )
     monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_deploy)
+    monkeypatch.setattr("app.workers.tasks._get_deploy_state", fake_get_deploy)
     monkeypatch.setattr("app.workers.tasks._compose_up", fake_compose_up)
     monkeypatch.setattr("app.workers.tasks._compose_ps_ids", fake_compose_ps_ids)
     monkeypatch.setattr("app.workers.tasks._stream_metrics", failing_stream_metrics)
     monkeypatch.setattr("app.workers.tasks._compose_down", record_down)
-    monkeypatch.setattr("app.workers.tasks._clear_deploy_state", fake_clear)
     monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
 
     user_id = str(uuid.uuid4())
@@ -235,7 +237,9 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
             {"user_id": user_id, "job_id": job_id, "run_stack": True},
         )
 
-    assert cleared == [(user_id, job_id)]
+    # Cleanup state must mark cleanup_completed
+    final_states = [s for s in set_state_calls if s.get("explicit_runtime_state") == "cleanup_completed"]
+    assert len(final_states) >= 1
     assert down_calls == [("dqa-proj", False)]
     assert [event.event_name for event in emitted_events] == [
         "container.started",
@@ -249,7 +253,7 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
 async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.MonkeyPatch):
     emitted_events = []
     stop_called = {"value": False}
-    cleared_called = {"value": False}
+    set_state_calls: list[dict] = []
 
     async def fake_publish(event):
         emitted_events.append(event)
@@ -265,13 +269,17 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
     async def fake_set_stop(_user_id: str, _job_id: str):
         stop_called["value"] = True
 
-    async def fake_clear(_user_id: str, _job_id: str):
-        cleared_called["value"] = True
+    async def fake_set_deploy(uid: str, jid: str, state: dict):
+        set_state_calls.append(state)
+
+    from unittest.mock import AsyncMock as _AsyncMock
+    fake_redis_del = _AsyncMock()
 
     monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
     monkeypatch.setattr("app.workers.tasks._get_deploy_state", fake_get_state)
     monkeypatch.setattr("app.workers.tasks._set_stop_requested", fake_set_stop)
-    monkeypatch.setattr("app.workers.tasks._clear_deploy_state", fake_clear)
+    monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_deploy)
+    monkeypatch.setattr("app.workers.tasks.redis_client.delete", fake_redis_del)
 
     async def fake_compose_down(_state, _remove_volumes):
         return None
@@ -289,7 +297,10 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
 
     assert result["status"] == "stopped"
     assert stop_called["value"] is True
-    assert cleared_called["value"] is True
+    # Terminal state must mark stopped_by_user=True
+    terminal_states = [s for s in set_state_calls if s.get("explicit_runtime_state") == "stopped_by_user"]
+    assert len(terminal_states) >= 1
+    assert terminal_states[-1]["stopped_by_user"] is True
     event_names = [event.event_name for event in emitted_events]
     assert "container.stopped" in event_names
 

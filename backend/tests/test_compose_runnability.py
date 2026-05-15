@@ -61,6 +61,16 @@ services:
 services:
   api:
     image: nginx:1.27
+    volumes:
+      - .:/usr/src/app
+""",
+            "bind mount",
+        ),
+        (
+            """
+services:
+  api:
+    image: nginx:1.27
     env_file:
       - .env
 """,
@@ -93,6 +103,21 @@ async def test_compose_runnability_plugin_blocks_non_runnable_cases(compose: str
     runnability = result["runnability"]
     assert runnability["runnable"] is False
     assert any(expected_reason_part.lower() in reason.lower() for reason in runnability["reasons"])
+
+
+@pytest.mark.asyncio
+async def test_compose_runnability_plugin_allows_build_in_project_context():
+    plugin = ComposeRunnabilityPlugin()
+    compose = """
+services:
+  api:
+    build: .
+    image: example/app:1.0
+"""
+    result = await plugin.run({"compose_content": compose, "project_path": "/tmp/project"})
+    runnability = result["runnability"]
+    assert runnability["runnable"] is True
+    assert runnability["rules"]["no_build_contexts"] is True
 
 
 @pytest.mark.asyncio
@@ -152,8 +177,19 @@ async def test_deploy_compose_allows_runnable_compose_and_project(monkeypatch: p
             user_id=user_id,
             type=JobType.project,
             status=JobStatus.done,
-            input_metadata={},
-            result=None,
+            input_metadata={
+                "primary_compose_file": "docker-compose.yml",
+                "selected_compose_files": ["docker-compose.yml"],
+            },
+            result={
+                "per_file_results": [
+                    {
+                        "file_type": "compose",
+                        "file_path": "docker-compose.yml",
+                        "meta": {"runnability": {"runnable": True, "reasons": []}},
+                    }
+                ]
+            },
         ),
     }
 
@@ -186,3 +222,47 @@ async def test_deploy_compose_allows_runnable_compose_and_project(monkeypatch: p
     assert compose_response.job_id == compose_job_id
     assert project_response.job_id == project_job_id
     assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_deploy_compose_blocks_non_runnable_primary_project_compose(monkeypatch: pytest.MonkeyPatch):
+    user_id = uuid.uuid4()
+    project_job_id = uuid.uuid4()
+    blocked_project = AnalysisJobModel(
+        id=project_job_id,
+        user_id=user_id,
+        type=JobType.project,
+        status=JobStatus.done,
+        input_metadata={
+            "primary_compose_file": "docker-compose.prod.yml",
+            "selected_compose_files": ["docker-compose.prod.yml"],
+        },
+        result={
+            "per_file_results": [
+                {
+                    "file_type": "compose",
+                    "file_path": "docker-compose.prod.yml",
+                    "meta": {"runnability": {"runnable": False, "reasons": ["bind mount detected"]}},
+                }
+            ]
+        },
+    )
+
+    class FakeRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            return blocked_project
+
+    monkeypatch.setattr("app.api.routers.compose.JobRepository", FakeRepo)
+
+    with pytest.raises(HTTPException) as exc:
+        await deploy_compose(
+            ComposeDeployRequest(job_id=project_job_id, push_public_images=False, run_stack=True),
+            current_user=UserModel(id=user_id, email="a@b.com", hashed_password="x"),
+            session=AsyncMock(),
+        )
+
+    assert exc.value.status_code == 409
+    assert "runnability precheck" in str(exc.value.detail)

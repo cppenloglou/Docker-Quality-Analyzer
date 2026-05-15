@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -48,7 +48,9 @@ import {
   type ImageBuildResult,
   type Issue,
   type Job,
+  type PerFileAnalysisResult,
   type ProjectAnalysisResult,
+  type RunnabilityMeta,
   type ServiceBuildMapping,
 } from "../utils/api";
 import { pushNotification } from "../utils/notifications";
@@ -91,6 +93,37 @@ function isProjectAnalysisResult(value: unknown): value is ProjectAnalysisResult
   );
 }
 
+function asRunnabilityMeta(value: unknown): RunnabilityMeta | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as { runnable?: unknown; reasons?: unknown; rules?: unknown };
+  if (typeof raw.runnable !== "boolean") return undefined;
+  const reasons = Array.isArray(raw.reasons) ? raw.reasons.filter((r): r is string => typeof r === "string") : [];
+  const rulesObj = raw.rules;
+  let rules: Record<string, boolean> | undefined;
+  if (rulesObj && typeof rulesObj === "object") {
+    rules = {};
+    for (const [rule, passed] of Object.entries(rulesObj as Record<string, unknown>)) {
+      if (typeof passed === "boolean") rules[rule] = passed;
+    }
+    if (Object.keys(rules).length === 0) {
+      rules = undefined;
+    }
+  }
+  return { runnable: raw.runnable, reasons, rules };
+}
+
+function composeRunnabilityEntriesFromProject(
+  result: ProjectAnalysisResult | null,
+): Array<{ filePath: string; runnability: RunnabilityMeta }> {
+  if (!result) return [];
+  return (result.per_file_results ?? [])
+    .filter((file): file is PerFileAnalysisResult => file.file_type === "compose")
+    .flatMap((file) => {
+      const runnability = asRunnabilityMeta((file.meta as { runnability?: unknown } | undefined)?.runnability);
+      return runnability ? [{ filePath: file.file_path, runnability }] : [];
+    });
+}
+
 export function ResultsDashboard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -105,11 +138,12 @@ export function ResultsDashboard() {
   const ready = useMinLoader(!loading);
   const reducedMotion = useReducedMotion();
   const [error, setError] = useState<string | null>(null);
-  const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping" | "exited" | "partial" | "unhealthy">(() => {
+  const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping" | "exited" | "partial" | "unhealthy" | "stopped_by_user">(() => {
     const stored = sessionStorage.getItem("dqa:containerStatus");
     if (stored === "stopping") return "stopping";
     return "stopped";
   });
+  const [runtimeSelfExited, setRuntimeSelfExited] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,103 +200,82 @@ export function ResultsDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryJobId]);
 
-  useEffect(() => {
-    if (!job || (job.type !== "compose" && job.type !== "project")) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const status = await composeApi.deployStatus(job.id);
-        if (cancelled) return;
+  const reconcileDeployStatus = useCallback(async (jobId: string) => {
+    try {
+      const status = await composeApi.deployStatus(jobId);
 
-        const rs = status.runtime_state ?? "none";
-        const sessionStopping =
-          typeof sessionStorage !== "undefined" &&
-          sessionStorage.getItem("dqa:containerStatus") === "stopping";
+      const rs = status.runtime_state ?? "none";
+      const sessionStopping =
+        typeof sessionStorage !== "undefined" &&
+        sessionStorage.getItem("dqa:containerStatus") === "stopping";
 
-        const treatAsStopping =
-          rs === "stopping" ||
-          Boolean(status.active && sessionStopping);
+      const treatAsStopping =
+        rs === "stopping" ||
+        Boolean(status.active && sessionStopping);
 
-        if (treatAsStopping) {
-          setContainerStatus("stopping");
-          for (let i = 0; i < 30; i++) {
-            await new Promise((r) => setTimeout(r, 2000));
-            if (cancelled) return;
-            try {
-              const poll = await composeApi.deployStatus(job.id);
-              const pr = poll.runtime_state ?? "none";
-              if (pr !== "stopping") {
-                if (pr === "exited") {
-                  setContainerStatus("exited");
-                } else {
-                  setContainerStatus("stopped");
-                }
-                sessionStorage.removeItem("dqa:containerStatus");
-                if (pr === "none" || pr === "exited") {
-                  toast.success(
-                    pr === "exited"
-                      ? "Containers exited"
-                      : "Containers stopped",
-                  );
-                }
-                return;
-              }
-            } catch {
-              break;
-            }
-          }
-          setContainerStatus("stopped");
-          sessionStorage.removeItem("dqa:containerStatus");
-          return;
-        }
+      if (treatAsStopping) {
+        setContainerStatus("stopping");
+        return;
+      }
 
-        if (rs === "running") {
-          setContainerStatus("running");
-        } else if (rs === "partial") {
-          setContainerStatus("partial");
-        } else if (rs === "unhealthy") {
-          setContainerStatus("unhealthy");
-        } else if (rs === "exited") {
-          setContainerStatus("exited");
-        } else if (rs === "none") {
-          const exitedCount = status.exited_count ?? 0;
-          const runningCount = status.running_count ?? 0;
+      // Backend is authoritative — check explicit states first
+      if (rs === "stopped_by_user") {
+        setContainerStatus("stopped_by_user");
+        setRuntimeSelfExited(false);
+        sessionStorage.removeItem("dqa:containerStatus");
+        return;
+      }
+      if (rs === "exited" || rs === "failed" || rs === "cleanup_completed") {
+        setContainerStatus("exited");
+        setRuntimeSelfExited(!status.stopped_by_user);
+        sessionStorage.removeItem("dqa:containerStatus");
+        return;
+      }
+      if (rs === "running") {
+        setContainerStatus("running");
+      } else if (rs === "partial") {
+        setContainerStatus("partial");
+      } else if (rs === "unhealthy") {
+        setContainerStatus("unhealthy");
+      } else {
+        const exitedCount = status.exited_count ?? 0;
+        const runningCount = status.running_count ?? 0;
+        const unhealthyCount = status.unhealthy_count ?? 0;
+        if (!status.active) {
           if (exitedCount > 0 && runningCount === 0) {
             setContainerStatus("exited");
+            setRuntimeSelfExited(!status.stopped_by_user);
           } else {
             setContainerStatus("stopped");
+            setRuntimeSelfExited(false);
             sessionStorage.removeItem("dqa:containerStatus");
           }
+        } else if (unhealthyCount > 0) {
+          setContainerStatus("unhealthy");
+        } else if (exitedCount > 0 && runningCount > 0) {
+          setContainerStatus("partial");
+        } else if (exitedCount > 0 && runningCount === 0) {
+          setContainerStatus("exited");
+          setRuntimeSelfExited(!status.stopped_by_user);
         } else {
-          const runningCount =
-            status.running_count ?? status.container_ids.length;
-          const exitedCount = status.exited_count ?? 0;
-          const unhealthyCount = status.unhealthy_count ?? 0;
-          if (!status.active) {
-            if (exitedCount > 0 && runningCount === 0) {
-              setContainerStatus("exited");
-            } else {
-              setContainerStatus("stopped");
-              sessionStorage.removeItem("dqa:containerStatus");
-            }
-          } else if (unhealthyCount > 0) {
-            setContainerStatus("unhealthy");
-          } else if (exitedCount > 0 && runningCount > 0) {
-            setContainerStatus("partial");
-          } else if (exitedCount > 0 && runningCount === 0) {
-            setContainerStatus("exited");
-          } else {
-            setContainerStatus("running");
-          }
+          setContainerStatus("running");
         }
-      } catch {
-        // ignore
       }
-    })();
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!job || (job.type !== "compose" && job.type !== "project")) return;
+    void reconcileDeployStatus(job.id);
+
+    const handleFocus = () => void reconcileDeployStatus(job.id);
+    window.addEventListener("focus", handleFocus);
     return () => {
-      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
     };
-  }, [job]);
+  }, [job, reconcileDeployStatus]);
 
   const standardResult = useMemo<AnalysisResult | null>(() => {
     if (!job?.result) return null;
@@ -293,22 +306,38 @@ export function ResultsDashboard() {
   const isComposeJob = job?.type === "compose";
   const isProjectJob = job?.type === "project";
 
+  const projectComposeRunnability = useMemo(
+    () => composeRunnabilityEntriesFromProject(projectResult),
+    [projectResult],
+  );
+  const selectedComposeFiles = useMemo(
+    () => ((job?.input_metadata?.selected_compose_files as string[] | undefined) ?? []),
+    [job],
+  );
+  const primaryComposeFile = useMemo(() => {
+    const explicitPrimary = job?.input_metadata?.primary_compose_file;
+    if (typeof explicitPrimary === "string" && explicitPrimary.trim()) {
+      return explicitPrimary;
+    }
+    return selectedComposeFiles[0] ?? null;
+  }, [job, selectedComposeFiles]);
+
   const runnability = useMemo(() => {
-    if (standardResult?.meta?.runnability) return standardResult.meta.runnability;
-    if (projectResult?.meta?.runnability) return projectResult.meta.runnability;
-    if (projectResult) {
-      const mappings = projectResult.service_mappings ?? [];
-      if (mappings.length === 0) return undefined;
-      const allCanRun = mappings.every(m => m.can_run && m.issues.length === 0);
-      return {
-        runnable: allCanRun,
-        reasons: allCanRun
-          ? []
-          : mappings.flatMap(m => m.issues.map(issue => `[${m.service}] ${issue}`)),
-      };
+    if (isComposeJob) {
+      return asRunnabilityMeta(standardResult?.meta?.runnability);
+    }
+    if (isProjectJob) {
+      if (projectResult?.meta?.runnability) {
+        return asRunnabilityMeta(projectResult.meta.runnability);
+      }
+      if (projectComposeRunnability.length === 0) return undefined;
+      const preferred = primaryComposeFile
+        ? projectComposeRunnability.find((entry) => entry.filePath === primaryComposeFile)
+        : undefined;
+      return preferred?.runnability ?? projectComposeRunnability[0]?.runnability;
     }
     return undefined;
-  }, [standardResult, projectResult]);
+  }, [isComposeJob, isProjectJob, standardResult, projectResult, projectComposeRunnability, primaryComposeFile]);
 
   const estimate = standardResult?.meta?.estimate;
   const composeRunnable =
@@ -509,7 +538,7 @@ export function ResultsDashboard() {
                 <Download className="w-4 h-4 mr-2" />
                 Export Report (Markdown)
               </Button>
-              {(isComposeJob || isProjectJob) && (containerStatus === "stopped") && (
+              {(isComposeJob || isProjectJob) && (containerStatus === "stopped" || containerStatus === "stopped_by_user") && (
                 <Button
                   onClick={handleRunContainers}
                   disabled={!composeRunnable}
@@ -521,10 +550,32 @@ export function ResultsDashboard() {
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Play className="w-4 h-4 mr-2" />
-                  Run Containers
+                  {containerStatus === "stopped_by_user" ? "Run Again" : "Run Containers"}
                 </Button>
               )}
-              {(isComposeJob || isProjectJob) && (containerStatus === "exited") && (
+              {(isComposeJob || isProjectJob) && containerStatus === "exited" && runtimeSelfExited && (
+                <>
+                  <Button
+                    onClick={() => job && navigate(`/execution?jobId=${job.id}`)}
+                    variant="outline"
+                    className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    <Terminal className="w-4 h-4 mr-2" />
+                    View Exit Details
+                  </Button>
+                  <Button
+                    onClick={handleRunContainers}
+                    variant="outline"
+                    disabled={!composeRunnable}
+                    title="Containers exited on their own — fix the issue locally and upload a corrected ZIP before running again"
+                    className="border-slate-600 text-slate-400 hover:bg-slate-800"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Run Again
+                  </Button>
+                </>
+              )}
+              {(isComposeJob || isProjectJob) && containerStatus === "exited" && !runtimeSelfExited && (
                 <>
                   <Button
                     onClick={handleRunContainers}
@@ -647,6 +698,28 @@ export function ResultsDashboard() {
           </StaggerList>
         </Card>
 
+        {(isComposeJob || isProjectJob) && containerStatus === "exited" && runtimeSelfExited && (
+          <Card className="p-5 bg-amber-950/20 border-amber-800 mb-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-base font-semibold text-amber-300 mb-1">
+                  Containers exited on their own
+                </h3>
+                <p className="text-amber-200/80 text-sm mb-3">
+                  The containers stopped without a user-initiated stop request — this usually means a startup failure, misconfiguration, or a crash. Running again will likely reproduce the same issue.
+                </p>
+                <p className="text-amber-200/60 text-sm font-medium">Recommended steps:</p>
+                <ol className="text-amber-200/70 text-sm list-decimal list-inside space-y-1 mt-1">
+                  <li>Review the analysis report and address errors/warnings below</li>
+                  <li>Check exit logs in View Exit Details</li>
+                  <li>Fix your project locally and upload a corrected ZIP</li>
+                </ol>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {estimate && (
           <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
             <h3 className="text-lg font-semibold text-white mb-2">
@@ -717,59 +790,10 @@ export function ResultsDashboard() {
           </Card>
         )}
 
-        {(isComposeJob || isProjectJob) && (
-          <Card className="p-5 bg-slate-900 border-slate-800 mb-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-1">
-                  Deploy Runnability
-                </h3>
-                <p className="text-sm text-slate-400">
-                  Strict precheck rules decide whether the stack can be deployed.
-                </p>
-              </div>
-              <Badge
-                className={
-                  composeRunnable
-                    ? "bg-green-500/20 text-green-400 border-green-500/30"
-                    : "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                }
-              >
-                {composeRunnable ? "Runnable" : "Blocked"}
-              </Badge>
-            </div>
-            {!composeRunnable && (
-              <ul className="mt-4 space-y-2 text-sm text-slate-300 list-disc list-inside">
-                {(runnability?.reasons ?? [
-                  "No runnability metadata found.",
-                ]).map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-            )}
-            {runnability?.rules && (
-              <details className="mt-4">
-                <summary className="cursor-pointer text-xs text-slate-400">
-                  Inspect runnability rules
-                </summary>
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                  {Object.entries(runnability.rules).map(([rule, passed]) => (
-                    <div
-                      key={rule}
-                      className={`flex items-center gap-2 p-2 rounded border ${
-                        passed
-                          ? "border-green-500/30 bg-green-500/5 text-green-300"
-                          : "border-amber-500/30 bg-amber-500/5 text-amber-300"
-                      }`}
-                    >
-                      <span className="font-mono truncate">{rule}</span>
-                      <span className="ml-auto">{passed ? "pass" : "fail"}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )}
-          </Card>
+        {isComposeJob && (
+          <div className="mb-6">
+            <RunnabilityDetailCard title="Deploy Runnability" runnability={runnability} />
+          </div>
         )}
 
         {isProjectJob &&
@@ -871,7 +895,13 @@ export function ResultsDashboard() {
           </Card>
         )}
 
-        {isProjectJob && projectResult && <ProjectResultsSection result={projectResult} job={job} />}
+        {isProjectJob && projectResult && (
+          <ProjectResultsSection
+            result={projectResult}
+            job={job}
+            deployComposePath={primaryComposeFile}
+          />
+        )}
 
         {standardResult && (
           <Tabs defaultValue="all" className="mb-6">
@@ -963,6 +993,68 @@ function ServiceMappingCard({ mapping }: { mapping: ServiceBuildMapping }) {
         </p>
       ))}
     </div>
+  );
+}
+
+function RunnabilityDetailCard({
+  title,
+  runnability,
+  noMetadataReason = "No runnability metadata found.",
+}: {
+  title: string;
+  runnability?: RunnabilityMeta;
+  noMetadataReason?: string;
+}) {
+  const isRunnable = runnability?.runnable === true;
+  return (
+    <Card className="p-5 bg-slate-900 border-slate-800">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white mb-1">{title}</h3>
+          <p className="text-sm text-slate-400">
+            Strict precheck rules decide whether the stack can be deployed.
+          </p>
+        </div>
+        <Badge
+          className={
+            isRunnable
+              ? "bg-green-500/20 text-green-400 border-green-500/30"
+              : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+          }
+        >
+          {isRunnable ? "Runnable" : "Blocked"}
+        </Badge>
+      </div>
+      {!isRunnable && (
+        <ul className="mt-4 space-y-2 text-sm text-slate-300 list-disc list-inside">
+          {(runnability?.reasons ?? [noMetadataReason]).map((reason, idx) => (
+            <li key={idx}>{reason}</li>
+          ))}
+        </ul>
+      )}
+      {runnability?.rules && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs text-slate-400">
+            Inspect runnability rules
+          </summary>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            {Object.entries(runnability.rules).map(([rule, passed]) => (
+              <div
+                key={rule}
+                className={`flex items-center gap-2 p-2 rounded border ${
+                  passed
+                    ? "border-green-500/30 bg-green-500/5 text-green-300"
+                    : "border-amber-500/30 bg-amber-500/5 text-amber-300"
+                }`}
+              >
+                <span className="font-mono truncate">{rule}</span>
+                <span className="ml-auto">{passed ? "pass" : "fail"}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </Card>
   );
 }
 
@@ -1137,9 +1229,10 @@ function ImageBuildCard({ build }: { build: ImageBuildResult }) {
 interface ProjectResultsSectionProps {
   result: ProjectAnalysisResult;
   job: Job;
+  deployComposePath: string | null;
 }
 
-function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
+function ProjectResultsSection({ result, job, deployComposePath }: ProjectResultsSectionProps) {
   const perFileResults = result.per_file_results ?? [];
   const serviceMappings = result.service_mappings ?? [];
   const projectSummary = result.project_summary;
@@ -1148,6 +1241,7 @@ function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
 
   const dfResults = perFileResults.filter(r => r.file_type === "dockerfile");
   const cfResults = perFileResults.filter(r => r.file_type === "compose");
+  const composeRunnabilityEntries = composeRunnabilityEntriesFromProject(result);
 
   const stacks = (job.input_metadata?.stacks as string[] | undefined) ?? [];
 
@@ -1188,6 +1282,25 @@ function ProjectResultsSection({ result, job }: ProjectResultsSectionProps) {
             <p className="text-xs text-slate-500">Best: <span className="font-mono text-slate-300">{projectSummary.best_score_file}</span></p>
           )}
         </Card>
+      )}
+
+      {composeRunnabilityEntries.length > 0 && (
+        <div className="space-y-3">
+          {composeRunnabilityEntries.map(({ filePath, runnability }) => (
+            <RunnabilityDetailCard
+              key={filePath}
+              title={`Deploy Runnability - ${filePath}`}
+              runnability={runnability}
+              noMetadataReason={`No runnability metadata found for ${filePath}.`}
+            />
+          ))}
+          {deployComposePath && (
+            <p className="text-xs text-slate-500">
+              Deploy uses primary compose file:{" "}
+              <span className="font-mono text-slate-300">{deployComposePath}</span>
+            </p>
+          )}
+        </div>
       )}
 
       {/* Per-file analysis tabs */}

@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import {
@@ -9,11 +9,13 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Clock,
   FileCode,
   FileText,
   Loader2,
   Package,
   Play,
+  Timer,
   Wrench,
   X,
 } from "lucide-react";
@@ -24,7 +26,7 @@ import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { MotionPage, StaggerList, StaggerItem } from "../components/motion";
 import { dragActiveVariants, dragActiveTransition } from "../components/motion/variants";
-import { ApiError, project, type ProjectScanResponse } from "../utils/api";
+import { ApiError, project, type ProjectDraft, type ProjectScanResponse } from "../utils/api";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,6 +39,25 @@ function formatBytes(bytes: number): string {
   let u = 0;
   while (v > 1024 && u < units.length - 1) { v /= 1024; u++; }
   return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
+}
+
+function formatRelativeTime(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 48) return "Yesterday";
+  return new Date(isoString).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatExpiresIn(seconds: number): string {
+  if (seconds <= 0) return "Expired";
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `${mins}m left`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs}h ${remMins}m left` : `${hrs}h left`;
 }
 
 type Step = "upload" | "scanning" | "review" | "plan" | "confirming";
@@ -57,6 +78,7 @@ const STEPS: Step[] = ["upload", "review", "plan"];
 
 export function ProjectUpload() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const reducedMotion = useReducedMotion();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,6 +95,126 @@ export function ProjectUpload() {
   const [analysisMode, setAnalysisMode] = useState<"auto" | "dockerfile-only" | "compose-only" | "full-project">("auto");
   const [buildImages, setBuildImages] = useState(false);
   const [runAfter, setRunAfter] = useState(false);
+
+  // Draft projects (scanned but not yet analyzed)
+  const [drafts, setDrafts] = useState<ProjectDraft[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(true);
+  // Expiry countdown for the active draft (seconds)
+  const [expiresInSeconds, setExpiresInSeconds] = useState<number | null>(null);
+  // Debounce timer ref for auto-saving draft progress
+  const saveDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Fetch drafts on mount + handle ?resume=<id> ──────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await project.drafts();
+        if (!cancelled) setDrafts(data);
+      } catch {
+        // non-fatal — drafts section just won't show
+      } finally {
+        if (!cancelled) setDraftsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const resumeId = searchParams.get("resume");
+    if (!resumeId) return;
+    // Only auto-resume once the drafts fetch has settled (or if not needed)
+    resumeDraft(resumeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Resume a draft by fetching its stored scan result ────────────────────
+
+  const resumeDraft = async (projectId: string) => {
+    setError(null);
+    setStep("scanning");
+    try {
+      const result = await project.getScan(projectId);
+      applyScanResult(result);
+    } catch (err) {
+      const isExpired = err instanceof ApiError && err.status === 410;
+      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to load draft.";
+      if (isExpired) {
+        toast.error("This draft expired. Upload the archive again to continue.");
+      } else {
+        toast.error(msg);
+      }
+      setError(isExpired ? null : msg);
+      setStep("upload");
+      setDrafts(prev => prev.filter(d => d.project_id !== projectId));
+    }
+  };
+
+  const applyScanResult = (result: ProjectScanResponse) => {
+    setScanResult(result);
+    setExpiresInSeconds(result.expires_in_seconds ?? null);
+
+    const sel = result.saved_selections;
+    if (sel) {
+      // Restore previously-saved selections
+      setSelectedDockerfiles(sel.selected_dockerfiles);
+      setSelectedCompose(sel.selected_compose_files);
+      setPrimaryCompose(sel.primary_compose_file ?? null);
+      const validModes = ["auto", "dockerfile-only", "compose-only", "full-project"] as const;
+      setAnalysisMode((validModes as readonly string[]).includes(sel.analysis_mode) ? sel.analysis_mode : "auto");
+      setBuildImages(sel.build_selected_images);
+      setRunAfter(sel.run_after_analysis);
+      setStep(sel.workflow_step);
+    } else {
+      // Fresh scan defaults
+      const rec = result.recommendation;
+      setSelectedDockerfiles(rec.primary_dockerfile ? [rec.primary_dockerfile] : result.detected.dockerfiles.slice(0, 1));
+      setSelectedCompose(rec.primary_compose_file ? [rec.primary_compose_file] : result.detected.compose_files.slice(0, 1));
+      setPrimaryCompose(rec.primary_compose_file ?? result.detected.compose_files[0] ?? null);
+      const validModes = ["auto", "dockerfile-only", "compose-only", "full-project"] as const;
+      const safeMode = (validModes as readonly string[]).includes(rec.analysis_mode)
+        ? (rec.analysis_mode as typeof analysisMode)
+        : "auto";
+      setAnalysisMode(safeMode);
+      setStep(result.workflow_step ?? "review");
+    }
+  };
+
+  // ── Persist draft progress to the server ─────────────────────────────────
+
+  const saveDraftProgress = useCallback(async (
+    overrideStep?: "review" | "plan",
+    overrideSelections?: {
+      dockerfiles?: string[];
+      compose?: string[];
+      primaryCompose?: string | null;
+      mode?: typeof analysisMode;
+      buildImages?: boolean;
+      runAfter?: boolean;
+    },
+  ) => {
+    if (!scanResult) return;
+    const targetStep = overrideStep ?? (step === "review" || step === "plan" ? step : "review") as "review" | "plan";
+    try {
+      await project.saveDraft(scanResult.project_id, {
+        workflow_step: targetStep,
+        selected_dockerfiles: overrideSelections?.dockerfiles ?? selectedDockerfiles,
+        selected_compose_files: overrideSelections?.compose ?? selectedCompose,
+        primary_compose_file: overrideSelections?.primaryCompose !== undefined ? overrideSelections.primaryCompose : primaryCompose,
+        analysis_mode: overrideSelections?.mode ?? analysisMode,
+        build_selected_images: overrideSelections?.buildImages ?? buildImages,
+        run_after_analysis: overrideSelections?.runAfter ?? runAfter,
+      });
+    } catch {
+      // Non-fatal: draft save failure shouldn't interrupt the user
+    }
+  }, [scanResult, step, selectedDockerfiles, selectedCompose, primaryCompose, analysisMode, buildImages, runAfter]);
+
+  const scheduleDraftSave = useCallback(() => {
+    if (saveDraftTimerRef.current) clearTimeout(saveDraftTimerRef.current);
+    saveDraftTimerRef.current = setTimeout(() => { void saveDraftProgress(); }, 800);
+  }, [saveDraftProgress]);
 
   // ── Drag & drop ──────────────────────────────────────────────────────────
 
@@ -99,20 +241,9 @@ export function ProjectUpload() {
 
     try {
       const result = await project.scan(file);
-      setScanResult(result);
-      // Pre-select per recommendation
-      const rec = result.recommendation;
-      setSelectedDockerfiles(rec.primary_dockerfile ? [rec.primary_dockerfile] : result.detected.dockerfiles.slice(0, 1));
-      setSelectedCompose(rec.primary_compose_file ? [rec.primary_compose_file] : result.detected.compose_files.slice(0, 1));
-      setPrimaryCompose(rec.primary_compose_file ?? result.detected.compose_files[0] ?? null);
-      // Set mode
-      const mode = rec.analysis_mode;
-      const validModes = ["auto", "dockerfile-only", "compose-only", "full-project"] as const;
-      const safeMode = (validModes as readonly string[]).includes(mode)
-        ? (mode as typeof analysisMode)
-        : "auto";
-      setAnalysisMode(safeMode);
-      setStep("review");
+      applyScanResult(result);
+      // Remove any draft with the same archive name now that a fresh scan was done
+      setDrafts(prev => prev.filter(d => d.archive_name !== result.archive_name));
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Scan failed.";
       setError(msg);
@@ -156,9 +287,11 @@ export function ProjectUpload() {
   // ── Toggle helpers ────────────────────────────────────────────────────────
 
   const toggleDockerfile = (df: string) => {
-    setSelectedDockerfiles(prev =>
-      prev.includes(df) ? prev.filter(x => x !== df) : [...prev, df]
-    );
+    setSelectedDockerfiles(prev => {
+      const next = prev.includes(df) ? prev.filter(x => x !== df) : [...prev, df];
+      scheduleDraftSave();
+      return next;
+    });
   };
 
   const toggleCompose = (cf: string) => {
@@ -167,6 +300,7 @@ export function ProjectUpload() {
       if (!next.includes(primaryCompose ?? "")) {
         setPrimaryCompose(next[0] ?? null);
       }
+      scheduleDraftSave();
       return next;
     });
   };
@@ -281,6 +415,71 @@ export function ProjectUpload() {
                   ))}
                 </div>
               </Card>
+
+              {/* ── Continue where you left off ─────────────────────────── */}
+              {!draftsLoading && drafts.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: reducedMotion ? 0 : 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, delay: 0.1 }}
+                  className="mt-8"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <Clock className="w-4 h-4 text-purple-400" />
+                    <h4 className="text-sm font-semibold text-white">Continue where you left off</h4>
+                  </div>
+                  <div className="space-y-2">
+                    {drafts.map(draft => {
+                      const secs = draft.expires_in_seconds ?? 0;
+                      const isLow = secs > 0 && secs < 600;
+                      const stepLabel = draft.workflow_step === "plan" ? "at plan step" : "at review step";
+                      return (
+                        <button
+                          key={draft.project_id}
+                          onClick={() => resumeDraft(draft.project_id)}
+                          className="w-full text-left p-3.5 rounded-lg border border-slate-800 bg-slate-900/60 hover:border-purple-700 hover:bg-purple-950/20 motion-safe:transition-colors group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Archive className="w-4 h-4 text-purple-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-white truncate">{draft.archive_name}</p>
+                                <span className="text-xs text-slate-500 shrink-0">{stepLabel}</span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                {draft.dockerfiles.length > 0 && (
+                                  <span className="text-xs text-blue-400 flex items-center gap-1">
+                                    <FileCode className="w-3 h-3" />
+                                    {draft.dockerfiles.length} Dockerfile{draft.dockerfiles.length !== 1 ? "s" : ""}
+                                  </span>
+                                )}
+                                {draft.compose_files.length > 0 && (
+                                  <span className="text-xs text-green-400 flex items-center gap-1">
+                                    <FileText className="w-3 h-3" />
+                                    {draft.compose_files.length} Compose
+                                  </span>
+                                )}
+                                {draft.stacks.length > 0 && draft.stacks.slice(0, 2).map(s => (
+                                  <Badge key={s} variant="secondary" className="text-xs bg-slate-800 text-slate-400 border-slate-700 px-1.5 py-0">{s}</Badge>
+                                ))}
+                                <span className={`text-xs flex items-center gap-1 ml-auto ${isLow ? "text-orange-400" : "text-slate-500"}`}>
+                                  <Timer className="w-3 h-3" />
+                                  {secs > 0 ? formatExpiresIn(secs) : formatRelativeTime(draft.created_at)}
+                                </span>
+                              </div>
+                            </div>
+                            <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-purple-400 shrink-0 motion-safe:transition-colors" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-slate-600 mt-3 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" />
+                    Drafts are kept for 1 hour from upload and then removed automatically.
+                  </p>
+                </motion.div>
+              )}
             </motion.div>
           )}
 
@@ -307,7 +506,7 @@ export function ProjectUpload() {
               transition={{ duration: 0.22 }}
             >
               {/* Archive info */}
-              <Card className="p-4 bg-slate-900 border-slate-800 mb-6 flex items-center gap-3">
+              <Card className="p-4 bg-slate-900 border-slate-800 mb-4 flex items-center gap-3">
                 <Archive className="w-5 h-5 text-purple-400 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium truncate">{scanResult.archive_name}</p>
@@ -317,6 +516,20 @@ export function ProjectUpload() {
                   <X className="w-4 h-4" />
                 </button>
               </Card>
+
+              {/* Expiry notice */}
+              {expiresInSeconds !== null && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-6 ${
+                  expiresInSeconds < 600
+                    ? "bg-orange-950/40 border border-orange-800/50 text-orange-300"
+                    : "bg-slate-800/60 border border-slate-700/50 text-slate-400"
+                }`}>
+                  <Timer className="w-3.5 h-3.5 shrink-0" />
+                  {expiresInSeconds < 600
+                    ? `Draft expires in ${formatExpiresIn(expiresInSeconds)} — start analysis soon to avoid re-uploading.`
+                    : `Progress saved for ${formatExpiresIn(expiresInSeconds)} from upload. After that you'll need to upload again.`}
+                </div>
+              )}
 
               {/* Warnings */}
               {scanResult.warnings.length > 0 && (
@@ -380,7 +593,10 @@ export function ProjectUpload() {
               {scanResult.detected.compose_files.length > 0 && (
                 <div className="mb-6">
                   <p className="text-slate-400 text-xs mb-3 uppercase tracking-wider">
-                    Compose files <span className="text-slate-600">({scanResult.detected.compose_files.length} found)</span>
+                    Compose files for deploy/run <span className="text-slate-600">({scanResult.detected.compose_files.length} found)</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mb-3">
+                    All detected compose files are always analyzed. Your selection here controls which compose file(s) are available for deploy.
                   </p>
                   <StaggerList className="space-y-2">
                     {scanResult.detected.compose_files.map(cf => (
@@ -459,7 +675,7 @@ export function ProjectUpload() {
                   <ChevronLeft className="w-4 h-4 mr-1" /> Back
                 </Button>
                 <Button
-                  onClick={() => setStep("plan")}
+                  onClick={() => { void saveDraftProgress("plan"); setStep("plan"); }}
                   disabled={selectedDockerfiles.length === 0 && selectedCompose.length === 0}
                   className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
                 >
@@ -476,17 +692,35 @@ export function ProjectUpload() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22 }}
             >
+              {/* Expiry notice */}
+              {expiresInSeconds !== null && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-5 ${
+                  expiresInSeconds < 600
+                    ? "bg-orange-950/40 border border-orange-800/50 text-orange-300"
+                    : "bg-slate-800/60 border border-slate-700/50 text-slate-400"
+                }`}>
+                  <Timer className="w-3.5 h-3.5 shrink-0" />
+                  {expiresInSeconds < 600
+                    ? `Draft expires in ${formatExpiresIn(expiresInSeconds)} — start analysis soon to avoid re-uploading.`
+                    : `Progress saved for ${formatExpiresIn(expiresInSeconds)} from upload. After that you'll need to upload again.`}
+                </div>
+              )}
               <div className="space-y-4 mb-6">
+                <Card className="p-4 bg-slate-900 border-slate-800">
+                  <p className="text-xs text-slate-300">
+                    All detected compose files will be analyzed. Select compose files in the review step to decide what can be deployed after analysis.
+                  </p>
+                </Card>
                 {/* Analysis mode */}
                 <Card className="p-5 bg-slate-900 border-slate-800">
                   <p className="text-sm font-semibold text-white mb-3">Analysis mode</p>
                   <div className="space-y-2">
                     {(
                       [
-                        { value: "auto", label: "Auto (recommended)", desc: "Analyzes all selected files" },
+                        { value: "auto", label: "Auto (recommended)", desc: "Analyzes selected Dockerfiles and all detected Compose files" },
                         { value: "dockerfile-only", label: "Dockerfiles only", desc: "Only analyze selected Dockerfiles", disabled: selectedDockerfiles.length === 0 },
-                        { value: "compose-only", label: "Compose files only", desc: "Only analyze selected Compose files", disabled: selectedCompose.length === 0 },
-                        { value: "full-project", label: "Full project", desc: "All Dockerfiles + Compose + mapping", disabled: selectedDockerfiles.length === 0 || selectedCompose.length === 0 },
+                        { value: "compose-only", label: "Compose files only", desc: "Analyze all detected Compose files", disabled: scanResult.detected.compose_files.length === 0 },
+                        { value: "full-project", label: "Full project", desc: "Selected Dockerfiles + all detected Compose + mapping", disabled: selectedDockerfiles.length === 0 || scanResult.detected.compose_files.length === 0 },
                       ] as { value: typeof analysisMode; label: string; desc: string; disabled?: boolean }[]
                     ).map(opt => (
                       <label
@@ -505,7 +739,7 @@ export function ProjectUpload() {
                           value={opt.value}
                           checked={analysisMode === opt.value}
                           disabled={opt.disabled}
-                          onChange={() => !opt.disabled && setAnalysisMode(opt.value)}
+                          onChange={() => { if (!opt.disabled) { setAnalysisMode(opt.value); scheduleDraftSave(); } }}
                           className="hidden"
                         />
                         <div className={`w-4 h-4 rounded-full border mt-0.5 flex items-center justify-center shrink-0 ${
@@ -535,7 +769,7 @@ export function ProjectUpload() {
                         type="checkbox"
                         checked={buildImages}
                         disabled={selectedDockerfiles.length === 0}
-                        onChange={e => setBuildImages(e.target.checked)}
+                        onChange={e => { setBuildImages(e.target.checked); scheduleDraftSave(); }}
                         className="hidden"
                       />
                       <div className={`w-4 h-4 rounded border flex items-center justify-center mt-0.5 shrink-0 ${
@@ -561,7 +795,7 @@ export function ProjectUpload() {
                         type="checkbox"
                         checked={runAfter}
                         disabled={selectedCompose.length === 0}
-                        onChange={e => setRunAfter(e.target.checked)}
+                        onChange={e => { setRunAfter(e.target.checked); scheduleDraftSave(); }}
                         className="hidden"
                       />
                       <div className={`w-4 h-4 rounded border flex items-center justify-center mt-0.5 shrink-0 ${
@@ -596,7 +830,7 @@ export function ProjectUpload() {
               </div>
 
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setStep("review")} className="border-slate-700 text-slate-300">
+                <Button variant="outline" onClick={() => { void saveDraftProgress("review"); setStep("review"); }} className="border-slate-700 text-slate-300">
                   <ChevronLeft className="w-4 h-4 mr-1" /> Back
                 </Button>
                 <Button

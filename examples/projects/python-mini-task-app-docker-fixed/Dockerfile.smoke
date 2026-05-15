@@ -1,0 +1,8 @@
+# Smoke-test image: waits for the web service and validates important endpoints.
+FROM python:3.12-slim
+
+ENV TARGET_URL=http://web:5000
+WORKDIR /smoke
+
+COPY docker/smoke_test.py ./smoke_test.py
+CMD ["python", "smoke_test.py"]
