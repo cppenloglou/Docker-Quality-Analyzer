@@ -223,7 +223,7 @@ def _is_ipv4(value: str) -> bool:
 
 def _resolve_dind_ip() -> str | None:
     # Prefer direct inspect of the known DinD container names.
-    for candidate in ("docker-platform-dind", "dind"):
+    for candidate in ("docker-platform-dind-1", "docker-platform-dind", "dind", "docker"):
         try:
             proc = subprocess.run(
                 [
@@ -261,7 +261,7 @@ def _resolve_dind_ip() -> str | None:
                 pass
 
     # Final fallback for API container runtime: resolve DinD service names by Docker DNS.
-    for candidate in ("dind", "docker-platform-dind"):
+    for candidate in ("docker", "dind", "docker-platform-dind", "docker-platform-dind-1"):
         try:
             resolved = socket.gethostbyname(candidate)
             if resolved and _is_ipv4(resolved):

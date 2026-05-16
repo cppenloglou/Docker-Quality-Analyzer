@@ -571,7 +571,7 @@ export const dockerfile = {
   },
 };
 
-export const dockcompose = {
+export const compose = {
   async analyze(file: File): Promise<JobEnqueueResponse> {
     const formData = new FormData();
     formData.append("file", file);
@@ -605,6 +605,9 @@ export const dockcompose = {
     });
   },
 };
+
+// Backward-compatible alias while older imports are migrated.
+export const dockcompose = compose;
 
 // ---------- project types ----------
 

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+# shellcheck source=scripts/common.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh" "$@"
 
-if [[ "${1-}" == "--wipe" ]]; then
-  echo "[stop] Stopping stack and removing volumes"
-  docker compose down -v --remove-orphans
+if [[ " $* " == *" --wipe "* ]]; then
+  echo "[stop] Stopping $MODE stack and removing volumes"
+  compose_cmd down -v --remove-orphans
 else
-  echo "[stop] Stopping stack"
-  docker compose down --remove-orphans
+  echo "[stop] Stopping $MODE stack"
+  compose_cmd down --remove-orphans
 fi

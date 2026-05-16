@@ -303,7 +303,9 @@ def test_resolve_dind_ip_falls_back_to_service_dns(monkeypatch):
     monkeypatch.setattr("app.api.routers.compose.os.getenv", lambda *args, **kwargs: "")
     monkeypatch.setattr(
         "app.api.routers.compose.socket.gethostbyname",
-        lambda host: "172.18.0.4" if host in ("dind", "docker-platform-dind") else "127.0.0.1",
+        lambda host: "172.18.0.4"
+        if host in ("docker", "dind", "docker-platform-dind", "docker-platform-dind-1")
+        else "127.0.0.1",
     )
 
     assert compose_router._resolve_dind_ip() == "172.18.0.4"

@@ -1,0 +1,203 @@
+name: docker-platform
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+
+x-app-runtime: &app-runtime
+  init: true
+  restart: unless-stopped
+  logging: *default-logging
+  secrets:
+    - postgres_password
+    - jwt_secret
+  volumes:
+    - uploads_data:/app/storage/uploads
+  environment:
+    APP_ENV: ${APP_ENV:-dev}
+    REDIS_URL: redis://redis:6379/0
+
+services:
+  api:
+    build: *backend-build
+    image: docker-platform-api:local
+    <<: *app-runtime
+    command:
+      - sh
+      - -lc
+      - |
+        set -euo pipefail
+        POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)"
+        JWT_SECRET_KEY="$(cat /run/secrets/jwt_secret)"
+        export JWT_SECRET_KEY
+        export DATABASE_URL="postgresql+asyncpg://postgres:$${POSTGRES_PASSWORD}@postgres:5432/docker_platform"
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  worker:
+    build: *backend-build
+    image: docker-platform-worker:local
+    <<: *app-runtime
+    command:
+      - sh
+      - -lc
+      - |
+        set -euo pipefail
+        POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)"
+        JWT_SECRET_KEY="$(cat /run/secrets/jwt_secret)"
+        export JWT_SECRET_KEY
+        export DATABASE_URL="postgresql+asyncpg://postgres:$${POSTGRES_PASSWORD}@postgres:5432/docker_platform"
+        exec arq app.workers.worker.WorkerSettings
+    depends_on:
+      dind:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      REDIS_URL: redis://redis:6379/0
+      DOCKER_HOST: tcp://docker:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - uploads_data:/app/storage/uploads
+      - dind_certs:/certs/client:ro
+    networks:
+      - backend
+      - docker_engine
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    image: docker-platform-frontend:local
+    init: true
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - public
+      - backend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-docker_platform}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+      - data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dind:
+    build:
+      context: .
+      dockerfile: docker/dind/Dockerfile
+    image: docker-platform-dind:local
+    privileged: true
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    command:
+      - "--storage-driver=overlay2"
+      - "--dns=1.1.1.1"
+      - "--dns=8.8.8.8"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    volumes:
+      - dind_data:/var/lib/docker
+      - dind_certs:/certs/client
+    networks:
+      backend: {}
+      docker_engine:
+        aliases:
+          - docker
+    healthcheck:
+      test: ["CMD-SHELL", "docker info >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+  dind_data:
+  dind_certs:
+
+networks:
+  public:
+  backend:
+    internal: true
+  data:
+    internal: true
+  docker_engine: {}
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt

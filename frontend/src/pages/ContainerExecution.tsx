@@ -253,7 +253,7 @@ export function ContainerExecution() {
             tone: "warning",
           });
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           const msg = err instanceof ApiError ? err.message : "Cleanup request failed";
           pushLog({ message: msg, tone: "error" });
         });
