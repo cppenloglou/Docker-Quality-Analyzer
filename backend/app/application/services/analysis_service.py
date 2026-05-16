@@ -14,6 +14,14 @@ from app.plugins.base import BasePlugin
 from app.plugins.registry import load_plugins
 
 
+def _hadolint_doc_url(code: str) -> str | None:
+    if code.startswith("DL"):
+        return f"https://github.com/hadolint/hadolint/wiki/{code}"
+    if code.startswith("SC"):
+        return f"https://github.com/koalaman/shellcheck/wiki/{code}"
+    return None
+
+
 def _rule_code_and_doc_url(raw: dict[str, Any]) -> tuple[str, str | None]:
     field = raw.get("code", raw.get("rule"))
     if isinstance(field, dict):
@@ -21,7 +29,8 @@ def _rule_code_and_doc_url(raw: dict[str, Any]) -> tuple[str, str | None]:
         url = field.get("url")
         return code, str(url) if url else None
     if field is not None and field != "":
-        return str(field), None
+        code = str(field)
+        return code, _hadolint_doc_url(code)
     return "GEN000", None
 
 

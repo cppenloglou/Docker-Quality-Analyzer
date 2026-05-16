@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { FolderSearch, ArrowLeft } from "lucide-react";
 
 import { Layout } from "../components/Layout";
 import { ProgressStep } from "../components/ProgressStep";
@@ -178,7 +177,6 @@ export function AnalysisProgress() {
   const queryJobId = searchParams.get("jobId");
 
   const [isProjectJob, setIsProjectJob] = useState(false);
-  const [isScannedOnly, setIsScannedOnly] = useState(false);
   const [steps, setSteps] = useState<AnalysisStep[]>(() =>
     BASE_STEPS.map((step) => ({ ...step })),
   );
@@ -309,17 +307,6 @@ export function AnalysisProgress() {
           if (reconciled.type === "project") {
             setIsProjectJob(true);
             setSteps(PROJECT_CORE_STEPS.map((s) => ({ ...s })));
-          }
-          // Guard: scanned jobs have no worker — show CTA view instead of progress
-          if (reconciled.status === "scanned") {
-            setIsScannedOnly(true);
-            return;
-          }
-          // Also guard on analysis_confirmed=false in metadata
-          const meta = reconciled.input_metadata as Record<string, unknown>;
-          if (reconciled.type === "project" && meta?.analysis_confirmed === false) {
-            setIsScannedOnly(true);
-            return;
           }
           if (reconciled.status === "done") {
             handleCompleted(reconciled);
@@ -528,45 +515,6 @@ export function AnalysisProgress() {
     if (jobStatus) return progressForStatus(jobStatus, completed);
     return progressValue;
   }, [steps, jobStatus, progressValue]);
-
-  if (isScannedOnly) {
-    return (
-      <Layout>
-        <MotionPage>
-          <div className="max-w-2xl mx-auto text-center py-16">
-            <div className="flex justify-center mb-6">
-              <div className="p-4 bg-blue-500/10 rounded-2xl">
-                <FolderSearch className="w-12 h-12 text-blue-400" />
-              </div>
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-3">Project Scanned</h1>
-            <p className="text-slate-400 mb-2">
-              This project has been scanned but analysis has not started yet.
-            </p>
-            <p className="text-slate-500 text-sm mb-8">
-              Return to the project upload page to select files and confirm analysis.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <Button
-                onClick={() => navigate(jobId ? `/project-upload?resume=${jobId}` : "/project-upload")}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                Go to Project Upload
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => navigate("/history")}
-                className="border-slate-700 text-slate-300"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to History
-              </Button>
-            </div>
-          </div>
-        </MotionPage>
-      </Layout>
-    );
-  }
 
   return (
     <Layout>

@@ -60,8 +60,6 @@ function statusColor(status: Job["status"]) {
       return "bg-slate-700/40 text-slate-300 border-slate-600";
     case "failed":
       return "bg-red-500/20 text-red-300 border-red-500/30";
-    case "scanned":
-      return "bg-purple-500/20 text-purple-300 border-purple-500/30";
   }
 }
 
@@ -205,11 +203,6 @@ export function History() {
   }, [historyItems]);
 
   const openJob = (item: HistoryItem) => {
-    if (item.status === "scanned") {
-      // Scanned-only project jobs — route back to project upload to resume review
-      navigate(`/project-upload?resume=${item.id}`);
-      return;
-    }
     if (item.status === "done" || item.status === "failed") {
       navigate(`/results?jobId=${item.id}`);
     } else {
@@ -367,7 +360,7 @@ export function History() {
                           {item.jobType}
                         </Badge>
                         <Badge className={statusColor(item.status)}>
-                          {item.status === "scanned" ? "Scanned — not analyzed" : item.status}
+                          {item.status}
                         </Badge>
                         {runningJobs.has(item.id) && (
                           <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-1">

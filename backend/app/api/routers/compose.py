@@ -1,6 +1,11 @@
 import json
+import os
+import re
+import socket
+import subprocess
 import uuid
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -200,12 +205,70 @@ class DeployStatusResponse(BaseModel):
     can_retry_runtime: bool = True
 
 
+class DindIpResponse(BaseModel):
+    dind_ip: str | None = None
+
+
 def deploy_state_redis_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
     return f"deploy:{user_id}:{job_id}"
 
 
 def deploy_stop_redis_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
     return f"deploy-stop:{user_id}:{job_id}"
+
+
+def _is_ipv4(value: str) -> bool:
+    return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", value))
+
+
+def _resolve_dind_ip() -> str | None:
+    # Prefer direct inspect of the known DinD container names.
+    for candidate in ("docker-platform-dind", "dind"):
+        try:
+            proc = subprocess.run(
+                [
+                    "docker",
+                    "inspect",
+                    candidate,
+                    "--format",
+                    "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            if proc.returncode == 0:
+                ip = proc.stdout.strip()
+                if ip and _is_ipv4(ip):
+                    return ip
+        except Exception:
+            continue
+
+    # Fallback to DOCKER_HOST host resolution.
+    docker_host = os.getenv("DOCKER_HOST", "")
+    if docker_host.startswith("tcp://"):
+        parsed = urlparse(docker_host)
+        host = (parsed.hostname or "").strip()
+        if host:
+            if _is_ipv4(host):
+                return host
+            try:
+                resolved = socket.gethostbyname(host)
+                if resolved and _is_ipv4(resolved):
+                    return resolved
+            except Exception:
+                pass
+
+    # Final fallback for API container runtime: resolve DinD service names by Docker DNS.
+    for candidate in ("dind", "docker-platform-dind"):
+        try:
+            resolved = socket.gethostbyname(candidate)
+            if resolved and _is_ipv4(resolved):
+                return resolved
+        except Exception:
+            continue
+    return None
 
 
 def _recompute_container_counts(containers: list[ContainerStateInfo]) -> tuple[int, int, int]:
@@ -320,3 +383,9 @@ async def get_deploy_status(
     current_user: UserModel = Depends(get_current_user),
 ) -> DeployStatusResponse:
     return await compute_deploy_status(current_user.id, job_id)
+
+
+@router.get("/deploy/dind-ip", response_model=DindIpResponse)
+async def get_dind_ip(current_user: UserModel = Depends(get_current_user)) -> DindIpResponse:
+    _ = current_user
+    return DindIpResponse(dind_ip=_resolve_dind_ip())

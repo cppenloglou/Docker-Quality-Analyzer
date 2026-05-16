@@ -403,6 +403,50 @@ async def test_stream_metrics_sets_self_exit_markers():
 
 
 @pytest.mark.asyncio
+async def test_stream_metrics_user_stop_keeps_user_stop_semantics():
+    """When user stop is requested, _stream_metrics should not emit runtime_stopped or set self-exit markers."""
+    user_id = _uid()
+    job_id = _uid()
+
+    fake_gateway = MagicMock()
+    fake_gateway.inspect_container_state = AsyncMock(return_value={"status": "running"})
+    fake_gateway.inspect_container_metrics = AsyncMock(side_effect=docker.errors.NotFound("gone"))
+    fake_gateway.inspect_container_final_state = AsyncMock(
+        return_value={"container_id": "c1", "exit_code": 0, "oom_killed": False, "last_logs": []}
+    )
+
+    published_events: list[Any] = []
+    redis_boxes: dict[str, Any] = {"stop_requested_by_user": True, "stopped_by_user": True}
+
+    async def capture(event):
+        published_events.append(event)
+
+    async def fake_get_state(uid, jid):
+        return dict(redis_boxes)
+
+    async def fake_set_state(uid, jid, state):
+        redis_boxes.update(state)
+
+    with (
+        patch("app.workers.tasks.DockerGateway", return_value=fake_gateway),
+        patch("app.workers.tasks.publish_event", side_effect=capture),
+        patch("app.workers.tasks._is_stop_requested", new=AsyncMock(return_value=False)),
+        patch("app.workers.tasks._get_deploy_state", side_effect=fake_get_state),
+        patch("app.workers.tasks._set_deploy_state", side_effect=fake_set_state),
+    ):
+        from app.workers.tasks import _stream_metrics
+        await _stream_metrics(user_id, job_id, ["c1"])
+
+    event_names = [e.event_name for e in published_events]
+    assert "container.exited" in event_names
+    assert "project.runtime_stopped" not in event_names
+    exited_event = next(e for e in published_events if e.event_name == "container.exited")
+    assert exited_event.payload.get("stop_requested_by_user") is True
+    assert redis_boxes.get("explicit_runtime_state") != "exited"
+    assert redis_boxes.get("exit_reason") != "all_containers_exited"
+
+
+@pytest.mark.asyncio
 async def test_deploy_status_differentiates_stopped_by_user_vs_self_exit():
     """compute_deploy_status must return stopped_by_user for user stops and can_retry_runtime accordingly."""
     import json

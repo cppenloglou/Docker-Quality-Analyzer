@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -44,6 +44,7 @@ import {
   ApiError,
   compose as composeApi,
   jobs as jobsApi,
+  project as projectApi,
   type AnalysisResult,
   type ImageBuildResult,
   type Issue,
@@ -144,6 +145,15 @@ export function ResultsDashboard() {
     return "stopped";
   });
   const [runtimeSelfExited, setRuntimeSelfExited] = useState(false);
+  const [requiresResubmit, setRequiresResubmit] = useState(false);
+  const unmountedRef = useRef(false);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,6 +210,12 @@ export function ResultsDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryJobId]);
 
+  useEffect(() => {
+    if (!job) return;
+    const key = `dqa:resubmitRequired:${job.id}`;
+    setRequiresResubmit(sessionStorage.getItem(key) === "1");
+  }, [job?.id, job]);
+
   const reconcileDeployStatus = useCallback(async (jobId: string) => {
     try {
       const status = await composeApi.deployStatus(jobId);
@@ -226,6 +242,12 @@ export function ResultsDashboard() {
         return;
       }
       if (rs === "exited" || rs === "failed" || rs === "cleanup_completed") {
+        if (status.stopped_by_user || status.stop_reason === "user_requested") {
+          setContainerStatus("stopped_by_user");
+          setRuntimeSelfExited(false);
+          sessionStorage.removeItem("dqa:containerStatus");
+          return;
+        }
         setContainerStatus("exited");
         setRuntimeSelfExited(!status.stopped_by_user);
         sessionStorage.removeItem("dqa:containerStatus");
@@ -233,10 +255,13 @@ export function ResultsDashboard() {
       }
       if (rs === "running") {
         setContainerStatus("running");
+        sessionStorage.removeItem("dqa:containerStatus");
       } else if (rs === "partial") {
         setContainerStatus("partial");
+        sessionStorage.removeItem("dqa:containerStatus");
       } else if (rs === "unhealthy") {
         setContainerStatus("unhealthy");
+        sessionStorage.removeItem("dqa:containerStatus");
       } else {
         const exitedCount = status.exited_count ?? 0;
         const runningCount = status.running_count ?? 0;
@@ -310,17 +335,36 @@ export function ResultsDashboard() {
     () => composeRunnabilityEntriesFromProject(projectResult),
     [projectResult],
   );
-  const selectedComposeFiles = useMemo(
-    () => ((job?.input_metadata?.selected_compose_files as string[] | undefined) ?? []),
-    [job],
-  );
-  const primaryComposeFile = useMemo(() => {
-    const explicitPrimary = job?.input_metadata?.primary_compose_file;
-    if (typeof explicitPrimary === "string" && explicitPrimary.trim()) {
-      return explicitPrimary;
+
+  // Local override for the selected primary compose — starts from job metadata, can be changed by user in the results page.
+  const [localPrimaryCompose, setLocalPrimaryCompose] = useState<string | null>(null);
+
+  // Initialise localPrimaryCompose once we have the job / project result.
+  useEffect(() => {
+    if (!job || !isProjectJob) return;
+    const fromMeta = job.input_metadata?.primary_compose_file;
+    if (typeof fromMeta === "string" && fromMeta.trim()) {
+      setLocalPrimaryCompose(fromMeta);
+      return;
     }
-    return selectedComposeFiles[0] ?? null;
-  }, [job, selectedComposeFiles]);
+    // Fall back to first runnable compose, then first compose.
+    const runnableFirst = composeRunnabilityEntriesFromProject(projectResult).find(e => e.runnability.runnable);
+    const first = runnableFirst?.filePath ?? projectComposeRunnability[0]?.filePath ?? null;
+    setLocalPrimaryCompose(first);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, isProjectJob, projectResult]);
+
+  const primaryComposeFile = localPrimaryCompose ?? (job?.input_metadata?.primary_compose_file as string | undefined | null) ?? null;
+
+  const handlePrimaryComposeChange = useCallback(async (composePath: string) => {
+    if (!job) return;
+    setLocalPrimaryCompose(composePath);
+    try {
+      await projectApi.setPrimaryCompose(job.id, composePath);
+    } catch {
+      // Non-fatal: local state is already updated; backend will be retried on next deploy
+    }
+  }, [job]);
 
   const runnability = useMemo(() => {
     if (isComposeJob) {
@@ -338,6 +382,14 @@ export function ResultsDashboard() {
     }
     return undefined;
   }, [isComposeJob, isProjectJob, standardResult, projectResult, projectComposeRunnability, primaryComposeFile]);
+
+  const problematicRuntime = useMemo(() => {
+    const problematicByStatus =
+      containerStatus === "partial" ||
+      containerStatus === "unhealthy" ||
+      (containerStatus === "exited" && runtimeSelfExited);
+    return requiresResubmit || problematicByStatus;
+  }, [containerStatus, runtimeSelfExited, requiresResubmit]);
 
   const estimate = standardResult?.meta?.estimate;
   const composeRunnable =
@@ -367,17 +419,28 @@ export function ResultsDashboard() {
   };
 
   const handleStopContainers = async () => {
-    if (!job || containerStatus !== "running") return;
+    if (
+      !job ||
+      (containerStatus !== "running" &&
+        containerStatus !== "partial" &&
+        containerStatus !== "unhealthy")
+    ) {
+      return;
+    }
+    const previousStatus = containerStatus;
     setContainerStatus("stopping");
     sessionStorage.setItem("dqa:containerStatus", "stopping");
     pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for shutdown...");
     try {
       await composeApi.stopDeploy({ job_id: job.id });
       for (let i = 0; i < 30; i++) {
+        if (unmountedRef.current) break;
         await new Promise((r) => setTimeout(r, 2000));
+        if (unmountedRef.current) break;
         try {
           const status = await composeApi.deployStatus(job.id);
           if (!status.active) {
+            if (unmountedRef.current) break;
             setContainerStatus("stopped");
             sessionStorage.removeItem("dqa:containerStatus");
             toast.success("Containers stopped");
@@ -388,13 +451,17 @@ export function ResultsDashboard() {
           break;
         }
       }
-      setContainerStatus("stopped");
-      sessionStorage.removeItem("dqa:containerStatus");
+      if (!unmountedRef.current) {
+        setContainerStatus("stopped");
+        sessionStorage.removeItem("dqa:containerStatus");
+      }
     } catch {
-      setContainerStatus("running");
-      sessionStorage.removeItem("dqa:containerStatus");
-      toast.error("Failed to stop containers");
-      pushNotification("error", "Stop Failed", "Failed to stop containers");
+      if (!unmountedRef.current) {
+        setContainerStatus(previousStatus);
+        sessionStorage.removeItem("dqa:containerStatus");
+        toast.error("Failed to stop containers");
+        pushNotification("error", "Stop Failed", "Failed to stop containers");
+      }
     }
   };
 
@@ -538,7 +605,9 @@ export function ResultsDashboard() {
                 <Download className="w-4 h-4 mr-2" />
                 Export Report (Markdown)
               </Button>
-              {(isComposeJob || isProjectJob) && (containerStatus === "stopped" || containerStatus === "stopped_by_user") && (
+              {(isComposeJob || isProjectJob) &&
+                !problematicRuntime &&
+                (containerStatus === "stopped" || containerStatus === "stopped_by_user") && (
                 <Button
                   onClick={handleRunContainers}
                   disabled={!composeRunnable}
@@ -563,19 +632,9 @@ export function ResultsDashboard() {
                     <Terminal className="w-4 h-4 mr-2" />
                     View Exit Details
                   </Button>
-                  <Button
-                    onClick={handleRunContainers}
-                    variant="outline"
-                    disabled={!composeRunnable}
-                    title="Containers exited on their own — fix the issue locally and upload a corrected ZIP before running again"
-                    className="border-slate-600 text-slate-400 hover:bg-slate-800"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Run Again
-                  </Button>
                 </>
               )}
-              {(isComposeJob || isProjectJob) && containerStatus === "exited" && !runtimeSelfExited && (
+              {(isComposeJob || isProjectJob) && containerStatus === "exited" && !runtimeSelfExited && !problematicRuntime && (
                 <>
                   <Button
                     onClick={handleRunContainers}
@@ -593,14 +652,15 @@ export function ResultsDashboard() {
                   </Button>
                 </>
               )}
-              {(isComposeJob || isProjectJob) && (containerStatus === "running" || containerStatus === "partial" || containerStatus === "unhealthy") && (
+              {(isComposeJob || isProjectJob) &&
+                !problematicRuntime &&
+                (containerStatus === "running" || containerStatus === "partial" || containerStatus === "unhealthy") && (
                 <>
                   <Button
                     onClick={handleRunContainers}
                     className={containerStatus === "unhealthy" ? "bg-amber-600 hover:bg-amber-700" : "bg-emerald-600 hover:bg-emerald-700"}
                   >
                     {containerStatus === "unhealthy" ? "View Unhealthy Containers" : "Inspect Containers"}
-                    <Loader2 className="w-3 h-3 ml-2 animate-spin" />
                   </Button>
                   <Button
                     onClick={handleStopContainers}
@@ -698,23 +758,35 @@ export function ResultsDashboard() {
           </StaggerList>
         </Card>
 
-        {(isComposeJob || isProjectJob) && containerStatus === "exited" && runtimeSelfExited && (
-          <Card className="p-5 bg-amber-950/20 border-amber-800 mb-6">
+        {(isComposeJob || isProjectJob) && problematicRuntime && (
+          <Card className="p-5 bg-red-950/20 border-red-800 mb-6">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
               <div>
-                <h3 className="text-base font-semibold text-amber-300 mb-1">
-                  Containers exited on their own
+                <h3 className="text-base font-semibold text-red-300 mb-1">
+                  Stack is problematic - resubmission required
                 </h3>
-                <p className="text-amber-200/80 text-sm mb-3">
-                  The containers stopped without a user-initiated stop request — this usually means a startup failure, misconfiguration, or a crash. Running again will likely reproduce the same issue.
+                <p className="text-red-200/80 text-sm mb-3">
+                  This runtime is not stable. Please fix your project/compose configuration and upload again before deploying.
+                  Analysis results remain available below for troubleshooting.
                 </p>
-                <p className="text-amber-200/60 text-sm font-medium">Recommended steps:</p>
-                <ol className="text-amber-200/70 text-sm list-decimal list-inside space-y-1 mt-1">
-                  <li>Review the analysis report and address errors/warnings below</li>
-                  <li>Check exit logs in View Exit Details</li>
-                  <li>Fix your project locally and upload a corrected ZIP</li>
+                <p className="text-red-200/60 text-sm font-medium">Next steps:</p>
+                <ol className="text-red-200/70 text-sm list-decimal list-inside space-y-1 mt-1">
+                  <li>Open runtime logs from View Exit Details / View Runtime Details</li>
+                  <li>Fix compose/services locally</li>
+                  <li>Resubmit (new upload) and redeploy</li>
                 </ol>
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => job && navigate(`/execution?jobId=${job.id}`)}
+                    className="border-red-700 text-red-300 hover:bg-red-900/20"
+                  >
+                    <Terminal className="w-4 h-4 mr-2" />
+                    View Runtime Details
+                  </Button>
+                </div>
               </div>
             </div>
           </Card>
@@ -844,7 +916,7 @@ export function ResultsDashboard() {
               <div className="flex-1">
                 <h3 className="text-base font-semibold text-amber-300 mb-1">Containers Exited</h3>
                 <p className="text-sm text-amber-200/70">
-                  All containers have stopped running. You can view runtime details or run the stack again.
+                  All containers have stopped running. Review runtime details before resubmitting a fixed stack.
                 </p>
               </div>
               <div className="flex gap-2 shrink-0">
@@ -856,21 +928,13 @@ export function ResultsDashboard() {
                 >
                   View Runtime Details
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={handleRunContainers}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                  Run Again
-                </Button>
               </div>
             </div>
           </Card>
         )}
 
         {/* Partial / unhealthy containers card */}
-        {(isComposeJob || isProjectJob) && (containerStatus === "partial" || containerStatus === "unhealthy") && (
+        {(isComposeJob || isProjectJob) && !problematicRuntime && (containerStatus === "partial" || containerStatus === "unhealthy") && (
           <Card className={`p-5 mb-6 ${
             containerStatus === "unhealthy"
               ? "bg-red-950/20 border-red-800/50"
@@ -900,6 +964,7 @@ export function ResultsDashboard() {
             result={projectResult}
             job={job}
             deployComposePath={primaryComposeFile}
+            onPrimaryComposeChange={handlePrimaryComposeChange}
           />
         )}
 
@@ -1067,7 +1132,7 @@ function ImageBuildSection({ builds }: { builds: ImageBuildResult[] }) {
     return (
       <Card className="p-8 bg-slate-900 border-slate-800 text-center">
         <p className="text-slate-400 text-sm">
-          No images were built. Enable <span className="font-mono text-slate-300">"Build selected images"</span> in the project plan to generate image metadata.
+          No image build data available. Images are built automatically — check that the project contains valid Dockerfiles.
         </p>
       </Card>
     );
@@ -1230,9 +1295,10 @@ interface ProjectResultsSectionProps {
   result: ProjectAnalysisResult;
   job: Job;
   deployComposePath: string | null;
+  onPrimaryComposeChange?: (composePath: string) => void;
 }
 
-function ProjectResultsSection({ result, job, deployComposePath }: ProjectResultsSectionProps) {
+function ProjectResultsSection({ result, job, deployComposePath, onPrimaryComposeChange }: ProjectResultsSectionProps) {
   const perFileResults = result.per_file_results ?? [];
   const serviceMappings = result.service_mappings ?? [];
   const projectSummary = result.project_summary;
@@ -1284,23 +1350,63 @@ function ProjectResultsSection({ result, job, deployComposePath }: ProjectResult
         </Card>
       )}
 
+      {/* Compose file selector for deploy */}
       {composeRunnabilityEntries.length > 0 && (
-        <div className="space-y-3">
-          {composeRunnabilityEntries.map(({ filePath, runnability }) => (
-            <RunnabilityDetailCard
-              key={filePath}
-              title={`Deploy Runnability - ${filePath}`}
-              runnability={runnability}
-              noMetadataReason={`No runnability metadata found for ${filePath}.`}
-            />
-          ))}
-          {deployComposePath && (
-            <p className="text-xs text-slate-500">
-              Deploy uses primary compose file:{" "}
-              <span className="font-mono text-slate-300">{deployComposePath}</span>
-            </p>
-          )}
-        </div>
+        <Card className="p-5 bg-slate-900 border-slate-800">
+          <h3 className="text-base font-semibold text-white mb-1">Select Compose File for Deploy</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Choose which Compose file to use when running the stack. Only runnable files can be deployed.
+          </p>
+          <div className="space-y-2">
+            {composeRunnabilityEntries.map(({ filePath, runnability }) => {
+              const isSelected = deployComposePath === filePath;
+              return (
+                <button
+                  key={filePath}
+                  type="button"
+                  onClick={() => onPrimaryComposeChange?.(filePath)}
+                  className={`w-full text-left p-3 rounded-lg border motion-safe:transition-colors ${
+                    isSelected
+                      ? "border-green-700 bg-green-900/20"
+                      : runnability.runnable
+                        ? "border-slate-700 bg-slate-950 hover:border-slate-600"
+                        : "border-slate-800 bg-slate-950/50 opacity-60"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                      isSelected ? "border-green-500 bg-green-500" : "border-slate-600"
+                    }`}>
+                      {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <span className="font-mono text-sm text-white truncate flex-1">{filePath}</span>
+                    <Badge className={`text-xs shrink-0 ${
+                      runnability.runnable
+                        ? "bg-green-500/20 text-green-400 border-green-500/30"
+                        : "bg-red-500/20 text-red-400 border-red-500/30"
+                    }`}>
+                      {runnability.runnable ? "Runnable" : "Not runnable"}
+                    </Badge>
+                  </div>
+                  {!runnability.runnable && runnability.reasons.length > 0 && (
+                    <div className="mt-2 pl-7 space-y-0.5">
+                      {runnability.reasons.map((reason, i) => (
+                        <p key={i} className="text-xs text-slate-500">{reason}</p>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* If multiple compose files exist but none have runnability data, show standard runnability cards */}
+      {composeRunnabilityEntries.length === 0 && cfResults.length > 0 && (
+        <Card className="p-4 bg-slate-900 border-slate-800">
+          <p className="text-sm text-slate-400">No runnability data available for the analyzed Compose files.</p>
+        </Card>
       )}
 
       {/* Per-file analysis tabs */}

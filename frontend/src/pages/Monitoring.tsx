@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   Cpu,
   Database,
+  ExternalLink,
+  Globe,
   HardDrive,
   MemoryStick,
   Network,
   PlugZap,
+  RefreshCw,
   Server,
   XCircle,
 } from "lucide-react";
@@ -69,6 +73,17 @@ interface MonitoringPersistedState {
   selectedContainerId: string | null;
 }
 
+interface ProblematicAlertState {
+  open: boolean;
+  message: string;
+}
+
+interface PreviewTarget {
+  key: string;
+  label: string;
+  url: string;
+}
+
 const MAX_POINTS = 120;
 const MONITORING_STATE_TTL_MS = 1000 * 60 * 60 * 6;
 
@@ -83,6 +98,19 @@ function formatBytes(bytes: number | null | undefined): string {
     unit += 1;
   }
   return `${value.toFixed(2)} ${units[unit]}`;
+}
+
+function normalizeContainerPort(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const [port] = trimmed.split("/");
+  return port && /^\d+$/.test(port) ? port : null;
+}
+
+function isLoopbackBinding(hostIp: string): boolean {
+  const normalized = hostIp.trim();
+  return normalized === "0.0.0.0" || normalized === "::" || normalized === ":::" || normalized === "";
 }
 
 export function Monitoring() {
@@ -103,6 +131,13 @@ export function Monitoring() {
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(
     routeContainerId ?? persisted?.selectedContainerId ?? null,
   );
+  const [problematicAlert, setProblematicAlert] = useState<ProblematicAlertState>({
+    open: false,
+    message: "",
+  });
+  const [dindIp, setDindIp] = useState<string | null>(null);
+  const [manualPreviewUrl, setManualPreviewUrl] = useState<string | null>(null);
+  const [previewReloadTick, setPreviewReloadTick] = useState(0);
   const [containerStates, setContainerStates] = useState<Record<string, ContainerState>>(() => {
     const initial: Record<string, ContainerState> = {};
     if (persisted?.containerStates) {
@@ -113,6 +148,30 @@ export function Monitoring() {
     return initial;
   });
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
+  const cleanupAttemptedRef = useRef(false);
+
+  const setResubmitRequired = useCallback(() => {
+    if (!jobId) return;
+    sessionStorage.setItem(`dqa:resubmitRequired:${jobId}`, "1");
+  }, [jobId]);
+
+  const markProblematicStack = useCallback(
+    (message: string, triggerCleanup: boolean) => {
+      setResubmitRequired();
+      setProblematicAlert({ open: true, message });
+      sessionStorage.removeItem("dqa:containerStatus");
+
+      if (triggerCleanup && jobId && !cleanupAttemptedRef.current) {
+        cleanupAttemptedRef.current = true;
+        void composeApi
+          .stopDeploy({ job_id: jobId, remove_volumes: true })
+          .catch(() => {
+            toast.error("Failed to trigger cleanup for problematic stack.");
+          });
+      }
+    },
+    [jobId, setResubmitRequired],
+  );
 
   useEffect(() => {
     if (!jobId) return;
@@ -123,6 +182,13 @@ export function Monitoring() {
         if (cancelled) return;
 
         const rs = status.runtime_state ?? "none";
+        const problematicByRuntimeState =
+          rs === "failed" ||
+          rs === "cleanup_completed" ||
+          rs === "exited" ||
+          rs === "partial" ||
+          rs === "unhealthy";
+        const isProblematic = problematicByRuntimeState && !status.stopped_by_user;
         const isTerminal = ["none", "stopped_by_user", "exited", "failed", "cleanup_completed"].includes(rs);
 
         const fromIds =
@@ -186,6 +252,13 @@ export function Monitoring() {
           return;
         }
 
+        if (isProblematic) {
+          markProblematicStack(
+            "Current stack is problematic. Please fix the stack and resubmit.",
+            true,
+          );
+        }
+
         const fromDeploy = status.containers ?? [];
         if (fromDeploy.length === 0) return;
 
@@ -233,10 +306,27 @@ export function Monitoring() {
     return () => {
       cancelled = true;
     };
-  }, [jobId, routeContainerId]);
+  }, [jobId, routeContainerId, markProblematicStack]);
 
   useEffect(() => {
-    if (!user?.id || containerIds.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resolved = await composeApi.dindIp();
+        if (!cancelled) {
+          setDindIp(typeof resolved.dind_ip === "string" && resolved.dind_ip.trim() ? resolved.dind_ip : null);
+        }
+      } catch {
+        if (!cancelled) setDindIp(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id || containerIds.length === 0 || problematicAlert.open) return;
 
     const existingSockets = socketsRef.current;
     for (const cid of containerIds) {
@@ -341,7 +431,7 @@ export function Monitoring() {
       }
       existingSockets.clear();
     };
-  }, [user?.id, containerIds]);
+  }, [user?.id, containerIds, problematicAlert.open]);
 
   useEffect(() => {
     if (!stateKey) return;
@@ -380,6 +470,59 @@ export function Monitoring() {
     }));
   }, [latestPayload]);
 
+  const previewTargets = useMemo<PreviewTarget[]>(() => {
+    if (!container) return [];
+    const candidates: PreviewTarget[] = [];
+    const seen = new Set<string>();
+    const protocol = "http://";
+    const hostname =
+      typeof window !== "undefined" && window.location.hostname
+        ? window.location.hostname
+        : "localhost";
+
+    for (const portInfo of container.ports ?? []) {
+      const containerPort = normalizeContainerPort(portInfo.container_port);
+      if (!containerPort) continue;
+
+      for (const binding of portInfo.host_bindings ?? []) {
+        const rawHostIp = String(binding.host_ip ?? "").trim();
+        const hostPort = String(binding.host_port ?? "").trim();
+        if (!hostPort) continue;
+        const host = isLoopbackBinding(rawHostIp) ? dindIp || hostname : rawHostIp;
+        const url = `${protocol}${host}:${hostPort}`;
+        if (seen.has(url)) continue;
+        seen.add(url);
+        candidates.push({
+          key: `host-${host}-${hostPort}-${containerPort}`,
+          label: `${host}:${hostPort} -> ${containerPort}`,
+          url,
+        });
+      }
+
+      if (container.ip_address) {
+        const ipUrl = `${protocol}${container.ip_address}:${containerPort}`;
+        if (!seen.has(ipUrl)) {
+          seen.add(ipUrl);
+          candidates.push({
+            key: `container-ip-${container.ip_address}-${containerPort}`,
+            label: `container ${container.ip_address}:${containerPort}`,
+            url: ipUrl,
+          });
+        }
+      }
+    }
+
+    return candidates;
+  }, [container, dindIp]);
+
+  const selectedPreviewUrl = useMemo(() => {
+    if (previewTargets.length === 0) return "";
+    if (manualPreviewUrl && previewTargets.some((t) => t.url === manualPreviewUrl)) {
+      return manualPreviewUrl;
+    }
+    return previewTargets[0].url;
+  }, [previewTargets, manualPreviewUrl]);
+
   if (!user?.id) {
     return (
       <Layout>
@@ -406,27 +549,61 @@ export function Monitoring() {
               <Activity className="w-5 h-5 text-blue-400" /> Monitoring
             </h1>
           </div>
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs ${
-              exitedState
-                ? "border-red-500/40 bg-red-500/10 text-red-300"
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs">
+              <Globe className="w-3 h-3" />
+              DinD: <span className="font-mono">{dindIp ?? "unresolved"}</span>
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs ${
+                problematicAlert.open
+                  ? "border-red-500/40 bg-red-500/10 text-red-300"
+                  : exitedState
+                  ? "border-red-500/40 bg-red-500/10 text-red-300"
+                  : isUnhealthyLive
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                    : connected
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                    : "border-slate-700 bg-slate-900 text-slate-400"
+              }`}
+            >
+              {problematicAlert.open || exitedState ? <XCircle className="w-3 h-3" /> : <PlugZap className="w-3 h-3" />}
+              {problematicAlert.open
+                ? "Problematic"
+                : exitedState
+                ? `Exited (${exitedState.exit_code ?? "?"})`
                 : isUnhealthyLive
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                  ? "Unhealthy"
                   : connected
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  : "border-slate-700 bg-slate-900 text-slate-400"
-            }`}
-          >
-            {exitedState ? <XCircle className="w-3 h-3" /> : <PlugZap className="w-3 h-3" />}
-            {exitedState
-              ? `Exited (${exitedState.exit_code ?? "?"})`
-              : isUnhealthyLive
-                ? "Unhealthy"
-                : connected
-                  ? "Live"
-                  : "Disconnected"}
-          </span>
+                    ? "Live"
+                    : "Disconnected"}
+            </span>
+          </div>
         </div>
+
+        {problematicAlert.open && (
+          <Card className="p-4 bg-red-950/25 border-red-800 mb-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <h2 className="text-sm font-semibold text-red-300 mb-1">
+                  Problematic Stack Detected
+                </h2>
+                <p className="text-xs text-red-200/80">{problematicAlert.message}</p>
+                <p className="text-xs text-red-200/60 mt-1">
+                  Please fix your stack and resubmit. Analysis remains available in Results.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => navigate(jobId ? `/results?jobId=${jobId}` : "/history")}
+                className="bg-red-700 hover:bg-red-800"
+              >
+                I Understand
+              </Button>
+            </div>
+          </Card>
+        )}
 
         {containerIds.length > 1 && (
           <div className="flex flex-wrap gap-1.5 mb-3">
@@ -707,6 +884,70 @@ export function Monitoring() {
             )}
           </Card>
         </div>
+
+        <Card className="p-3 bg-slate-900 border-slate-800 mb-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h3 className="text-xs font-semibold text-slate-400 flex items-center gap-2">
+              <Globe className="w-3.5 h-3.5 text-cyan-400" />
+              Live App Preview
+            </h3>
+            <div className="flex items-center gap-2">
+              {previewTargets.length > 0 && (
+                <select
+                  value={selectedPreviewUrl}
+                  onChange={(e) => setManualPreviewUrl(e.target.value)}
+                  className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200 font-mono"
+                >
+                  {previewTargets.map((target) => (
+                    <option key={target.key} value={target.url}>
+                      {target.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!selectedPreviewUrl}
+                onClick={() => setPreviewReloadTick((v) => v + 1)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Reload
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!selectedPreviewUrl}
+                onClick={() => selectedPreviewUrl && window.open(selectedPreviewUrl, "_blank", "noopener,noreferrer")}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                <ExternalLink className="w-3 h-3 mr-1" />
+                Open
+              </Button>
+            </div>
+          </div>
+          {selectedPreviewUrl ? (
+            <div className="rounded border border-slate-800 bg-slate-950 overflow-hidden">
+              <div className="px-2 py-1 border-b border-slate-800 text-[11px] text-slate-400 font-mono truncate">
+                {selectedPreviewUrl}
+              </div>
+              <iframe
+                key={`${selectedPreviewUrl}-${previewReloadTick}`}
+                src={selectedPreviewUrl}
+                title="Container app preview"
+                className="w-full h-[360px] bg-white"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">
+              No accessible web port detected yet. Once a container exposes host bindings, preview appears here.
+            </p>
+          )}
+          <p className="text-[11px] text-slate-500 mt-2">
+            If preview stays blank, the app may block framing (`X-Frame-Options`) or bind to an unreachable network.
+          </p>
+        </Card>
 
         <TerminalLog
           logs={currentState?.logs ?? []}

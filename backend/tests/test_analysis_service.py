@@ -16,6 +16,35 @@ def test_normalize_issue_uses_level_when_severity_missing():
     assert issue.severity == "warning"
     assert issue.code == "DL3002"
     assert issue.line == 4
+    assert issue.doc_url == "https://github.com/hadolint/hadolint/wiki/DL3002"
+
+
+def test_normalize_issue_shellcheck_code_gets_wiki_url():
+    service = AnalysisService(AsyncMock())
+    issue = service._normalize_issue(
+        {
+            "line": 10,
+            "code": "SC2086",
+            "level": "warning",
+            "message": "Double quote to prevent globbing and word splitting.",
+        }
+    )
+    assert issue.code == "SC2086"
+    assert issue.doc_url == "https://github.com/koalaman/shellcheck/wiki/SC2086"
+
+
+def test_normalize_issue_custom_code_has_no_wiki_url():
+    service = AnalysisService(AsyncMock())
+    issue = service._normalize_issue(
+        {
+            "line": 2,
+            "code": "SEC001",
+            "severity": "warning",
+            "message": "Potential security smell",
+        }
+    )
+    assert issue.code == "SEC001"
+    assert issue.doc_url is None
 
 
 def test_normalize_issue_dclint_rdjson_code_object():

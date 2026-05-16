@@ -128,20 +128,6 @@ class JobRepository:
         await self.session.flush()
         return job
 
-    async def list_scanned_project_drafts(self, user_id: uuid.UUID) -> list[AnalysisJobModel]:
-        """Return project jobs with status=scanned (uploaded but not yet analyzed) for a user."""
-        stmt = (
-            select(AnalysisJobModel)
-            .where(
-                AnalysisJobModel.user_id == user_id,
-                AnalysisJobModel.type == JobType.project,
-                AnalysisJobModel.status == JobStatus.scanned,
-            )
-            .order_by(AnalysisJobModel.created_at.desc())
-        )
-        rows = await self.session.scalars(stmt)
-        return list(rows)
-
     async def count_jobs_global(self) -> int:
         stmt = select(func.count()).select_from(AnalysisJobModel)
         result = await self.session.scalar(stmt)

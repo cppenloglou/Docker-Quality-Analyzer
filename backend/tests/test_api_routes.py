@@ -237,6 +237,76 @@ def test_compose_stop_enqueues_stop_job(client, monkeypatch, app, fake_db_sessio
     assert response.status_code == 200
     assert response.json()["status"] == "queued"
     assert calls and calls[0]["task"] == "run_compose_stop"
+    assert calls[0]["payload"]["remove_volumes"] is False
+
+
+def test_compose_stop_enqueue_forwards_remove_volumes_true(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user()
+    job_id = uuid.uuid4()
+    runnable_job = AnalysisJobModel(
+        id=job_id,
+        user_id=user.id,
+        type=JobType.compose,
+        status=JobStatus.done,
+        input_metadata={},
+        result={"meta": {"runnability": {"runnable": True, "reasons": []}}},
+    )
+
+    class RunnableJobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            return runnable_job
+
+    calls: list[dict] = []
+
+    async def fake_enqueue(task_name: str, payload: dict):
+        calls.append({"task": task_name, "payload": payload})
+
+    monkeypatch.setattr("app.api.routers.compose.JobRepository", RunnableJobRepo)
+    monkeypatch.setattr("app.api.routers.compose.enqueue_job", fake_enqueue)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/compose/deploy/stop",
+        json={"job_id": str(job_id), "remove_volumes": True},
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+    assert calls and calls[0]["task"] == "run_compose_stop"
+    assert calls[0]["payload"]["remove_volumes"] is True
+
+
+def test_compose_dind_ip_endpoint_returns_resolved_ip(client, monkeypatch, app):
+    user = make_user()
+    app.dependency_overrides[get_current_user] = lambda: user
+    monkeypatch.setattr("app.api.routers.compose._resolve_dind_ip", lambda: "172.18.0.7")
+
+    response = client.get("/api/v1/compose/deploy/dind-ip", headers=auth_header_for(user.id))
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"dind_ip": "172.18.0.7"}
+
+
+def test_resolve_dind_ip_falls_back_to_service_dns(monkeypatch):
+    from app.api.routers import compose as compose_router
+
+    monkeypatch.setattr(
+        "app.api.routers.compose.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+    monkeypatch.setattr("app.api.routers.compose.os.getenv", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        "app.api.routers.compose.socket.gethostbyname",
+        lambda host: "172.18.0.4" if host in ("dind", "docker-platform-dind") else "127.0.0.1",
+    )
+
+    assert compose_router._resolve_dind_ip() == "172.18.0.4"
 
 
 def test_get_job_enforces_user_scope_and_returns_404_for_other_user(client, monkeypatch, app, fake_db_session_dependency):
@@ -276,13 +346,19 @@ def test_get_job_enforces_user_scope_and_returns_404_for_other_user(client, monk
 
 
 def test_project_upload_enqueues_project_analysis(client, monkeypatch, app, fake_db_session_dependency):
+    """POST /project/upload must scan all files, create queued job, and enqueue worker with build=True."""
     user = make_user(email="project-owner@example.com")
     job_id = uuid.uuid4()
 
-    async def fake_enqueue_job(self, user_id, job_type, metadata):
+    captured_meta: dict = {}
+
+    async def fake_enqueue_job(self, user_id, job_type, metadata, initial_status=None):
         assert user_id == user.id
         assert job_type == JobType.project
         assert metadata["filename"] == "project.zip"
+        assert metadata.get("analysis_confirmed") is True
+        assert metadata.get("build_selected_images") is True
+        captured_meta.update(metadata)
         return job_id
 
     queue_calls: list[dict] = []
@@ -312,6 +388,11 @@ def test_project_upload_enqueues_project_analysis(client, monkeypatch, app, fake
     assert response.json()["job_id"] == str(job_id)
     assert response.json()["status"] == "queued"
     assert queue_calls and queue_calls[0]["task"] == "run_project_analysis"
+    # All detected files should be passed to worker
+    worker_payload = queue_calls[0]["payload"]
+    assert "Dockerfile" in worker_payload["dockerfiles"]
+    assert "docker-compose.yml" in worker_payload["compose_files"]
+    assert worker_payload["build_selected_images"] is True
 
 
 def test_project_upload_rejects_non_zip_file(client, app, fake_db_session_dependency):
@@ -815,99 +896,74 @@ def test_delete_job_returns_409_when_compose_deploy_active(client, monkeypatch, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_project_analyze_transitions_scanned_to_queued(client, monkeypatch, app, fake_db_session_dependency):
-    """POST /project/analyze on a scanned job must set status=queued and enqueue worker."""
-    user = make_user(email="analyze-scanned@example.com")
-    project_id = uuid.uuid4()
-    scanned_job = AnalysisJobModel(
-        id=project_id,
-        user_id=user.id,
-        type=JobType.project,
-        status=JobStatus.scanned,
-        input_metadata={
-            "project_path": "/tmp/fake",
-            "dockerfiles": ["Dockerfile"],
-            "compose_files": ["docker-compose.yml", "docker-compose.prod.yml"],
-            "scan_only": True,
-            "analysis_confirmed": False,
-        },
-        result=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-
-    flushed_status: list[JobStatus] = []
-    committed: list[bool] = []
-    queue_calls: list[dict] = []
-
-    class FakeSession:
-        async def flush(self):
-            flushed_status.append(scanned_job.status)
-
-        async def commit(self):
-            committed.append(True)
-
-        async def get(self, model_class, pk):
-            if pk == project_id:
-                return scanned_job
-            return None
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def get_job(self, jid, uid):
-            if jid == project_id and uid == user.id:
-                return scanned_job
-            return None
-
-    async def fake_enqueue(task_name: str, payload: dict):
-        queue_calls.append({"task": task_name, "payload": payload})
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    monkeypatch.setattr("app.api.routers.project.enqueue_job", fake_enqueue)
-
-    fake_session = FakeSession()
-    app.dependency_overrides[get_db_session] = lambda: fake_session
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.post(
-        "/api/v1/project/analyze",
-        json={
-            "project_id": str(project_id),
-            "selected_dockerfiles": ["Dockerfile"],
-            "selected_compose_files": ["docker-compose.yml"],
-            "analysis_mode": "auto",
-            "build_selected_images": False,
-            "run_after_analysis": False,
-        },
-        headers=auth_header_for(user.id),
-    )
-    app.dependency_overrides.clear()
-    assert response.status_code == 200
-    assert response.json()["status"] == "queued"
-    assert scanned_job.status == JobStatus.queued
-    assert scanned_job.input_metadata["analysis_confirmed"] is True
-    assert scanned_job.input_metadata["scan_only"] is False
-    assert len(queue_calls) == 1
-    assert queue_calls[0]["task"] == "run_project_analysis"
-    assert queue_calls[0]["payload"]["compose_files"] == [
-        "docker-compose.yml",
-        "docker-compose.prod.yml",
-    ]
-
-
-def test_project_analyze_rejects_non_scanned_job(client, monkeypatch, app, fake_db_session_dependency):
-    """POST /project/analyze on a non-scanned/non-queued job must return 409."""
-    user = make_user(email="analyze-done@example.com")
+def test_project_set_primary_compose_updates_metadata(client, monkeypatch, app, fake_db_session_dependency):
+    """PATCH /project/{id}/primary-compose must update primary_compose_file in job metadata."""
+    user = make_user(email="primary-compose@example.com")
     project_id = uuid.uuid4()
     done_job = AnalysisJobModel(
         id=project_id,
         user_id=user.id,
         type=JobType.project,
         status=JobStatus.done,
-        input_metadata={"project_path": "/tmp/fake", "dockerfiles": [], "compose_files": []},
-        result={"overall_score": 80},
+        input_metadata={"compose_files": ["docker-compose.yml", "docker-compose.prod.yml"]},
+        result={
+            "per_file_results": [
+                {"file_path": "docker-compose.yml", "file_type": "compose", "score": 80, "grade": "B"},
+                {"file_path": "docker-compose.prod.yml", "file_type": "compose", "score": 75, "grade": "B"},
+            ]
+        },
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    updated_meta: dict = {}
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, jid, uid):
+            return done_job if jid == project_id and uid == user.id else None
+
+        async def update_job_metadata(self, jid, uid, patch):
+            done_job.input_metadata = {**done_job.input_metadata, **patch}
+            updated_meta.update(patch)
+            return done_job
+
+    class FakeSession:
+        async def commit(self):
+            pass
+
+    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
+    app.dependency_overrides[get_db_session] = lambda: FakeSession()
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.patch(
+        f"/api/v1/project/{project_id}/primary-compose",
+        json={"primary_compose_file": "docker-compose.prod.yml"},
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "updated"
+    assert updated_meta.get("primary_compose_file") == "docker-compose.prod.yml"
+
+
+def test_project_set_primary_compose_rejects_unanalyzed_file(client, monkeypatch, app, fake_db_session_dependency):
+    """PATCH /project/{id}/primary-compose must reject compose file not in per_file_results."""
+    user = make_user(email="primary-compose-bad@example.com")
+    project_id = uuid.uuid4()
+    done_job = AnalysisJobModel(
+        id=project_id,
+        user_id=user.id,
+        type=JobType.project,
+        status=JobStatus.done,
+        input_metadata={},
+        result={
+            "per_file_results": [
+                {"file_path": "docker-compose.yml", "file_type": "compose", "score": 80, "grade": "B"},
+            ]
+        },
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
@@ -917,34 +973,63 @@ def test_project_analyze_rejects_non_scanned_job(client, monkeypatch, app, fake_
             pass
 
         async def get_job(self, jid, uid):
-            if jid == project_id and uid == user.id:
-                return done_job
-            return None
+            return done_job if jid == project_id and uid == user.id else None
 
     monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
     app.dependency_overrides[get_current_user] = lambda: user
 
-    response = client.post(
-        "/api/v1/project/analyze",
-        json={
-            "project_id": str(project_id),
-            "selected_dockerfiles": [],
-            "selected_compose_files": [],
-            "analysis_mode": "auto",
-            "build_selected_images": False,
-            "run_after_analysis": False,
-        },
+    response = client.patch(
+        f"/api/v1/project/{project_id}/primary-compose",
+        json={"primary_compose_file": "nonexistent-compose.yml"},
         headers=auth_header_for(user.id),
     )
     app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "was not analyzed" in response.json()["detail"]
+
+
+def test_project_set_primary_compose_rejects_non_done_job(client, monkeypatch, app, fake_db_session_dependency):
+    """PATCH /project/{id}/primary-compose must return 409 if job is not done."""
+    user = make_user(email="primary-compose-running@example.com")
+    project_id = uuid.uuid4()
+    running_job = AnalysisJobModel(
+        id=project_id,
+        user_id=user.id,
+        type=JobType.project,
+        status=JobStatus.running,
+        input_metadata={},
+        result=None,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    class JobRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, jid, uid):
+            return running_job if jid == project_id and uid == user.id else None
+
+    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.patch(
+        f"/api/v1/project/{project_id}/primary-compose",
+        json={"primary_compose_file": "docker-compose.yml"},
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
     assert response.status_code == 409
-    assert "not in a confirmable state" in response.json()["detail"]
+    assert "after analysis is complete" in response.json()["detail"]
 
 
-def test_delete_job_allows_scanned_project(client, monkeypatch, app, fake_db_session_dependency):
-    """Scanned (not-yet-analyzed) project jobs must be deletable."""
-    user = make_user(email="delete-scanned@example.com")
+def test_delete_job_allows_project_job(client, monkeypatch, app, fake_db_session_dependency):
+    """Project jobs (done or otherwise) must be deletable."""
+    user = make_user(email="delete-project@example.com")
     job_id = uuid.uuid4()
     calls: dict = {}
 
@@ -958,8 +1043,8 @@ def test_delete_job_allows_scanned_project(client, monkeypatch, app, fake_db_ses
                     id=job_id,
                     user_id=user.id,
                     type=JobType.project,
-                    status=JobStatus.scanned,
-                    input_metadata={"scan_only": True, "analysis_confirmed": False},
+                    status=JobStatus.done,
+                    input_metadata={"analysis_confirmed": True, "build_selected_images": True},
                     result=None,
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
@@ -970,14 +1055,8 @@ def test_delete_job_allows_scanned_project(client, monkeypatch, app, fake_db_ses
             calls["deleted"] = True
             return True
 
-    async def fake_deploy_status(*_a, **_k):
-        return SimpleNamespace(active=False)
-
-    async def fake_redis_del(*_a):
-        pass
-
     monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
-    monkeypatch.setattr("app.api.routers.history.compute_deploy_status", fake_deploy_status)
+    monkeypatch.setattr("app.api.routers.history.compute_deploy_status", AsyncMock(return_value=SimpleNamespace(active=False)))
     monkeypatch.setattr("app.api.routers.history.redis_client.delete", AsyncMock())
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
     app.dependency_overrides[get_current_user] = lambda: user
@@ -989,312 +1068,3 @@ def test_delete_job_allows_scanned_project(client, monkeypatch, app, fake_db_ses
     app.dependency_overrides.clear()
     assert response.status_code == 204
     assert calls.get("deleted") is True
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Project draft TTL and plan-step persistence tests
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _make_scanned_job(user_id, project_id, *, expires_at_str: str, extra_meta: dict | None = None):
-    """Build an AnalysisJobModel for a scanned draft with given expiry."""
-    meta = {
-        "project_path": "/tmp/fake-project",
-        "filename": "myproject.zip",
-        "dockerfiles": ["Dockerfile"],
-        "compose_files": ["docker-compose.yml"],
-        "stacks": [],
-        "service_count": 0,
-        "scan_only": True,
-        "analysis_confirmed": False,
-        "workflow_step": "review",
-        "draft_expires_at": expires_at_str,
-    }
-    if extra_meta:
-        meta.update(extra_meta)
-    return AnalysisJobModel(
-        id=project_id,
-        user_id=user_id,
-        type=JobType.project,
-        status=JobStatus.scanned,
-        input_metadata=meta,
-        result=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-
-
-def _future_expiry() -> str:
-    from datetime import timedelta
-    return (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-
-
-def _past_expiry() -> str:
-    from datetime import timedelta
-    return (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
-
-
-def test_patch_draft_saves_plan_step(client, monkeypatch, app, fake_db_session_dependency):
-    """PATCH /project/{id}/draft persists workflow_step=plan and selections."""
-    user = make_user(email="patch-draft@example.com")
-    project_id = uuid.uuid4()
-    job = _make_scanned_job(user.id, project_id, expires_at_str=_future_expiry())
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def get_job(self, jid, uid):
-            return job if jid == project_id and uid == user.id else None
-
-        async def update_job_metadata(self, jid, uid, patch):
-            job.input_metadata = {**job.input_metadata, **patch}
-            return job
-
-    class FakeSession:
-        async def get(self, _cls, pk):
-            return job if pk == project_id else None
-
-        async def flush(self):
-            pass
-
-        async def commit(self):
-            pass
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    app.dependency_overrides[get_db_session] = lambda: FakeSession()
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.patch(
-        f"/api/v1/project/{project_id}/draft",
-        json={
-            "workflow_step": "plan",
-            "selected_dockerfiles": ["Dockerfile"],
-            "selected_compose_files": ["docker-compose.yml"],
-            "primary_compose_file": "docker-compose.yml",
-            "analysis_mode": "full-project",
-            "build_selected_images": True,
-            "run_after_analysis": False,
-        },
-        headers=auth_header_for(user.id),
-    )
-    app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["workflow_step"] == "plan"
-    assert job.input_metadata["workflow_step"] == "plan"
-    assert job.input_metadata["analysis_mode"] == "full-project"
-    assert job.input_metadata["saved_selections_set"] is True
-
-
-def test_patch_draft_expired_returns_410(client, monkeypatch, app, fake_db_session_dependency):
-    """PATCH /project/{id}/draft on an expired draft must return 410."""
-    user = make_user(email="patch-expired@example.com")
-    project_id = uuid.uuid4()
-    job = _make_scanned_job(user.id, project_id, expires_at_str=_past_expiry())
-
-    deleted: list[bool] = []
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def get_job(self, jid, uid):
-            return job if jid == project_id and uid == user.id else None
-
-    class FakeSession:
-        async def delete(self, obj):
-            deleted.append(True)
-
-        async def commit(self):
-            pass
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    app.dependency_overrides[get_db_session] = lambda: FakeSession()
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.patch(
-        f"/api/v1/project/{project_id}/draft",
-        json={
-            "workflow_step": "plan",
-            "selected_dockerfiles": [],
-            "selected_compose_files": [],
-            "analysis_mode": "auto",
-            "build_selected_images": False,
-            "run_after_analysis": False,
-        },
-        headers=auth_header_for(user.id),
-    )
-    app.dependency_overrides.clear()
-
-    assert response.status_code == 410
-    assert "expired" in response.json()["detail"].lower()
-    assert len(deleted) == 1
-
-
-def test_get_project_scan_expired_returns_410(client, monkeypatch, app, fake_db_session_dependency):
-    """GET /project/{id}/scan on an expired draft must return 410."""
-    user = make_user(email="get-scan-expired@example.com")
-    project_id = uuid.uuid4()
-    job = _make_scanned_job(user.id, project_id, expires_at_str=_past_expiry())
-
-    deleted: list[bool] = []
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def get_job(self, jid, uid):
-            return job if jid == project_id and uid == user.id else None
-
-    class FakeSession:
-        async def delete(self, obj):
-            deleted.append(True)
-
-        async def commit(self):
-            pass
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    app.dependency_overrides[get_db_session] = lambda: FakeSession()
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.get(
-        f"/api/v1/project/{project_id}/scan",
-        headers=auth_header_for(user.id),
-    )
-    app.dependency_overrides.clear()
-
-    assert response.status_code == 410
-    assert len(deleted) == 1
-
-
-def test_analyze_expired_draft_returns_410(client, monkeypatch, app, fake_db_session_dependency):
-    """POST /project/analyze on an expired draft must return 410."""
-    user = make_user(email="analyze-expired@example.com")
-    project_id = uuid.uuid4()
-    job = _make_scanned_job(user.id, project_id, expires_at_str=_past_expiry())
-
-    deleted: list[bool] = []
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def get_job(self, jid, uid):
-            return job if jid == project_id and uid == user.id else None
-
-    class FakeSession:
-        async def delete(self, obj):
-            deleted.append(True)
-
-        async def commit(self):
-            pass
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    monkeypatch.setattr("app.api.routers.project.enqueue_job", AsyncMock())
-    app.dependency_overrides[get_db_session] = lambda: FakeSession()
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.post(
-        "/api/v1/project/analyze",
-        json={
-            "project_id": str(project_id),
-            "selected_dockerfiles": ["Dockerfile"],
-            "selected_compose_files": [],
-            "analysis_mode": "auto",
-            "build_selected_images": False,
-            "run_after_analysis": False,
-        },
-        headers=auth_header_for(user.id),
-    )
-    app.dependency_overrides.clear()
-
-    assert response.status_code == 410
-    assert len(deleted) == 1
-
-
-def test_list_drafts_excludes_expired(client, monkeypatch, app, fake_db_session_dependency):
-    """GET /project/drafts must omit expired drafts and clean them up."""
-    user = make_user(email="list-drafts@example.com")
-    valid_id = uuid.uuid4()
-    expired_id = uuid.uuid4()
-
-    valid_job = _make_scanned_job(user.id, valid_id, expires_at_str=_future_expiry())
-    expired_job = _make_scanned_job(user.id, expired_id, expires_at_str=_past_expiry())
-
-    deleted: list[uuid.UUID] = []
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def list_scanned_project_drafts(self, uid):
-            return [valid_job, expired_job]
-
-    class FakeSession:
-        async def delete(self, obj):
-            deleted.append(obj.id)
-
-        async def commit(self):
-            pass
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    app.dependency_overrides[get_db_session] = lambda: FakeSession()
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.get("/api/v1/project/drafts", headers=auth_header_for(user.id))
-    app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    data = response.json()
-    ids = [d["project_id"] for d in data]
-    assert str(valid_id) in ids
-    assert str(expired_id) not in ids
-    assert expired_id in deleted
-
-
-def test_patch_draft_returns_expiry_info(client, monkeypatch, app, fake_db_session_dependency):
-    """PATCH /project/{id}/draft response must include expires_at and expires_in_seconds."""
-    user = make_user(email="patch-expiry@example.com")
-    project_id = uuid.uuid4()
-    job = _make_scanned_job(user.id, project_id, expires_at_str=_future_expiry())
-
-    class JobRepo:
-        def __init__(self, _session):
-            pass
-
-        async def get_job(self, jid, uid):
-            return job if jid == project_id and uid == user.id else None
-
-        async def update_job_metadata(self, jid, uid, patch):
-            job.input_metadata = {**job.input_metadata, **patch}
-            return job
-
-    class FakeSession:
-        async def commit(self):
-            pass
-
-    monkeypatch.setattr("app.api.routers.project.JobRepository", JobRepo)
-    app.dependency_overrides[get_db_session] = lambda: FakeSession()
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.patch(
-        f"/api/v1/project/{project_id}/draft",
-        json={
-            "workflow_step": "review",
-            "selected_dockerfiles": ["Dockerfile"],
-            "selected_compose_files": [],
-            "analysis_mode": "auto",
-            "build_selected_images": False,
-            "run_after_analysis": False,
-        },
-        headers=auth_header_for(user.id),
-    )
-    app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["expires_at"] is not None
-    assert isinstance(data["expires_in_seconds"], int)
-    assert data["expires_in_seconds"] > 0

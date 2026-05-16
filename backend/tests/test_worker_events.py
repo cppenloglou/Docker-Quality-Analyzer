@@ -297,10 +297,18 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
 
     assert result["status"] == "stopped"
     assert stop_called["value"] is True
+    # First persisted state should immediately carry user-stop intent.
+    assert len(set_state_calls) >= 2
+    initial_state = set_state_calls[0]
+    assert initial_state["stopping"] is True
+    assert initial_state["stop_requested_by_user"] is True
+    assert initial_state["stopped_by_user"] is True
+    assert initial_state["stop_reason"] == "user_requested"
     # Terminal state must mark stopped_by_user=True
     terminal_states = [s for s in set_state_calls if s.get("explicit_runtime_state") == "stopped_by_user"]
     assert len(terminal_states) >= 1
     assert terminal_states[-1]["stopped_by_user"] is True
+    assert terminal_states[-1]["stop_requested_by_user"] is True
     event_names = [event.event_name for event in emitted_events]
     assert "container.stopped" in event_names
 

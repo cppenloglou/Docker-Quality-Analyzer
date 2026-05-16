@@ -487,6 +487,11 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
 
     await _set_stop_requested(user_id, job_id)
     state["stopping"] = True
+    # Persist user intent immediately so concurrent metric/exit watchers
+    # do not classify this shutdown path as an unexpected self-exit.
+    state["stop_requested_by_user"] = True
+    state["stopped_by_user"] = True
+    state["stop_reason"] = "user_requested"
     await _set_deploy_state(user_id, job_id, state)
     await _compose_down(state, remove_volumes)
 
@@ -510,6 +515,7 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
         "active": False,
         "explicit_runtime_state": "stopped_by_user",
         "stopped_by_user": True,
+        "stop_requested_by_user": True,
         "stop_reason": "user_requested",
         "stopped_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -849,16 +855,22 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
             except Exception as exc:
                 final_state = {"container_id": container_id, "error": str(exc), "exit_code": -1}
 
+            state = await _get_deploy_state(user_id, job_id) or {}
+            stop_requested_by_user = bool(
+                state.get("stop_requested_by_user", False)
+                or state.get("stopped_by_user", False)
+                or state.get("stopping", False)
+            )
+
             await publish_event(
                 DomainEvent(
                     "container.exited",
                     user_id=user_id,
                     job_id=job_id,
-                    payload=final_state,
+                    payload={**final_state, "stop_requested_by_user": stop_requested_by_user},
                 )
             )
 
-            state = await _get_deploy_state(user_id, job_id) or {}
             containers_state = [c for c in state.get("containers", []) if isinstance(c, dict)]
             old = next((c for c in containers_state if c.get("id") == container_id), None)
             containers_state = [c for c in containers_state if c.get("id") != container_id]
@@ -887,6 +899,15 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
 
         # If all containers exited, publish runtime stopped
         if not active_ids:
+            state = await _get_deploy_state(user_id, job_id) or {}
+            was_user_stop = bool(
+                state.get("stopped_by_user", False) or state.get("stop_requested_by_user", False)
+            )
+            # User stop is authoritative. run_compose_stop publishes container.stopped
+            # and persists terminal stopped_by_user state after compose down.
+            if was_user_stop:
+                break
+
             await publish_event(
                 DomainEvent(
                     "project.runtime_stopped",
@@ -896,8 +917,6 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
                 )
             )
             # Persist explicit self-exit marker so refresh can distinguish from user stop
-            state = await _get_deploy_state(user_id, job_id) or {}
-            was_user_stop = bool(state.get("stopped_by_user", False))
             state["all_exited"] = True
             state["active"] = False
             if not was_user_stop:

@@ -1,36 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
   Archive,
-  ArrowRight,
   Check,
   ChevronLeft,
-  ChevronRight,
-  Clock,
-  FileCode,
-  FileText,
   Loader2,
-  Package,
-  Play,
-  Timer,
-  Wrench,
-  X,
 } from "lucide-react";
 
 import { Layout } from "../components/Layout";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
-import { MotionPage, StaggerList, StaggerItem } from "../components/motion";
+import { MotionPage } from "../components/motion";
 import { dragActiveVariants, dragActiveTransition } from "../components/motion/variants";
-import { ApiError, project, type ProjectDraft, type ProjectScanResponse } from "../utils/api";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+import { ApiError, project } from "../utils/api";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -41,182 +26,17 @@ function formatBytes(bytes: number): string {
   return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
 }
 
-function formatRelativeTime(isoString: string): string {
-  const diffMs = Date.now() - new Date(isoString).getTime();
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  if (hrs < 48) return "Yesterday";
-  return new Date(isoString).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function formatExpiresIn(seconds: number): string {
-  if (seconds <= 0) return "Expired";
-  const mins = Math.ceil(seconds / 60);
-  if (mins < 60) return `${mins}m left`;
-  const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  return remMins > 0 ? `${hrs}h ${remMins}m left` : `${hrs}h left`;
-}
-
-type Step = "upload" | "scanning" | "review" | "plan" | "confirming";
-
-const STEP_LABELS: Record<Step, string> = {
-  upload: "Upload",
-  scanning: "Scanning",
-  review: "Review",
-  plan: "Plan",
-  confirming: "Starting",
-};
-
-const STEPS: Step[] = ["upload", "review", "plan"];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
+type Step = "upload" | "uploading";
 
 export function ProjectUpload() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const reducedMotion = useReducedMotion();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>("upload");
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [scanResult, setScanResult] = useState<ProjectScanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Selections
-  const [selectedDockerfiles, setSelectedDockerfiles] = useState<string[]>([]);
-  const [selectedCompose, setSelectedCompose] = useState<string[]>([]);
-  const [primaryCompose, setPrimaryCompose] = useState<string | null>(null);
-  const [analysisMode, setAnalysisMode] = useState<"auto" | "dockerfile-only" | "compose-only" | "full-project">("auto");
-  const [buildImages, setBuildImages] = useState(false);
-  const [runAfter, setRunAfter] = useState(false);
-
-  // Draft projects (scanned but not yet analyzed)
-  const [drafts, setDrafts] = useState<ProjectDraft[]>([]);
-  const [draftsLoading, setDraftsLoading] = useState(true);
-  // Expiry countdown for the active draft (seconds)
-  const [expiresInSeconds, setExpiresInSeconds] = useState<number | null>(null);
-  // Debounce timer ref for auto-saving draft progress
-  const saveDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Fetch drafts on mount + handle ?resume=<id> ──────────────────────────
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await project.drafts();
-        if (!cancelled) setDrafts(data);
-      } catch {
-        // non-fatal — drafts section just won't show
-      } finally {
-        if (!cancelled) setDraftsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    const resumeId = searchParams.get("resume");
-    if (!resumeId) return;
-    // Only auto-resume once the drafts fetch has settled (or if not needed)
-    resumeDraft(resumeId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Resume a draft by fetching its stored scan result ────────────────────
-
-  const resumeDraft = async (projectId: string) => {
-    setError(null);
-    setStep("scanning");
-    try {
-      const result = await project.getScan(projectId);
-      applyScanResult(result);
-    } catch (err) {
-      const isExpired = err instanceof ApiError && err.status === 410;
-      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to load draft.";
-      if (isExpired) {
-        toast.error("This draft expired. Upload the archive again to continue.");
-      } else {
-        toast.error(msg);
-      }
-      setError(isExpired ? null : msg);
-      setStep("upload");
-      setDrafts(prev => prev.filter(d => d.project_id !== projectId));
-    }
-  };
-
-  const applyScanResult = (result: ProjectScanResponse) => {
-    setScanResult(result);
-    setExpiresInSeconds(result.expires_in_seconds ?? null);
-
-    const sel = result.saved_selections;
-    if (sel) {
-      // Restore previously-saved selections
-      setSelectedDockerfiles(sel.selected_dockerfiles);
-      setSelectedCompose(sel.selected_compose_files);
-      setPrimaryCompose(sel.primary_compose_file ?? null);
-      const validModes = ["auto", "dockerfile-only", "compose-only", "full-project"] as const;
-      setAnalysisMode((validModes as readonly string[]).includes(sel.analysis_mode) ? sel.analysis_mode : "auto");
-      setBuildImages(sel.build_selected_images);
-      setRunAfter(sel.run_after_analysis);
-      setStep(sel.workflow_step);
-    } else {
-      // Fresh scan defaults
-      const rec = result.recommendation;
-      setSelectedDockerfiles(rec.primary_dockerfile ? [rec.primary_dockerfile] : result.detected.dockerfiles.slice(0, 1));
-      setSelectedCompose(rec.primary_compose_file ? [rec.primary_compose_file] : result.detected.compose_files.slice(0, 1));
-      setPrimaryCompose(rec.primary_compose_file ?? result.detected.compose_files[0] ?? null);
-      const validModes = ["auto", "dockerfile-only", "compose-only", "full-project"] as const;
-      const safeMode = (validModes as readonly string[]).includes(rec.analysis_mode)
-        ? (rec.analysis_mode as typeof analysisMode)
-        : "auto";
-      setAnalysisMode(safeMode);
-      setStep(result.workflow_step ?? "review");
-    }
-  };
-
-  // ── Persist draft progress to the server ─────────────────────────────────
-
-  const saveDraftProgress = useCallback(async (
-    overrideStep?: "review" | "plan",
-    overrideSelections?: {
-      dockerfiles?: string[];
-      compose?: string[];
-      primaryCompose?: string | null;
-      mode?: typeof analysisMode;
-      buildImages?: boolean;
-      runAfter?: boolean;
-    },
-  ) => {
-    if (!scanResult) return;
-    const targetStep = overrideStep ?? (step === "review" || step === "plan" ? step : "review") as "review" | "plan";
-    try {
-      await project.saveDraft(scanResult.project_id, {
-        workflow_step: targetStep,
-        selected_dockerfiles: overrideSelections?.dockerfiles ?? selectedDockerfiles,
-        selected_compose_files: overrideSelections?.compose ?? selectedCompose,
-        primary_compose_file: overrideSelections?.primaryCompose !== undefined ? overrideSelections.primaryCompose : primaryCompose,
-        analysis_mode: overrideSelections?.mode ?? analysisMode,
-        build_selected_images: overrideSelections?.buildImages ?? buildImages,
-        run_after_analysis: overrideSelections?.runAfter ?? runAfter,
-      });
-    } catch {
-      // Non-fatal: draft save failure shouldn't interrupt the user
-    }
-  }, [scanResult, step, selectedDockerfiles, selectedCompose, primaryCompose, analysisMode, buildImages, runAfter]);
-
-  const scheduleDraftSave = useCallback(() => {
-    if (saveDraftTimerRef.current) clearTimeout(saveDraftTimerRef.current);
-    saveDraftTimerRef.current = setTimeout(() => { void saveDraftProgress(); }, 800);
-  }, [saveDraftProgress]);
-
-  // ── Drag & drop ──────────────────────────────────────────────────────────
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
@@ -224,12 +44,10 @@ export function ProjectUpload() {
     e.preventDefault();
     setIsDragging(false);
     const f = e.dataTransfer.files?.[0];
-    if (f) startScan(f);
+    if (f) void startUpload(f);
   };
 
-  // ── Scan ─────────────────────────────────────────────────────────────────
-
-  const startScan = async (file: File) => {
+  const startUpload = async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".zip")) {
       setError("Only .zip archives are supported.");
       toast.error("Only .zip archives are supported.");
@@ -237,82 +55,26 @@ export function ProjectUpload() {
     }
     setError(null);
     setSelectedFile(file);
-    setStep("scanning");
+    setStep("uploading");
 
     try {
-      const result = await project.scan(file);
-      applyScanResult(result);
-      // Remove any draft with the same archive name now that a fresh scan was done
-      setDrafts(prev => prev.filter(d => d.archive_name !== result.archive_name));
+      const resp = await project.upload(file);
+      sessionStorage.setItem("analysisJobId", resp.job_id);
+      sessionStorage.setItem("projectJobId", resp.job_id);
+      toast.success("Project queued for analysis!");
+      navigate(`/analysis?jobId=${resp.job_id}`);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Scan failed.";
+      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Upload failed.";
       setError(msg);
       toast.error(msg);
       setStep("upload");
     }
   };
 
-  // ── Analyze ───────────────────────────────────────────────────────────────
-
-  const startAnalysis = async () => {
-    if (!scanResult) return;
-    setError(null);
-    setStep("confirming");
-
-    const effectiveDFs = selectedDockerfiles.length > 0 ? selectedDockerfiles : scanResult.detected.dockerfiles;
-    const effectiveCFs = selectedCompose.length > 0 ? selectedCompose : scanResult.detected.compose_files;
-
-    try {
-      const resp = await project.analyze({
-        project_id: scanResult.project_id,
-        selected_dockerfiles: effectiveDFs,
-        selected_compose_files: effectiveCFs,
-        primary_compose_file: primaryCompose,
-        analysis_mode: analysisMode,
-        build_selected_images: buildImages,
-        run_after_analysis: runAfter,
-      });
-      sessionStorage.setItem("analysisJobId", resp.job_id);
-      sessionStorage.setItem("projectJobId", resp.job_id);
-      toast.success("Project analysis queued!");
-      navigate(`/analysis?jobId=${resp.job_id}`);
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to start analysis.";
-      setError(msg);
-      toast.error(msg);
-      setStep("plan");
-    }
-  };
-
-  // ── Toggle helpers ────────────────────────────────────────────────────────
-
-  const toggleDockerfile = (df: string) => {
-    setSelectedDockerfiles(prev => {
-      const next = prev.includes(df) ? prev.filter(x => x !== df) : [...prev, df];
-      scheduleDraftSave();
-      return next;
-    });
-  };
-
-  const toggleCompose = (cf: string) => {
-    setSelectedCompose(prev => {
-      const next = prev.includes(cf) ? prev.filter(x => x !== cf) : [...prev, cf];
-      if (!next.includes(primaryCompose ?? "")) {
-        setPrimaryCompose(next[0] ?? null);
-      }
-      scheduleDraftSave();
-      return next;
-    });
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────────────────────────────────
-
   return (
     <Layout>
       <MotionPage>
-        <div className="max-w-3xl mx-auto px-4">
+        <div className="max-w-2xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">
             <button
@@ -328,27 +90,10 @@ export function ProjectUpload() {
               </div>
               <h1 className="text-2xl font-bold text-white">Project Analysis</h1>
             </div>
-            <p className="text-slate-400">Upload a ZIP archive to scan and analyze your Docker project.</p>
+            <p className="text-slate-400">
+              Upload a ZIP archive to analyze all Dockerfiles and Compose files, and build all images automatically.
+            </p>
           </div>
-
-          {/* Step indicator */}
-          {step !== "scanning" && step !== "confirming" && (
-            <div className="flex items-center gap-2 mb-8">
-              {STEPS.map((s, i) => (
-                <div key={s} className="flex items-center gap-2">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold motion-safe:transition-all ${
-                    step === s ? "bg-purple-600 text-white" :
-                    STEPS.indexOf(step) > i ? "bg-green-600 text-white" :
-                    "bg-slate-800 text-slate-500"
-                  }`}>
-                    {STEPS.indexOf(step) > i ? <Check className="w-3.5 h-3.5" /> : i + 1}
-                  </div>
-                  <span className={`text-sm ${step === s ? "text-white" : "text-slate-500"}`}>{STEP_LABELS[s]}</span>
-                  {i < STEPS.length - 1 && <ChevronRight className="w-4 h-4 text-slate-700 mx-1" />}
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Error */}
           {error && (
@@ -360,7 +105,7 @@ export function ProjectUpload() {
             </Card>
           )}
 
-          {/* ── Step: upload ─────────────────────────────────────────────────── */}
+          {/* Step: upload */}
           {step === "upload" && (
             <motion.div
               initial={{ opacity: 0, y: reducedMotion ? 0 : 8 }}
@@ -400,460 +145,47 @@ export function ProjectUpload() {
                   type="file"
                   accept=".zip"
                   className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) startScan(f); e.target.value = ""; }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) void startUpload(f); e.target.value = ""; }}
                 />
               </motion.div>
 
               <Card className="mt-6 p-5 bg-slate-900 border-slate-800">
-                <h4 className="text-sm font-semibold text-white mb-3">What gets analyzed?</h4>
+                <h4 className="text-sm font-semibold text-white mb-3">What happens automatically</h4>
                 <div className="grid grid-cols-2 gap-2 text-sm text-slate-400">
-                  {["Dockerfiles & variants", "Compose files", "Security issues", "Best practices", "Resource estimates", "Runnability checks"].map(f => (
+                  {[
+                    "All Dockerfiles analyzed",
+                    "All Compose files checked",
+                    "Security issues scanned",
+                    "Best practices reviewed",
+                    "All images built",
+                    "Runnability checked",
+                  ].map(f => (
                     <div key={f} className="flex items-center gap-2">
                       <Check className="w-3.5 h-3.5 text-green-400 shrink-0" />
                       {f}
                     </div>
                   ))}
                 </div>
+                <p className="text-xs text-slate-500 mt-4">
+                  After analysis, select which Compose file to run directly from the results page.
+                </p>
               </Card>
-
-              {/* ── Continue where you left off ─────────────────────────── */}
-              {!draftsLoading && drafts.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: reducedMotion ? 0 : 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.22, delay: 0.1 }}
-                  className="mt-8"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Clock className="w-4 h-4 text-purple-400" />
-                    <h4 className="text-sm font-semibold text-white">Continue where you left off</h4>
-                  </div>
-                  <div className="space-y-2">
-                    {drafts.map(draft => {
-                      const secs = draft.expires_in_seconds ?? 0;
-                      const isLow = secs > 0 && secs < 600;
-                      const stepLabel = draft.workflow_step === "plan" ? "at plan step" : "at review step";
-                      return (
-                        <button
-                          key={draft.project_id}
-                          onClick={() => resumeDraft(draft.project_id)}
-                          className="w-full text-left p-3.5 rounded-lg border border-slate-800 bg-slate-900/60 hover:border-purple-700 hover:bg-purple-950/20 motion-safe:transition-colors group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Archive className="w-4 h-4 text-purple-400 shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium text-white truncate">{draft.archive_name}</p>
-                                <span className="text-xs text-slate-500 shrink-0">{stepLabel}</span>
-                              </div>
-                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                {draft.dockerfiles.length > 0 && (
-                                  <span className="text-xs text-blue-400 flex items-center gap-1">
-                                    <FileCode className="w-3 h-3" />
-                                    {draft.dockerfiles.length} Dockerfile{draft.dockerfiles.length !== 1 ? "s" : ""}
-                                  </span>
-                                )}
-                                {draft.compose_files.length > 0 && (
-                                  <span className="text-xs text-green-400 flex items-center gap-1">
-                                    <FileText className="w-3 h-3" />
-                                    {draft.compose_files.length} Compose
-                                  </span>
-                                )}
-                                {draft.stacks.length > 0 && draft.stacks.slice(0, 2).map(s => (
-                                  <Badge key={s} variant="secondary" className="text-xs bg-slate-800 text-slate-400 border-slate-700 px-1.5 py-0">{s}</Badge>
-                                ))}
-                                <span className={`text-xs flex items-center gap-1 ml-auto ${isLow ? "text-orange-400" : "text-slate-500"}`}>
-                                  <Timer className="w-3 h-3" />
-                                  {secs > 0 ? formatExpiresIn(secs) : formatRelativeTime(draft.created_at)}
-                                </span>
-                              </div>
-                            </div>
-                            <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-purple-400 shrink-0 motion-safe:transition-colors" />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-slate-600 mt-3 flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" />
-                    Drafts are kept for 1 hour from upload and then removed automatically.
-                  </p>
-                </motion.div>
-              )}
             </motion.div>
           )}
 
-          {/* ── Step: scanning ───────────────────────────────────────────────── */}
-          {step === "scanning" && (
+          {/* Step: uploading */}
+          {step === "uploading" && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-center py-16"
             >
               <Loader2 className="w-12 h-12 text-purple-400 mx-auto mb-4 animate-spin" />
-              <h3 className="text-lg font-semibold text-white mb-2">Scanning archive…</h3>
+              <h3 className="text-lg font-semibold text-white mb-2">Uploading and scanning…</h3>
               <p className="text-slate-400 text-sm">
-                {selectedFile ? `${selectedFile.name} (${formatBytes(selectedFile.size)})` : "Detecting Docker assets"}
+                {selectedFile ? `${selectedFile.name} (${formatBytes(selectedFile.size)})` : "Processing archive"}
               </p>
-            </motion.div>
-          )}
-
-          {/* ── Step: review ─────────────────────────────────────────────────── */}
-          {step === "review" && scanResult && (
-            <motion.div
-              initial={{ opacity: 0, y: reducedMotion ? 0 : 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22 }}
-            >
-              {/* Archive info */}
-              <Card className="p-4 bg-slate-900 border-slate-800 mb-4 flex items-center gap-3">
-                <Archive className="w-5 h-5 text-purple-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{scanResult.archive_name}</p>
-                  {selectedFile && <p className="text-slate-400 text-xs">{formatBytes(selectedFile.size)}</p>}
-                </div>
-                <button onClick={() => setStep("upload")} className="text-slate-500 hover:text-white p-1">
-                  <X className="w-4 h-4" />
-                </button>
-              </Card>
-
-              {/* Expiry notice */}
-              {expiresInSeconds !== null && (
-                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-6 ${
-                  expiresInSeconds < 600
-                    ? "bg-orange-950/40 border border-orange-800/50 text-orange-300"
-                    : "bg-slate-800/60 border border-slate-700/50 text-slate-400"
-                }`}>
-                  <Timer className="w-3.5 h-3.5 shrink-0" />
-                  {expiresInSeconds < 600
-                    ? `Draft expires in ${formatExpiresIn(expiresInSeconds)} — start analysis soon to avoid re-uploading.`
-                    : `Progress saved for ${formatExpiresIn(expiresInSeconds)} from upload. After that you'll need to upload again.`}
-                </div>
-              )}
-
-              {/* Warnings */}
-              {scanResult.warnings.length > 0 && (
-                <Card className="p-4 bg-yellow-950/30 border-yellow-800/50 mb-6">
-                  {scanResult.warnings.map((w, i) => (
-                    <div key={i} className="flex items-start gap-2 text-yellow-300 text-sm">
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{w}</span>
-                    </div>
-                  ))}
-                </Card>
-              )}
-
-              {/* Stacks */}
-              {scanResult.detected.stacks.length > 0 && (
-                <div className="mb-6">
-                  <p className="text-slate-400 text-xs mb-2 uppercase tracking-wider">Detected stacks</p>
-                  <div className="flex flex-wrap gap-2">
-                    {scanResult.detected.stacks.map(s => (
-                      <Badge key={s} variant="secondary" className="bg-slate-800 text-slate-300">{s}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Dockerfiles */}
-              {scanResult.detected.dockerfiles.length > 0 && (
-                <div className="mb-6">
-                  <p className="text-slate-400 text-xs mb-3 uppercase tracking-wider">
-                    Dockerfiles <span className="text-slate-600">({scanResult.detected.dockerfiles.length} found)</span>
-                  </p>
-                  <StaggerList className="space-y-2">
-                    {scanResult.detected.dockerfiles.map(df => (
-                      <StaggerItem key={df}>
-                        <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer motion-safe:transition-colors ${
-                          selectedDockerfiles.includes(df)
-                            ? "border-blue-600 bg-blue-900/20"
-                            : "border-slate-800 bg-slate-900/50 hover:border-slate-700"
-                        }`}>
-                          <input
-                            type="checkbox"
-                            checked={selectedDockerfiles.includes(df)}
-                            onChange={() => toggleDockerfile(df)}
-                            className="hidden"
-                          />
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            selectedDockerfiles.includes(df) ? "bg-blue-600 border-blue-600" : "border-slate-600"
-                          }`}>
-                            {selectedDockerfiles.includes(df) && <Check className="w-3 h-3 text-white" />}
-                          </div>
-                          <FileCode className="w-4 h-4 text-blue-400 shrink-0" />
-                          <span className="text-sm text-white font-mono truncate flex-1">{df}</span>
-                        </label>
-                      </StaggerItem>
-                    ))}
-                  </StaggerList>
-                </div>
-              )}
-
-              {/* Compose files */}
-              {scanResult.detected.compose_files.length > 0 && (
-                <div className="mb-6">
-                  <p className="text-slate-400 text-xs mb-3 uppercase tracking-wider">
-                    Compose files for deploy/run <span className="text-slate-600">({scanResult.detected.compose_files.length} found)</span>
-                  </p>
-                  <p className="text-xs text-slate-500 mb-3">
-                    All detected compose files are always analyzed. Your selection here controls which compose file(s) are available for deploy.
-                  </p>
-                  <StaggerList className="space-y-2">
-                    {scanResult.detected.compose_files.map(cf => (
-                      <StaggerItem key={cf}>
-                        <div className={`flex items-center gap-3 p-3 rounded-lg border motion-safe:transition-colors ${
-                          selectedCompose.includes(cf)
-                            ? "border-green-700 bg-green-900/20"
-                            : "border-slate-800 bg-slate-900/50"
-                        }`}>
-                          <label className="flex items-center gap-3 flex-1 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={selectedCompose.includes(cf)}
-                              onChange={() => toggleCompose(cf)}
-                              className="hidden"
-                            />
-                            <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                              selectedCompose.includes(cf) ? "bg-green-600 border-green-600" : "border-slate-600"
-                            }`}>
-                              {selectedCompose.includes(cf) && <Check className="w-3 h-3 text-white" />}
-                            </div>
-                            <FileText className="w-4 h-4 text-green-400 shrink-0" />
-                            <span className="text-sm text-white font-mono truncate">{cf}</span>
-                          </label>
-                          {selectedCompose.includes(cf) && selectedCompose.length > 1 && (
-                            <button
-                              onClick={() => setPrimaryCompose(cf)}
-                              className={`text-xs px-2 py-0.5 rounded shrink-0 ${
-                                primaryCompose === cf
-                                  ? "bg-green-700 text-white"
-                                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
-                              }`}
-                            >
-                              {primaryCompose === cf ? "Primary" : "Set primary"}
-                            </button>
-                          )}
-                        </div>
-                      </StaggerItem>
-                    ))}
-                  </StaggerList>
-                </div>
-              )}
-
-              {/* Services */}
-              {scanResult.detected.services.length > 0 && (
-                <div className="mb-6">
-                  <p className="text-slate-400 text-xs mb-3 uppercase tracking-wider">
-                    Detected services ({scanResult.detected.services.length})
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {scanResult.detected.services.map(svc => (
-                      <div key={`${svc.compose_file}:${svc.name}`} className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="text-sm font-medium text-white truncate">{svc.name}</span>
-                        </div>
-                        {svc.image && <p className="text-xs text-slate-500 truncate">{svc.image}</p>}
-                        {svc.build_context && <p className="text-xs text-blue-400/80 truncate">build: {svc.build_context}</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* No docker files found */}
-              {scanResult.detected.dockerfiles.length === 0 && scanResult.detected.compose_files.length === 0 && (
-                <Card className="p-6 bg-slate-900 border-slate-800 text-center">
-                  <AlertTriangle className="w-8 h-8 text-yellow-400 mx-auto mb-3" />
-                  <p className="text-white font-medium mb-1">No Docker files detected</p>
-                  <p className="text-slate-400 text-sm">This archive does not appear to contain any Dockerfiles or Compose files.</p>
-                </Card>
-              )}
-
-              <div className="flex gap-3 mt-6">
-                <Button variant="outline" onClick={() => setStep("upload")} className="border-slate-700 text-slate-300">
-                  <ChevronLeft className="w-4 h-4 mr-1" /> Back
-                </Button>
-                <Button
-                  onClick={() => { void saveDraftProgress("plan"); setStep("plan"); }}
-                  disabled={selectedDockerfiles.length === 0 && selectedCompose.length === 0}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
-                >
-                  Configure plan <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Step: plan ───────────────────────────────────────────────────── */}
-          {step === "plan" && scanResult && (
-            <motion.div
-              initial={{ opacity: 0, y: reducedMotion ? 0 : 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22 }}
-            >
-              {/* Expiry notice */}
-              {expiresInSeconds !== null && (
-                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-5 ${
-                  expiresInSeconds < 600
-                    ? "bg-orange-950/40 border border-orange-800/50 text-orange-300"
-                    : "bg-slate-800/60 border border-slate-700/50 text-slate-400"
-                }`}>
-                  <Timer className="w-3.5 h-3.5 shrink-0" />
-                  {expiresInSeconds < 600
-                    ? `Draft expires in ${formatExpiresIn(expiresInSeconds)} — start analysis soon to avoid re-uploading.`
-                    : `Progress saved for ${formatExpiresIn(expiresInSeconds)} from upload. After that you'll need to upload again.`}
-                </div>
-              )}
-              <div className="space-y-4 mb-6">
-                <Card className="p-4 bg-slate-900 border-slate-800">
-                  <p className="text-xs text-slate-300">
-                    All detected compose files will be analyzed. Select compose files in the review step to decide what can be deployed after analysis.
-                  </p>
-                </Card>
-                {/* Analysis mode */}
-                <Card className="p-5 bg-slate-900 border-slate-800">
-                  <p className="text-sm font-semibold text-white mb-3">Analysis mode</p>
-                  <div className="space-y-2">
-                    {(
-                      [
-                        { value: "auto", label: "Auto (recommended)", desc: "Analyzes selected Dockerfiles and all detected Compose files" },
-                        { value: "dockerfile-only", label: "Dockerfiles only", desc: "Only analyze selected Dockerfiles", disabled: selectedDockerfiles.length === 0 },
-                        { value: "compose-only", label: "Compose files only", desc: "Analyze all detected Compose files", disabled: scanResult.detected.compose_files.length === 0 },
-                        { value: "full-project", label: "Full project", desc: "Selected Dockerfiles + all detected Compose + mapping", disabled: selectedDockerfiles.length === 0 || scanResult.detected.compose_files.length === 0 },
-                      ] as { value: typeof analysisMode; label: string; desc: string; disabled?: boolean }[]
-                    ).map(opt => (
-                      <label
-                        key={opt.value}
-                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer motion-safe:transition-colors ${
-                          opt.disabled
-                            ? "border-slate-800 opacity-40 cursor-not-allowed"
-                            : analysisMode === opt.value
-                            ? "border-purple-600 bg-purple-900/20"
-                            : "border-slate-800 hover:border-slate-700"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="analysisMode"
-                          value={opt.value}
-                          checked={analysisMode === opt.value}
-                          disabled={opt.disabled}
-                          onChange={() => { if (!opt.disabled) { setAnalysisMode(opt.value); scheduleDraftSave(); } }}
-                          className="hidden"
-                        />
-                        <div className={`w-4 h-4 rounded-full border mt-0.5 flex items-center justify-center shrink-0 ${
-                          analysisMode === opt.value ? "border-purple-500 bg-purple-500" : "border-slate-600"
-                        }`}>
-                          {analysisMode === opt.value && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-white">{opt.label}</p>
-                          <p className="text-xs text-slate-400">{opt.desc}</p>
-                          {opt.disabled && <p className="text-xs text-slate-600 mt-0.5">Not available — select the required files in review step</p>}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </Card>
-
-                {/* Optional actions */}
-                <Card className="p-5 bg-slate-900 border-slate-800">
-                  <p className="text-sm font-semibold text-white mb-3">Optional actions</p>
-                  <div className="space-y-3">
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer motion-safe:transition-colors ${
-                      selectedDockerfiles.length === 0 ? "border-slate-800 opacity-40 cursor-not-allowed" :
-                      buildImages ? "border-blue-600 bg-blue-900/15" : "border-slate-800 hover:border-slate-700"
-                    }`}>
-                      <input
-                        type="checkbox"
-                        checked={buildImages}
-                        disabled={selectedDockerfiles.length === 0}
-                        onChange={e => { setBuildImages(e.target.checked); scheduleDraftSave(); }}
-                        className="hidden"
-                      />
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center mt-0.5 shrink-0 ${
-                        buildImages ? "bg-blue-600 border-blue-600" : "border-slate-600"
-                      }`}>
-                        {buildImages && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Wrench className="w-3.5 h-3.5 text-blue-400" />
-                          <p className="text-sm font-medium text-white">Build selected images</p>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-0.5">Build Dockerfiles into Docker images after analysis</p>
-                        {selectedDockerfiles.length === 0 && <p className="text-xs text-slate-600 mt-0.5">Requires at least one Dockerfile</p>}
-                      </div>
-                    </label>
-
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer motion-safe:transition-colors ${
-                      selectedCompose.length === 0 ? "border-slate-800 opacity-40 cursor-not-allowed" :
-                      runAfter ? "border-green-600 bg-green-900/15" : "border-slate-800 hover:border-slate-700"
-                    }`}>
-                      <input
-                        type="checkbox"
-                        checked={runAfter}
-                        disabled={selectedCompose.length === 0}
-                        onChange={e => { setRunAfter(e.target.checked); scheduleDraftSave(); }}
-                        className="hidden"
-                      />
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center mt-0.5 shrink-0 ${
-                        runAfter ? "bg-green-600 border-green-600" : "border-slate-600"
-                      }`}>
-                        {runAfter && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Play className="w-3.5 h-3.5 text-green-400" />
-                          <p className="text-sm font-medium text-white">Enable Compose run after results</p>
-                        </div>
-                        <p className="text-xs text-slate-400 mt-0.5">After analysis, the results page will let you run the selected Compose stack manually.</p>
-                        {selectedCompose.length === 0 && <p className="text-xs text-slate-600 mt-0.5">Requires at least one Compose file</p>}
-                      </div>
-                    </label>
-                  </div>
-                </Card>
-
-                {/* Summary */}
-                <Card className="p-4 bg-slate-950 border-slate-800">
-                  <p className="text-xs text-slate-400 uppercase tracking-wider mb-3">Analysis plan summary</p>
-                  <div className="space-y-1 text-sm text-slate-300">
-                    <div className="flex gap-2"><span className="text-slate-500">Archive:</span><span className="truncate">{scanResult.archive_name}</span></div>
-                    <div className="flex gap-2"><span className="text-slate-500">Dockerfiles:</span><span>{selectedDockerfiles.length || "none selected"}</span></div>
-                    <div className="flex gap-2"><span className="text-slate-500">Compose:</span><span>{selectedCompose.length || "none selected"}</span></div>
-                    <div className="flex gap-2"><span className="text-slate-500">Mode:</span><span>{analysisMode}</span></div>
-                    {buildImages && <div className="flex gap-2"><span className="text-slate-500">Build images:</span><span className="text-blue-400">yes</span></div>}
-                    {runAfter && <div className="flex gap-2"><span className="text-slate-500">Compose run:</span><span className="text-green-400">enabled from results page</span></div>}
-                  </div>
-                </Card>
-              </div>
-
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => { void saveDraftProgress("review"); setStep("review"); }} className="border-slate-700 text-slate-300">
-                  <ChevronLeft className="w-4 h-4 mr-1" /> Back
-                </Button>
-                <Button
-                  onClick={startAnalysis}
-                  disabled={selectedDockerfiles.length === 0 && selectedCompose.length === 0}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
-                >
-                  Start analysis <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Step: confirming ─────────────────────────────────────────────── */}
-          {step === "confirming" && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-16"
-            >
-              <Loader2 className="w-12 h-12 text-purple-400 mx-auto mb-4 animate-spin" />
-              <h3 className="text-lg font-semibold text-white mb-2">Queuing analysis…</h3>
-              <p className="text-slate-400 text-sm">Submitting your project for analysis</p>
+              <p className="text-slate-500 text-xs mt-2">Analysis will start automatically</p>
             </motion.div>
           )}
         </div>

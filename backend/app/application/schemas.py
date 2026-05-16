@@ -113,100 +113,14 @@ class PaginatedPublicResearchJobs(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Project scan / analyze schemas
+# Project schemas
 # ---------------------------------------------------------------------------
 
 
-class DetectedService(BaseModel):
-    name: str
-    compose_file: str
-    image: str | None = None
-    build_context: str | None = None
-    build_dockerfile: str | None = None
-    ports: list[Any] = []
-    depends_on: list[str] = []
-    db_hints: list[str] = []
+class ProjectPrimaryComposeRequest(BaseModel):
+    """Body for PATCH /project/{id}/primary-compose — sets the compose file used for deploy."""
 
-
-class ProjectDetectedAssets(BaseModel):
-    dockerfiles: list[str] = []
-    compose_files: list[str] = []
-    dockerignore_files: list[str] = []
-    env_examples: list[str] = []
-    stacks: list[str] = []
-    package_managers: list[str] = []
-    services: list[DetectedService] = []
-
-
-class ProjectRecommendation(BaseModel):
-    analysis_mode: str
-    primary_dockerfile: str | None = None
-    primary_compose_file: str | None = None
-    can_build: bool = False
-    can_run: bool = False
-    reasons: list[str] = []
-
-
-class ProjectSavedSelections(BaseModel):
-    """Persisted review/plan choices that can be restored on resume."""
-
-    workflow_step: Literal["review", "plan"] = "review"
-    selected_dockerfiles: list[str] = []
-    selected_compose_files: list[str] = []
-    primary_compose_file: str | None = None
-    analysis_mode: Literal["auto", "dockerfile-only", "compose-only", "full-project"] = "auto"
-    build_selected_images: bool = False
-    run_after_analysis: bool = False
-
-
-class ProjectScanResponse(BaseModel):
-    project_id: uuid.UUID
-    archive_name: str
-    detected: ProjectDetectedAssets
-    recommendation: ProjectRecommendation
-    warnings: list[str] = []
-    # Resume fields (only set when fetching an existing scanned draft)
-    workflow_step: Literal["review", "plan"] = "review"
-    saved_selections: ProjectSavedSelections | None = None
-    expires_at: datetime | None = None
-    expires_in_seconds: int | None = None
-
-
-class ProjectAnalyzeRequest(BaseModel):
-    project_id: uuid.UUID
-    selected_dockerfiles: list[str] = []
-    selected_compose_files: list[str] = []
-    primary_compose_file: str | None = None
-    analysis_mode: Literal["auto", "dockerfile-only", "compose-only", "full-project"] = "auto"
-    build_selected_images: bool = False
-    run_after_analysis: bool = False
-
-
-class ProjectDraftSaveRequest(BaseModel):
-    """Body for PATCH /project/{id}/draft — persists step + selections."""
-
-    workflow_step: Literal["review", "plan"]
-    selected_dockerfiles: list[str] = []
-    selected_compose_files: list[str] = []
-    primary_compose_file: str | None = None
-    analysis_mode: Literal["auto", "dockerfile-only", "compose-only", "full-project"] = "auto"
-    build_selected_images: bool = False
-    run_after_analysis: bool = False
-
-
-class ProjectDraftRead(BaseModel):
-    """Lightweight summary of a scanned-but-not-analyzed project job."""
-
-    project_id: uuid.UUID
-    archive_name: str
-    created_at: datetime
-    dockerfiles: list[str] = []
-    compose_files: list[str] = []
-    stacks: list[str] = []
-    service_count: int = 0
-    workflow_step: Literal["review", "plan"] = "review"
-    expires_at: datetime | None = None
-    expires_in_seconds: int | None = None
+    primary_compose_file: str
 
 
 class PerFileAnalysisResult(BaseModel):

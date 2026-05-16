@@ -155,6 +155,10 @@ export interface DeployStatusResponse {
   can_retry_runtime?: boolean;
 }
 
+export interface DindIpResponse {
+  dind_ip: string | null;
+}
+
 export interface ImageBuildResult {
   dockerfile_path: string;
   build_context: string;
@@ -567,7 +571,7 @@ export const dockerfile = {
   },
 };
 
-export const compose = {
+export const dockcompose = {
   async analyze(file: File): Promise<JobEnqueueResponse> {
     const formData = new FormData();
     formData.append("file", file);
@@ -588,6 +592,9 @@ export const compose = {
   async deployStatus(jobId: string): Promise<DeployStatusResponse> {
     return request<DeployStatusResponse>(`/api/v1/compose/deploy/status/${jobId}`);
   },
+  async dindIp(): Promise<DindIpResponse> {
+    return request<DindIpResponse>("/api/v1/compose/deploy/dind-ip");
+  },
   async stopDeploy(payload: {
     job_id: string;
     remove_volumes?: boolean;
@@ -599,91 +606,7 @@ export const compose = {
   },
 };
 
-// ---------- project scan types ----------
-export interface DetectedService {
-  name: string;
-  compose_file: string;
-  image?: string | null;
-  build_context?: string | null;
-  build_dockerfile?: string | null;
-  ports: unknown[];
-  depends_on: string[];
-  db_hints: string[];
-}
-
-export interface ProjectDetectedAssets {
-  dockerfiles: string[];
-  compose_files: string[];
-  dockerignore_files: string[];
-  env_examples: string[];
-  stacks: string[];
-  package_managers: string[];
-  services: DetectedService[];
-}
-
-export interface ProjectRecommendation {
-  analysis_mode: string;
-  primary_dockerfile?: string | null;
-  primary_compose_file?: string | null;
-  can_build: boolean;
-  can_run: boolean;
-  reasons: string[];
-}
-
-export interface ProjectSavedSelections {
-  workflow_step: "review" | "plan";
-  selected_dockerfiles: string[];
-  selected_compose_files: string[];
-  primary_compose_file?: string | null;
-  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
-  build_selected_images: boolean;
-  run_after_analysis: boolean;
-}
-
-export interface ProjectScanResponse {
-  project_id: string;
-  archive_name: string;
-  detected: ProjectDetectedAssets;
-  recommendation: ProjectRecommendation;
-  warnings: string[];
-  workflow_step?: "review" | "plan";
-  saved_selections?: ProjectSavedSelections | null;
-  expires_at?: string | null;
-  expires_in_seconds?: number | null;
-}
-
-export interface ProjectAnalyzeRequest {
-  project_id: string;
-  selected_dockerfiles: string[];
-  selected_compose_files: string[];
-  primary_compose_file?: string | null;
-  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
-  build_selected_images: boolean;
-  run_after_analysis: boolean;
-}
-
-export interface ProjectDraftSaveRequest {
-  workflow_step: "review" | "plan";
-  selected_dockerfiles: string[];
-  selected_compose_files: string[];
-  primary_compose_file?: string | null;
-  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
-  build_selected_images: boolean;
-  run_after_analysis: boolean;
-}
-
-export interface ProjectDraft {
-  project_id: string;
-  archive_name: string;
-  created_at: string;
-  dockerfiles: string[];
-  compose_files: string[];
-  stacks: string[];
-  service_count: number;
-  workflow_step?: "review" | "plan";
-  expires_at?: string | null;
-  expires_in_seconds?: number | null;
-}
+// ---------- project types ----------
 
 export interface PerFileAnalysisResult {
   file_path: string;
@@ -736,20 +659,6 @@ export interface ProjectAnalysisResult extends AnalysisResult {
 }
 
 export const project = {
-  async scan(file: File): Promise<ProjectScanResponse> {
-    const formData = new FormData();
-    formData.append("file", file);
-    return request<ProjectScanResponse>("/api/v1/project/scan", {
-      method: "POST",
-      body: formData,
-    });
-  },
-  async analyze(payload: ProjectAnalyzeRequest): Promise<JobEnqueueResponse> {
-    return request<JobEnqueueResponse>("/api/v1/project/analyze", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
   async upload(file: File): Promise<JobEnqueueResponse> {
     const formData = new FormData();
     formData.append("file", file);
@@ -758,16 +667,10 @@ export const project = {
       body: formData,
     });
   },
-  async drafts(): Promise<ProjectDraft[]> {
-    return request<ProjectDraft[]>("/api/v1/project/drafts");
-  },
-  async getScan(projectId: string): Promise<ProjectScanResponse> {
-    return request<ProjectScanResponse>(`/api/v1/project/${projectId}/scan`);
-  },
-  async saveDraft(projectId: string, payload: ProjectDraftSaveRequest): Promise<ProjectDraft> {
-    return request<ProjectDraft>(`/api/v1/project/${projectId}/draft`, {
+  async setPrimaryCompose(projectId: string, primaryComposeFile: string): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>(`/api/v1/project/${projectId}/primary-compose`, {
       method: "PATCH",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ primary_compose_file: primaryComposeFile }),
     });
   },
 };
