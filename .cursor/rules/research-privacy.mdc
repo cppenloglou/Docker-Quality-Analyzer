@@ -32,3 +32,4 @@ Research responses and aggregates must be **privacy-safe** and **anonymized**.
 
 - Use **`anonymized_submitter`** (or equivalent stable anonymous bucket) instead of user identity.
 - Expose only **`public_metadata`** and **`public_result`** (or fields explicitly approved for research)—nothing from the forbidden list above.
+- Keep `public_metadata` allow-listed (for example file extension and aggregate-safe flags), and keep `public_result` to sanitized aggregates (counts/severity/code/doc URLs) without source snippets.

@@ -43,3 +43,6 @@ temp/
 
 # Project runtime data
 storage/uploads/
+
+# Local transcript archives (Cursor history backups)
+context/transcript-backups/

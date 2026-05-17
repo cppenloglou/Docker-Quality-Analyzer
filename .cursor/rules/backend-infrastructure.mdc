@@ -33,12 +33,13 @@ alwaysApply: false
 
 - `publish_event(DomainEvent)` publishes to multiple channels based on event context.
 - `subscribe(channel)` returns an `AsyncIterator[dict]` with `try/finally` cleanup.
-- Channel patterns: `user:{id}:events`, `job:{id}:events`, `container:{id}:metrics`.
+- Channel patterns: `user:{id}:events`, `job:{id}:events`, `container:{id}:metrics`, `user:{id}:container:{id}:metrics`.
 
 ## Deploy State in Redis
 
 - Key: `deploy:{user_id}:{job_id}` — JSON payload with 6-hour TTL.
 - Payload should include **`containers`**, aggregates **`running_count`**, **`exited_count`**, **`unhealthy_count`**, plus **`runtime_state`** when tracked (overall deploy/monitor rollup).
+- Runtime state values can include: `none`, `running`, `partial`, `unhealthy`, `exited`, `failed`, `stopping`, `stopped_by_user`, `cleanup_completed`.
 - Stop signal: `deploy-stop:{user_id}:{job_id}` — flag key.
 
 ## Subprocess Tools (`tools/process.py`)

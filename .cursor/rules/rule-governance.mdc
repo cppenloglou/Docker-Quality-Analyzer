@@ -1,0 +1,32 @@
+---
+description: Rule governance map — topic owners, scope boundaries, and de-duplication policy
+alwaysApply: true
+---
+
+# Rule Governance
+
+## Purpose
+
+Keep rules concise and non-duplicative by assigning a single primary owner file per topic.
+
+## Topic owners
+
+- **Architecture owner:** `project-architecture.mdc` (system shape and cross-layer boundaries)
+- **Workflow owner:** `project-workflow.mdc` (upload/analyze/build/deploy user flow)
+- **Runtime safety owner:** `project-runtime-safety.mdc` (execution constraints and deploy/runtime semantics)
+- **Testing owner:** `testing-conventions.mdc` (quality gates and test expectations)
+- **Backend implementation owners:** `backend-*.mdc` files (router/infrastructure/plugin/python specifics)
+- **Frontend implementation owners:** `frontend-*.mdc` + `results-and-monitoring.mdc`
+- **Privacy owner:** `research-privacy.mdc`
+- **DevOps owner:** `docker-and-devops.mdc`
+
+## De-duplication policy
+
+- Put canonical statements in the owner file and keep references elsewhere short.
+- When two rules overlap, prefer cross-reference instead of repeating detailed guidance.
+- Use "current behavior" wording when documenting code-backed behavior that may change later.
+
+## When to apply
+
+- Apply this governance rule whenever adding/updating rule files.
+- If a rule grows broad or duplicates another rule, split or trim it before adding new guidance.

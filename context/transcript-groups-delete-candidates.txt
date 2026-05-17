@@ -1,0 +1,8 @@
+# Parent transcript folders to delete (candidate list; review first)
+# Source root:
+# /home/cppenloglou/.cursor/projects/home-cppenloglou-Documents-Docker-Quality-Analyzer/agent-transcripts
+
+33e492ca-e6e3-46a8-a391-40e17ed2976c
+9deaf9e9-7b8c-4770-ab01-cb50e7d8def3
+a6ccf90a-8da1-44cb-a5e0-8f44ba187a4f
+e421981f-afd8-4619-8d58-54a62a5a14cb

@@ -1,0 +1,14 @@
+# Parent transcript folders to archive (useful history)
+# Source root:
+# /home/cppenloglou/.cursor/projects/home-cppenloglou-Documents-Docker-Quality-Analyzer/agent-transcripts
+
+1735f5cb-1b99-4dad-b39a-fe37e9e44cc9
+4cf45642-35e7-4353-bf0d-2ad32ea139c8
+5d00f878-9fe7-405a-8976-e1c36842eca7
+67e1a024-45d8-425a-a3c1-b2a1caaec0ee
+7b29f305-2459-4bb3-abe6-05179cdc31f0
+86a5d084-53f2-4e57-93ed-ee7d9cb928eb
+a801b002-7a0d-48aa-b421-b6c00f15a8e1
+eb0c5756-3c15-4b75-a77e-c5d499afea38
+f404051e-5b9e-48f5-bd07-6a5db8b08bcd
+f929403c-74cc-44fd-a3c2-26014427d69d

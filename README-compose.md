@@ -71,7 +71,7 @@ docker compose down -v
 
 ## Why DinD uses TLS (and still needs privileged mode)
 
-- Worker and DinD communicate over `tcp://dind:2376` with TLS (`DOCKER_TLS_VERIFY=1`), so Docker daemon traffic is encrypted and authenticated.
+- Worker and DinD communicate over `tcp://docker:2376` (DinD network alias) with TLS (`DOCKER_TLS_VERIFY=1`, `DOCKER_CERT_PATH=/certs/client`), so Docker daemon traffic is encrypted and authenticated.
 - DinD is intentionally not exposed to host ports.
 - `privileged: true` is still required for Docker-in-Docker daemon operation (nested container runtime and storage driver behavior).
 

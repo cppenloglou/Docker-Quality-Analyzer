@@ -40,9 +40,9 @@ A multi-tenant platform for analyzing, scoring, and deploying Docker artifacts. 
 
 ### 3. Project Archive Analysis
 1. User uploads a `.zip` containing a full project.
-2. The backend extracts the archive and intelligently detects `Dockerfile`s and `docker-compose.yml` files.
-3. It performs analysis on all detected artifacts.
-4. If a runnable Compose stack is found, the entire project context is sent to the DinD daemon for building and deployment.
+2. The backend extracts the archive and detects `Dockerfile` and Compose assets.
+3. The upload flow queues analysis for all detected artifacts and currently enables image builds by default.
+4. Compose runtime deploy remains explicit: users trigger run/deploy from project results controls.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -96,7 +96,7 @@ docker compose logs -f frontend api worker       # tail live logs
 
 - If Docker daemon is not running, start Docker Desktop / Docker Engine first.
 - If startup fails after a major change, run `./scripts/stop.sh --wipe` and then `./scripts/start.sh`.
-- If ports are already in use, stop conflicting services or adjust host port bindings in `docker-compose.yaml`.
+- If ports are already in use, stop conflicting services or adjust host port bindings in `compose.yaml` plus overlay files.
 
 ## 🎮 Examples & Demo
 

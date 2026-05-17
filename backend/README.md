@@ -14,7 +14,7 @@ Production-grade FastAPI backend using a modular-monolith + hexagonal structure:
 - Multi-user auth (`/auth/register`, `/auth/login`) with JWT + API key support
 - User-scoped jobs/history for Dockerfile, Compose, and project archive workflows
 - Redis event bus with job/container event streams
-- Plugin-based analyzers: hadolint, compose validator, security scanner, resource estimation
+- Plugin-based analyzers: hadolint, compose validator, compose runnability, security scanner, resource estimation
 - Prometheus endpoint (`/metrics`) + JSON structured logging
 
 ## Run locally
