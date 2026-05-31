@@ -2,25 +2,25 @@ import { createBrowserRouter } from "react-router-dom";
 import App from "./App";
 import { DockerLoader } from "./components/DockerLoader";
 import { RequireAuth } from "./components/RequireAuth";
+import { AuthLayout } from "./pages/AuthLayout";
+import { Login } from "./pages/Login";
+import { Register } from "./pages/Register";
 
 const routeHydrateFallbackElement = <DockerLoader message="Loading page..." />;
 
 export const router = createBrowserRouter([
   {
-    path: "/login",
-    hydrateFallbackElement: routeHydrateFallbackElement,
-    lazy: async () => {
-      const m = await import("./pages/Login");
-      return { Component: m.Login };
-    },
-  },
-  {
-    path: "/register",
-    hydrateFallbackElement: routeHydrateFallbackElement,
-    lazy: async () => {
-      const m = await import("./pages/Register");
-      return { Component: m.Register };
-    },
+    Component: AuthLayout,
+    children: [
+      {
+        path: "/login",
+        Component: Login,
+      },
+      {
+        path: "/register",
+        Component: Register,
+      },
+    ],
   },
   {
     path: "/",

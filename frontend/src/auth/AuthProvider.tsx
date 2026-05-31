@@ -10,6 +10,7 @@ import {
   readUserFromStorage,
   type User,
 } from "../utils/api";
+import { clearNotificationsForUser } from "../utils/notifications";
 
 interface AuthContextValue {
   user: User | null;
@@ -30,10 +31,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isBooting, setIsBooting] = useState<boolean>(() => !!getAccessToken());
 
   const logout = useCallback(() => {
+    clearNotificationsForUser(user?.id);
     clearSession();
     setUser(null);
     setToken(null);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;

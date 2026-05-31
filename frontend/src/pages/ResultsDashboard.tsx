@@ -430,7 +430,9 @@ export function ResultsDashboard() {
     const previousStatus = containerStatus;
     setContainerStatus("stopping");
     sessionStorage.setItem("dqa:containerStatus", "stopping");
-    pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for shutdown...");
+    pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for shutdown...", {
+      dedupeKey: `deploy.stop.requested:${job.id}`,
+    });
     try {
       await composeApi.stopDeploy({ job_id: job.id });
       for (let i = 0; i < 30; i++) {
@@ -444,7 +446,9 @@ export function ResultsDashboard() {
             setContainerStatus("stopped");
             sessionStorage.removeItem("dqa:containerStatus");
             toast.success("Containers stopped");
-            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped");
+            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped", {
+              dedupeKey: `deploy.stop.completed:${job.id}`,
+            });
             return;
           }
         } catch {
@@ -460,7 +464,9 @@ export function ResultsDashboard() {
         setContainerStatus(previousStatus);
         sessionStorage.removeItem("dqa:containerStatus");
         toast.error("Failed to stop containers");
-        pushNotification("error", "Stop Failed", "Failed to stop containers");
+        pushNotification("error", "Stop Failed", "Failed to stop containers", {
+          dedupeKey: `deploy.stop.failed:${job.id}`,
+        });
       }
     }
   };

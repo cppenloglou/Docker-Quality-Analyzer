@@ -64,6 +64,22 @@ def _grade(score: int) -> str:
     return "F"
 
 
+def _build_analysis_started_payload(context: dict[str, Any]) -> dict[str, Any]:
+    filename = context.get("filename")
+    source = context.get("source")
+    dockerfile_content = context.get("dockerfile_content")
+    compose_content = context.get("compose_content")
+    analysis_type = "compose" if isinstance(compose_content, str) and compose_content else "dockerfile"
+    effective_source = compose_content if analysis_type == "compose" else dockerfile_content
+    line_count = len(effective_source.splitlines()) if isinstance(effective_source, str) else 0
+    payload: dict[str, Any] = {"analysis_type": analysis_type, "line_count": max(1, line_count)}
+    if isinstance(filename, str) and filename:
+        payload["filename"] = filename
+    if isinstance(source, str) and source:
+        payload["source"] = source
+    return payload
+
+
 class AnalysisService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -140,7 +156,8 @@ class AnalysisService:
     async def run_job_with_plugins(
         self, user_id: uuid.UUID, job_id: uuid.UUID, context: dict[str, Any], plugin_names: Iterable[str]
     ) -> dict[str, Any]:
-        await publish_event(DomainEvent("user.analysis.started", str(user_id), str(job_id), payload=context))
+        safe_start_payload = _build_analysis_started_payload(context)
+        await publish_event(DomainEvent("user.analysis.started", str(user_id), str(job_id), payload=safe_start_payload))
         await self.repo.update_status(job_id, user_id, JobStatus.running)
         await self.session.commit()
 

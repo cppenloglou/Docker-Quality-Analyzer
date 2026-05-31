@@ -781,6 +781,12 @@ export const ws = {
       `${wsBase()}/ws/users/${userId}/containers/${containerId}?token=${encodeURIComponent(token)}`,
     );
   },
+  connectUserEvents(userId: string): WebSocket {
+    const token = getAccessToken() ?? "";
+    return new WebSocket(
+      `${wsBase()}/ws/users/${userId}/events?token=${encodeURIComponent(token)}`,
+    );
+  },
 };
 
 // ---------- health ----------

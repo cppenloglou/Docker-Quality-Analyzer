@@ -237,7 +237,9 @@ export function AnalysisProgress() {
       // sessionStorage may be blocked; safe to ignore
     }
     toast.success("Analysis complete");
-    pushNotification("success", "Analysis Complete", `Job ${latestJob.id.slice(0, 8)} finished successfully`);
+    pushNotification("success", "Analysis Complete", `Job ${latestJob.id.slice(0, 8)} finished successfully`, {
+      dedupeKey: `analysis.completed:${latestJob.id}`,
+    });
     closeSocket();
     setTimeout(() => {
       navigate(`/results?jobId=${latestJob.id}`);
@@ -248,7 +250,9 @@ export function AnalysisProgress() {
     setJobStatus("failed");
     failAllRemaining(message);
     toast.error(message);
-    pushNotification("error", "Analysis Failed", message);
+    pushNotification("error", "Analysis Failed", message, {
+      dedupeKey: `analysis.failed:${jobId ?? "unknown"}`,
+    });
     closeSocket();
   };
 

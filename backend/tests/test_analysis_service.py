@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock
 
-from app.application.services.analysis_service import AnalysisService
+from app.application.services.analysis_service import AnalysisService, _build_analysis_started_payload
 
 
 def test_normalize_issue_uses_level_when_severity_missing():
@@ -70,3 +70,20 @@ def test_normalize_issue_dclint_rdjson_code_object():
     assert issue.line == 7
     assert issue.severity == "error"
     assert issue.suggestion == "Bind ports to a host interface."
+
+
+def test_build_analysis_started_payload_omits_source_content():
+    payload = _build_analysis_started_payload(
+        {
+            "filename": "docker-compose.yml",
+            "source": "upload",
+            "compose_content": "services:\n  web:\n    image: nginx:1.27\n",
+            "dockerfile_content": "",
+        }
+    )
+    assert payload["analysis_type"] == "compose"
+    assert payload["line_count"] == 3
+    assert payload["filename"] == "docker-compose.yml"
+    assert payload["source"] == "upload"
+    assert "compose_content" not in payload
+    assert "dockerfile_content" not in payload

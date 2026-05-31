@@ -12,6 +12,10 @@ Lifecycle scripts (mode-aware) are available:
 - `./scripts/start.sh --prod`
 - `./scripts/status.sh --dev|--prod`
 - `./scripts/stop.sh --dev|--prod [--wipe]`
+- `.\scripts\start.ps1 --dev`
+- `.\scripts\start.ps1 --prod`
+- `.\scripts\status.ps1 --dev|--prod`
+- `.\scripts\stop.ps1 --dev|--prod [--wipe]`
 
 ## 1) Prepare environment and secrets
 
