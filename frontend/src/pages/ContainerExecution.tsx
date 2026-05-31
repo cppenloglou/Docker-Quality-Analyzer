@@ -314,7 +314,9 @@ export function ContainerExecution() {
         "done",
         ids.length > 0 ? `${ids.length} container(s) started` : "Container started",
       );
-      pushNotification("success", "Containers Running", `${ids.length || 1} container(s) are now running`);
+      pushNotification("success", "Containers Running", `${ids.length || 1} container(s) are now running`, {
+        dedupeKey: `container.started:${parsed.job_id ?? job?.id ?? "unknown"}`,
+      });
     } else if (parsed.event_name === "container.metrics") {
       const metricContainerId = String(
         (parsed.payload as { container_id?: string })?.container_id ?? "",
@@ -366,7 +368,9 @@ export function ContainerExecution() {
       }
       setTimelineStatus("metrics", "error", "All containers exited unexpectedly");
       pushLog({ message: "All containers have exited.", timestamp: parsed.timestamp, tone: "error" });
-      pushNotification("warning", "Runtime Stopped", "All containers have exited");
+      pushNotification("warning", "Runtime Stopped", "All containers have exited", {
+        dedupeKey: `project.runtime_stopped:${parsed.job_id ?? job?.id ?? "unknown"}`,
+      });
       markProblematicStack(
         "Current stack is problematic. Please fix the stack and resubmit before deploying again.",
         { cleanupRuntime: true, keepExitData: true },
@@ -382,7 +386,9 @@ export function ContainerExecution() {
       sessionStorage.removeItem("dqa:containerStatus");
       if (stateKey) clearState(stateKey);
       toast.success("Compose stack stopped");
-      pushNotification("warning", "Containers Stopped", "All containers have been stopped");
+      pushNotification("warning", "Containers Stopped", "All containers have been stopped", {
+        dedupeKey: `container.stopped:${parsed.job_id ?? job?.id ?? "unknown"}`,
+      });
     } else if (parsed.event_name === "deploy.cleanup_started") {
       const projectName = String(
         (parsed.payload as { project_name?: string })?.project_name ?? "compose stack",
@@ -395,7 +401,9 @@ export function ContainerExecution() {
         tone: "info",
       });
       toast.message("Stopping and removing stack resources...");
-      pushNotification("info", "Cleanup Started", "Removing containers created by the failed deploy");
+      pushNotification("info", "Cleanup Started", "Removing containers created by the failed deploy", {
+        dedupeKey: `deploy.cleanup_started:${parsed.job_id ?? job?.id ?? "unknown"}`,
+      });
     } else if (parsed.event_name === "deploy.cleanup_completed") {
       const projectName = String(
         (parsed.payload as { project_name?: string })?.project_name ?? "compose stack",
@@ -412,7 +420,9 @@ export function ContainerExecution() {
         tone: "success",
       });
       toast.success("Failed deploy containers stopped and removed");
-      pushNotification("success", "Cleanup Completed", "Failed deploy containers were removed from the sandbox");
+      pushNotification("success", "Cleanup Completed", "Failed deploy containers were removed from the sandbox", {
+        dedupeKey: `deploy.cleanup_completed:${parsed.job_id ?? job?.id ?? "unknown"}`,
+      });
     } else if (parsed.event_name === "user.analysis.failed") {
       setTimelineStatus(
         "start",
@@ -635,7 +645,9 @@ export function ContainerExecution() {
         tone: "success",
       });
       toast.success("Deploy request accepted");
-      pushNotification("info", "Deploy Started", `Compose stack deploy queued for job ${job.id.slice(0, 8)}`);
+      pushNotification("info", "Deploy Started", `Compose stack deploy queued for job ${job.id.slice(0, 8)}`, {
+        dedupeKey: `deploy.started:${job.id}`,
+      });
 
       connectJobSocket(job.id, true);
 
@@ -690,7 +702,9 @@ export function ContainerExecution() {
       });
       setTimelineStatus("metrics", "done", "Stop signal sent");
       toast.success("Stop request accepted");
-      pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for containers to shut down...");
+      pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for containers to shut down...", {
+        dedupeKey: `deploy.stop.requested:${job.id}`,
+      });
 
       for (let i = 0; i < 30; i++) {
         if (unmountedRef.current) break;
@@ -704,7 +718,9 @@ export function ContainerExecution() {
             if (stateKey) clearState(stateKey);
             sessionStorage.removeItem("dqa:containerStatus");
             pushLog({ message: "Stack confirmed stopped", tone: "success" });
-            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped");
+            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped", {
+              dedupeKey: `deploy.stop.completed:${job.id}`,
+            });
             break;
           }
         } catch {

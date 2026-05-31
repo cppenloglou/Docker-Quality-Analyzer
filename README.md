@@ -52,6 +52,10 @@ Run the entire platform with one command:
 ./scripts/start.sh
 ```
 
+```powershell
+.\scripts\start.ps1
+```
+
 ### Services started:
 
 | Service  | Purpose                                 | Exposed port |
@@ -65,7 +69,7 @@ Run the entire platform with one command:
 
 Open the app at `http://localhost:3000`. The frontend container proxies `/api`, `/auth`, `/health`, `/metrics`, `/docs`, `/redoc`, `/openapi.json` and `/ws/*` (with WebSocket upgrade) to the `api` service, so browser clients only need to talk to port 3000.
 
-### What `start.sh` does automatically
+### What `start.sh` / `start.ps1` do automatically
 
 - verifies required tools (`docker`, `docker compose`, `curl`, `rg`)
 - creates `.env` on first run with generated secrets (`POSTGRES_PASSWORD`, `JWT_SECRET_KEY`)
@@ -92,10 +96,17 @@ docker compose logs -f frontend api worker       # tail live logs
 ./scripts/stop.sh --wipe                         # stop + wipe volumes
 ```
 
+```powershell
+.\scripts\status.ps1                             # compose + health summary
+docker compose logs -f frontend api worker       # tail live logs
+.\scripts\stop.ps1                               # stop stack
+.\scripts\stop.ps1 --wipe                        # stop + wipe volumes
+```
+
 ### Troubleshooting
 
 - If Docker daemon is not running, start Docker Desktop / Docker Engine first.
-- If startup fails after a major change, run `./scripts/stop.sh --wipe` and then `./scripts/start.sh`.
+- If startup fails after a major change, run `./scripts/stop.sh --wipe` (or `.\scripts\stop.ps1 --wipe` on Windows) and then restart.
 - If ports are already in use, stop conflicting services or adjust host port bindings in `compose.yaml` plus overlay files.
 
 ## 🎮 Examples & Demo
@@ -131,7 +142,7 @@ During dev the Vite server listens on `http://localhost:5173`; since `VITE_API_B
 
 If you are new to this codebase, follow this order:
 
-1. **Run the stack first** with `./scripts/start.sh` so you can see the full upload → analysis → results flow end-to-end.
+1. **Run the stack first** with `./scripts/start.sh` (or `.\scripts\start.ps1` on Windows) so you can see the full upload → analysis → results flow end-to-end.
 2. **Read the backend entrypoint** (`backend/app/main.py`) and API router composition (`backend/app/api/router.py`) to understand how routes are wired.
 3. **Study the analysis pipeline** in `backend/app/application/services/analysis_service.py` and worker task orchestration in `backend/app/workers/tasks.py`.
 4. **Review plugin-based checks** under `backend/app/plugins/` (Hadolint, compose runnability, security checks, resource estimation).

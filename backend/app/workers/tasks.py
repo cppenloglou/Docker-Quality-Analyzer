@@ -88,7 +88,17 @@ async def run_project_analysis(ctx, payload: dict) -> dict:
         repo = JobRepository(session)
         svc = AnalysisService(session)
 
-        await publish_event(DomainEvent("project.analysis_started", str(user_id), str(job_id), payload={"project_path": str(project_path)}))
+        await publish_event(
+            DomainEvent(
+                "project.analysis_started",
+                str(user_id),
+                str(job_id),
+                payload={
+                    "dockerfile_count": len(dockerfiles),
+                    "compose_count": len(compose_files),
+                },
+            )
+        )
         await repo.update_status(job_id, user_id, JobStatus.running)
         await session.commit()
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { FileCode, History, Home, KeyRound, LogOut, BarChart3 } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
+import { NotificationEventBridge } from "./NotificationEventBridge";
 import { NotificationPanel } from "./NotificationPanel";
 import { Button } from "./ui/button";
 import { checkHealth } from "../utils/api";
@@ -43,6 +44,7 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col">
+      <NotificationEventBridge />
       <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
