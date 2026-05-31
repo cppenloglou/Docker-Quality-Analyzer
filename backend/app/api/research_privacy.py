@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import uuid
 from typing import Any
 
@@ -42,6 +43,121 @@ _ISSUE_LIST_KEYS: tuple[str, ...] = ("errors", "warnings", "suggestions", "secur
 
 # Count key names that map to the above issue lists.
 _ISSUE_COUNT_KEYS: tuple[str, ...] = ("errors_count", "warnings_count", "suggestions_count", "security_count")
+
+_FINDING_MESSAGE_MAX_LEN = 180
+_IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_DOMAIN_RE = re.compile(r"\b(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b")
+_SECRET_RE = re.compile(r"(?i)\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+")
+_ABS_PATH_RE = re.compile(r"(?:[A-Za-z]:\\|/)[^\s,;]+")
+_REL_PATH_RE = re.compile(r"(?:\.\./|\.\/)[^\s,;]+")
+_MULTI_SPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_finding_code(raw_code: Any) -> str:
+    if isinstance(raw_code, str):
+        code = raw_code.strip()
+        if code:
+            return code
+    return "UNKNOWN"
+
+
+def _normalize_finding_message(raw_message: Any) -> str:
+    if isinstance(raw_message, str):
+        message = raw_message.strip()
+    else:
+        message = ""
+    if not message:
+        message = "No details provided"
+    # Redact path / host / secret-like tokens from message-level aggregates.
+    message = _SECRET_RE.sub("[redacted]", message)
+    message = _ABS_PATH_RE.sub("[redacted-path]", message)
+    message = _REL_PATH_RE.sub("[redacted-path]", message)
+    message = _IP_RE.sub("[redacted-ip]", message)
+    message = _DOMAIN_RE.sub("[redacted-domain]", message)
+    message = _MULTI_SPACE_RE.sub(" ", message).strip()
+    if len(message) > _FINDING_MESSAGE_MAX_LEN:
+        message = f"{message[:_FINDING_MESSAGE_MAX_LEN - 3]}..."
+    return message
+
+
+def _normalize_finding_severity(raw_severity: Any, *, code: str, issue_list_key: str) -> str:
+    if issue_list_key == "securityIssues" or code.upper().startswith("SEC"):
+        return "security"
+    severity = str(raw_severity or "").strip().lower()
+    if severity == "warn":
+        severity = "warning"
+    if severity == "fatal":
+        severity = "error"
+    if severity in {"error", "warning", "info"}:
+        return severity
+    if issue_list_key == "errors":
+        return "error"
+    if issue_list_key == "warnings":
+        return "warning"
+    return "info"
+
+
+def _extract_findings_from_container(container: dict[str, Any]) -> list[dict[str, str | None]]:
+    findings: list[dict[str, str | None]] = []
+    for issue_list_key in _ISSUE_LIST_KEYS:
+        issues = container.get(issue_list_key)
+        if not isinstance(issues, list):
+            continue
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            code = _normalize_finding_code(issue.get("code"))
+            message = _normalize_finding_message(issue.get("message"))
+            severity = _normalize_finding_severity(
+                issue.get("severity"),
+                code=code,
+                issue_list_key=issue_list_key,
+            )
+            doc_url_raw = issue.get("doc_url")
+            doc_url: str | None = None
+            if isinstance(doc_url_raw, str):
+                stripped = doc_url_raw.strip()
+                if stripped.startswith(("http://", "https://")):
+                    doc_url = stripped
+            findings.append(
+                {
+                    "code": code,
+                    "severity": severity,
+                    "message": message,
+                    "doc_url": doc_url,
+                }
+            )
+    return findings
+
+
+def extract_public_research_findings(
+    result: dict[str, Any] | None,
+    *,
+    prefer_per_file: bool = False,
+) -> list[dict[str, str | None]]:
+    """Extract privacy-safe findings from public result sources only.
+
+    Uses only allowed findings arrays:
+    - top-level: errors, warnings, suggestions, securityIssues
+    - project per-file: per_file_results[*].errors|warnings|suggestions|securityIssues
+    """
+    if not result or not isinstance(result, dict):
+        return []
+    sanitized = strip_source_preview_recursive(result)
+    if not isinstance(sanitized, dict):
+        return []
+
+    per_file = sanitized.get("per_file_results")
+    per_file_rows = [row for row in per_file if isinstance(row, dict)] if isinstance(per_file, list) else []
+    findings: list[dict[str, str | None]] = []
+
+    if not (prefer_per_file and per_file_rows):
+        findings.extend(_extract_findings_from_container(sanitized))
+    if per_file_rows:
+        for row in per_file_rows:
+            findings.extend(_extract_findings_from_container(row))
+
+    return findings
 
 
 def anonymize_user_id(user_id: uuid.UUID) -> str:
@@ -87,14 +203,16 @@ def sanitize_research_result(result: dict[str, Any] | None) -> dict[str, Any] | 
     if not result or not isinstance(result, dict):
         return None
 
-    result = strip_source_preview_recursive(result)
+    sanitized = strip_source_preview_recursive(result)
+    if not isinstance(sanitized, dict):
+        return None
 
     safe: dict[str, Any] = {}
 
     # Copy safe scalar fields.
     for key in _SAFE_RESULT_SCALAR_KEYS:
-        if key in result:
-            safe[key] = result[key]
+        if key in sanitized:
+            safe[key] = sanitized[key]
 
     # Summarise each issue list.
     issue_codes: list[str] = []
@@ -102,7 +220,7 @@ def sanitize_research_result(result: dict[str, Any] | None) -> dict[str, Any] | 
     severity_counts: dict[str, int] = {}
 
     for list_key, count_key in zip(_ISSUE_LIST_KEYS, _ISSUE_COUNT_KEYS):
-        issues = result.get(list_key)
+        issues = sanitized.get(list_key)
         if isinstance(issues, list):
             safe[count_key] = len(issues)
             for issue in issues:

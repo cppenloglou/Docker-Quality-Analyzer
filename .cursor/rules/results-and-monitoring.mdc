@@ -27,6 +27,6 @@ alwaysApply: false
 
 ## Monitoring
 
-- Surface **running**, **exited**, **unhealthy**, **partial**, and **disconnected** (WS/client) states **clearly**—different copy, color, and icons; no ambiguous “active” for dead processes.
+- Surface **running**, **partial**, **unhealthy**, **exited**, **failed**, **stopping**, **stopped_by_user**, **cleanup_completed**, and **disconnected** (WS/client) states **clearly**—different copy, color, and icons; no ambiguous "active" for dead processes.
 - If a container **exits before metrics** exist, show an explicit message (no empty chart pretending health).
-- **Do not** label exited containers **“Live”** or imply continuous metrics when the process has stopped.
+- **Do not** label exited/failed/stopped containers as **"Live"** or imply continuous metrics when the process has stopped.

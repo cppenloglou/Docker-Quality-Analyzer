@@ -1,7 +1,7 @@
 import json
 import uuid
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,14 @@ from app.plugins.base import BasePlugin
 from app.plugins.registry import load_plugins
 
 
+def _hadolint_doc_url(code: str) -> str | None:
+    if code.startswith("DL"):
+        return f"https://github.com/hadolint/hadolint/wiki/{code}"
+    if code.startswith("SC"):
+        return f"https://github.com/koalaman/shellcheck/wiki/{code}"
+    return None
+
+
 def _rule_code_and_doc_url(raw: dict[str, Any]) -> tuple[str, str | None]:
     field = raw.get("code", raw.get("rule"))
     if isinstance(field, dict):
@@ -21,7 +29,8 @@ def _rule_code_and_doc_url(raw: dict[str, Any]) -> tuple[str, str | None]:
         url = field.get("url")
         return code, str(url) if url else None
     if field is not None and field != "":
-        return str(field), None
+        code = str(field)
+        return code, _hadolint_doc_url(code)
     return "GEN000", None
 
 
@@ -60,8 +69,8 @@ class AnalysisService:
         self.session = session
         self.repo = JobRepository(session)
 
-    async def enqueue_job(self, user_id: uuid.UUID, job_type: JobType, metadata: dict[str, Any]) -> uuid.UUID:
-        job = await self.repo.create_job(user_id, job_type, metadata)
+    async def enqueue_job(self, user_id: uuid.UUID, job_type: JobType, metadata: dict[str, Any], initial_status: JobStatus = JobStatus.queued) -> uuid.UUID:
+        job = await self.repo.create_job(user_id, job_type, metadata, initial_status=initial_status)
         await self.session.commit()
         return job.id
 
@@ -192,12 +201,13 @@ class AnalysisService:
                 severity = "error"
             else:
                 severity = "info"
+        issue_severity = cast(Literal["error", "warning", "info"], severity)
         line = raw.get("line") or raw.get("location", {}).get("range", {}).get("start", {}).get("line") or 1
         code, doc_url = _rule_code_and_doc_url(raw)
         return Issue(
             line=int(line),
             code=code,
-            severity=severity,
+            severity=issue_severity,
             message=str(raw.get("message", "No details provided.")),
             suggestion=_suggestion_from_raw(raw),
             doc_url=doc_url,

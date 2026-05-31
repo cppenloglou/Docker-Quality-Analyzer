@@ -1,0 +1,52 @@
+services:
+  api:
+    environment:
+      APP_ENV: dev
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+    ports: !override
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+
+  worker:
+    environment:
+      APP_ENV: dev
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: builder
+    image: docker-platform-frontend-dev:local
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_BASE_URL: ""
+    volumes:
+      - ./frontend:/app
+    ports: !override
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  adminer:
+    image: adminer:4
+    profiles: ["tools"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - public
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8080}:8080"

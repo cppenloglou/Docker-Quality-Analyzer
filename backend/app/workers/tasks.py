@@ -393,8 +393,30 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
             job = await repo.get_job(uuid.UUID(job_id), uuid.UUID(user_id))
             if not job:
                 raise RuntimeError("Job not found for deployment.")
-            deploy_spec = _resolve_deploy_spec(user_id, job_id, job.input_metadata or {})
+            deploy_metadata = dict(job.input_metadata or {})
+            job_result = getattr(job, "result", None)
+            if isinstance(job_result, dict):
+                deploy_metadata["_job_result"] = job_result
+            deploy_spec = _resolve_deploy_spec(user_id, job_id, deploy_metadata)
             await _set_deploy_state(user_id, job_id, deploy_spec)
+
+        reused_services = deploy_spec.get("reused_service_names") if isinstance(deploy_spec, dict) else None
+        if isinstance(reused_services, list) and reused_services:
+            await publish_event(
+                DomainEvent(
+                    "deploy.compose_up_log",
+                    user_id=user_id,
+                    job_id=job_id,
+                    payload={
+                        "project_name": deploy_spec["project_name"],
+                        "line": (
+                            "[deploy optimization] Reusing prebuilt analysis images for services: "
+                            + ", ".join(reused_services)
+                            + " (skipping compose rebuild for these services)."
+                        ),
+                    },
+                )
+            )
 
         primary_container_id = ""
         container_ids: list[str] = []
@@ -460,7 +482,14 @@ async def run_compose_deploy(ctx, payload: dict) -> dict:
             )
         if deploy_spec is not None:
             try:
-                await _clear_deploy_state(user_id, job_id)
+                cleanup_state = await _get_deploy_state(user_id, job_id) or {}
+                cleanup_state.update({
+                    "active": False,
+                    "explicit_runtime_state": "cleanup_completed",
+                    "stopped_by_user": False,
+                    "exit_reason": f"deploy_failed: {exc}",
+                })
+                await _set_deploy_state(user_id, job_id, cleanup_state)
             except Exception:
                 pass
         fail_payload = {"message": str(exc)}
@@ -480,6 +509,11 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
 
     await _set_stop_requested(user_id, job_id)
     state["stopping"] = True
+    # Persist user intent immediately so concurrent metric/exit watchers
+    # do not classify this shutdown path as an unexpected self-exit.
+    state["stop_requested_by_user"] = True
+    state["stopped_by_user"] = True
+    state["stop_reason"] = "user_requested"
     await _set_deploy_state(user_id, job_id, state)
     await _compose_down(state, remove_volumes)
 
@@ -496,7 +530,19 @@ async def run_compose_stop(ctx, payload: dict) -> dict:
             },
         )
     )
-    await _clear_deploy_state(user_id, job_id)
+    # Persist terminal state as stopped_by_user so refresh can distinguish from self-exit
+    terminal_state = {
+        **state,
+        "stopping": False,
+        "active": False,
+        "explicit_runtime_state": "stopped_by_user",
+        "stopped_by_user": True,
+        "stop_requested_by_user": True,
+        "stop_reason": "user_requested",
+        "stopped_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _set_deploy_state(user_id, job_id, terminal_state)
+    await redis_client.delete(_deploy_stop_key(user_id, job_id))
     return {"status": "stopped"}
 
 
@@ -525,7 +571,7 @@ def _compose_base_cmd(spec: dict[str, Any]) -> list[str]:
     return ["docker-compose", "-p", str(spec["project_name"]), "-f", str(spec["compose_file"])]
 
 
-def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) -> dict[str, str]:
+def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
     project_name = f"dqa-{job_id.replace('-', '')[:12]}"
     project_path = metadata.get("project_path")
 
@@ -537,10 +583,17 @@ def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) ->
     if project_path and compose_rel:
         project_dir = Path(str(project_path)).resolve()
         compose_file = (project_dir / compose_rel).resolve()
+        runtime_compose_file, reused_services = _maybe_prepare_project_runtime_compose_file(
+            project_dir=project_dir,
+            compose_rel=str(compose_rel),
+            compose_file=compose_file,
+            analysis_result=metadata.get("_job_result"),
+        )
         return {
             "project_name": project_name,
             "project_dir": str(project_dir),
-            "compose_file": str(compose_file),
+            "compose_file": str(runtime_compose_file),
+            "reused_service_names": reused_services,
         }
 
     compose_content = metadata.get("compose_content")
@@ -554,9 +607,94 @@ def _resolve_deploy_spec(user_id: str, job_id: str, metadata: dict[str, Any]) ->
             "project_name": project_name,
             "project_dir": str(deploy_dir),
             "compose_file": str(compose_file),
+            "reused_service_names": [],
         }
 
     raise RuntimeError("No deployable compose content found for this job.")
+
+
+def _maybe_prepare_project_runtime_compose_file(
+    project_dir: Path,
+    compose_rel: str,
+    compose_file: Path,
+    analysis_result: Any,
+) -> tuple[Path, list[str]]:
+    """Create a runtime compose override that reuses analysis-built images when available."""
+    if not isinstance(analysis_result, dict):
+        return compose_file, []
+
+    image_build_results = analysis_result.get("image_build_results")
+    service_mappings = analysis_result.get("service_mappings")
+    if not isinstance(image_build_results, list) or not isinstance(service_mappings, list):
+        return compose_file, []
+
+    built_tags_by_dockerfile: dict[str, str] = {}
+    for row in image_build_results:
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") != "success":
+            continue
+        dockerfile_path = row.get("dockerfile_path")
+        image_tag = row.get("image_tag")
+        if isinstance(dockerfile_path, str) and isinstance(image_tag, str) and dockerfile_path and image_tag:
+            built_tags_by_dockerfile[dockerfile_path] = image_tag
+    if not built_tags_by_dockerfile:
+        return compose_file, []
+
+    mapping_by_service: dict[str, dict[str, Any]] = {}
+    for row in service_mappings:
+        if not isinstance(row, dict):
+            continue
+        if row.get("compose_file") != compose_rel:
+            continue
+        if row.get("can_build") is not True:
+            continue
+        service_name = row.get("service")
+        if isinstance(service_name, str) and service_name:
+            mapping_by_service[service_name] = row
+    if not mapping_by_service:
+        return compose_file, []
+
+    try:
+        parsed = yaml.safe_load(compose_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return compose_file, []
+
+    services = parsed.get("services")
+    if not isinstance(services, dict):
+        return compose_file, []
+
+    changed = False
+    reused_services: list[str] = []
+    for service_name, service_def in services.items():
+        if not isinstance(service_name, str) or not isinstance(service_def, dict):
+            continue
+        if "build" not in service_def:
+            continue
+
+        mapping = mapping_by_service.get(service_name)
+        if not mapping:
+            continue
+        resolved_dockerfile = mapping.get("resolved_dockerfile")
+        if not isinstance(resolved_dockerfile, str) or not resolved_dockerfile:
+            continue
+
+        image_tag = built_tags_by_dockerfile.get(resolved_dockerfile)
+        if not image_tag:
+            continue
+
+        service_def["image"] = image_tag
+        service_def.pop("build", None)
+        services[service_name] = service_def
+        changed = True
+        reused_services.append(service_name)
+
+    if not changed:
+        return compose_file, []
+
+    runtime_compose = project_dir / ".dqa-runtime.compose.yml"
+    runtime_compose.write_text(yaml.safe_dump(parsed, sort_keys=False), encoding="utf-8")
+    return runtime_compose.resolve(), reused_services
 
 
 def _stderr_suggests_host_port_publish_conflict(stderr: str) -> bool:
@@ -831,16 +969,22 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
             except Exception as exc:
                 final_state = {"container_id": container_id, "error": str(exc), "exit_code": -1}
 
+            state = await _get_deploy_state(user_id, job_id) or {}
+            stop_requested_by_user = bool(
+                state.get("stop_requested_by_user", False)
+                or state.get("stopped_by_user", False)
+                or state.get("stopping", False)
+            )
+
             await publish_event(
                 DomainEvent(
                     "container.exited",
                     user_id=user_id,
                     job_id=job_id,
-                    payload=final_state,
+                    payload={**final_state, "stop_requested_by_user": stop_requested_by_user},
                 )
             )
 
-            state = await _get_deploy_state(user_id, job_id) or {}
             containers_state = [c for c in state.get("containers", []) if isinstance(c, dict)]
             old = next((c for c in containers_state if c.get("id") == container_id), None)
             containers_state = [c for c in containers_state if c.get("id") != container_id]
@@ -869,6 +1013,15 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
 
         # If all containers exited, publish runtime stopped
         if not active_ids:
+            state = await _get_deploy_state(user_id, job_id) or {}
+            was_user_stop = bool(
+                state.get("stopped_by_user", False) or state.get("stop_requested_by_user", False)
+            )
+            # User stop is authoritative. run_compose_stop publishes container.stopped
+            # and persists terminal stopped_by_user state after compose down.
+            if was_user_stop:
+                break
+
             await publish_event(
                 DomainEvent(
                     "project.runtime_stopped",
@@ -877,9 +1030,13 @@ async def _stream_metrics(user_id: str, job_id: str, container_ids: list[str]) -
                     payload={"reason": "all_containers_exited"},
                 )
             )
-            # Mark final state but keep active=False so UI knows
-            state = await _get_deploy_state(user_id, job_id) or {}
+            # Persist explicit self-exit marker so refresh can distinguish from user stop
             state["all_exited"] = True
+            state["active"] = False
+            if not was_user_stop:
+                state["explicit_runtime_state"] = "exited"
+                state["stopped_by_user"] = False
+                state["exit_reason"] = "all_containers_exited"
             await _set_deploy_state(user_id, job_id, state)
             break
 

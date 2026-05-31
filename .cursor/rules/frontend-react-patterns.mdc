@@ -35,6 +35,12 @@ await research.jobs({ limit: 20, offset: 0 });
 
 Also exported: `auth`, `project`, `ws`, `checkHealth`, shared types (`Job`, `ApiError`, etc.).
 
+## Project upload UX assumptions
+
+- Current project upload flow queues analysis for all detected Dockerfiles/Compose files.
+- Current project upload flow communicates automatic image builds in UX copy.
+- Compose runtime start/deploy remains an explicit follow-up action from results/deploy controls.
+
 ## WebSocket
 
 - Hold socket in `useRef`.

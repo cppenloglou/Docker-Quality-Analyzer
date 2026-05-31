@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     upload_dir: str = "storage/uploads"
     max_upload_size_mb: int = 30
+    project_draft_ttl_seconds: int = 3600
 
 
 @lru_cache

@@ -16,6 +16,7 @@ class JobType(str, enum.Enum):
 
 
 class JobStatus(str, enum.Enum):
+    scanned = "scanned"
     queued = "queued"
     running = "running"
     done = "done"

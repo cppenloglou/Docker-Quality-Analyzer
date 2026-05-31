@@ -13,7 +13,7 @@ alwaysApply: false
 ## Automatic execution
 
 - User-uploaded Docker projects **must never** run automatically after upload or scan.
-- **Image build** requires explicit user selection: **`build_selected_images=true`**.
+- Current upload flow sets **`build_selected_images=true`** by default for project jobs; worker still gates image-build execution on this payload flag.
 - **Compose deploy/run** requires an explicit user action (API flag or control that represents user intent)—no silent `up`.
 
 ## Docker / tags / context
@@ -31,5 +31,5 @@ alwaysApply: false
 
 - **Exited** containers are a **first-class** runtime state—same weight as running/unhealthy.
 - **Do not** report exited containers as **running**.
-- **`deployStatus`** (or equivalent) should distinguish: **`none`**, **`running`**, **`partial`**, **`exited`**, **`unhealthy`**, **`stopping`**.
+- **`deployStatus`** (or equivalent) should distinguish: **`none`**, **`running`**, **`partial`**, **`exited`**, **`failed`**, **`unhealthy`**, **`stopping`**, **`stopped_by_user`**, **`cleanup_completed`**.
 - Persist final runtime detail where applicable: **exited state**, **`exit_code`**, **`last_logs`**, **`oom_killed`**, **`restart_count`**.

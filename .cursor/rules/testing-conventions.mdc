@@ -5,6 +5,11 @@ alwaysApply: true
 
 # Testing Conventions
 
+## When to apply
+
+- Use this file as the canonical quality gate rule for backend/frontend checks.
+- Keep feature-specific behavior expectations in the corresponding workflow/runtime/privacy rules.
+
 ## Backend (pytest)
 
 - **Flat structure**: All tests in `backend/tests/`, no nested directories.
@@ -36,7 +41,7 @@ Prefer `monkeypatch.setattr("app.api.routers.compose.JobRepository", FakeRepo)` 
 When touching these areas, keep or extend tests in:
 
 - **`test_project_scan.py`** — project ZIP scan behavior
-- **`test_project_build.py`** — optional image builds, failure isolation
+- **`test_project_build.py`** — project image build behavior (currently enabled by upload flow) and failure isolation
 - **`test_container_lifecycle.py`** — start/stop, exit, unhealthy states
 - **`test_research_privacy.py`** — research responses leak no forbidden fields
 

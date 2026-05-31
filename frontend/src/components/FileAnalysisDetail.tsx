@@ -34,7 +34,11 @@ export function FileAnalysisDetail({ file, defaultOpen = false }: FileAnalysisDe
 
   const meta = (file.meta ?? {}) as Record<string, unknown>;
   const estimate = meta.estimate as Record<string, unknown> | undefined;
-  const runnability = meta.runnability as { runnable?: boolean; reasons?: string[] } | undefined;
+  const runnability = meta.runnability as {
+    runnable?: boolean;
+    reasons?: string[];
+    rules?: Record<string, boolean>;
+  } | undefined;
 
   const highlightedLines = [
     ...errors.map(e => e.line),
@@ -150,18 +154,48 @@ export function FileAnalysisDetail({ file, defaultOpen = false }: FileAnalysisDe
           {file.file_type === "compose" && (
             <div className="space-y-2 text-xs">
               {runnability && (
-                <div className={`p-3 rounded border ${
-                  runnability.runnable
-                    ? "border-green-800/50 bg-green-950/10"
-                    : "border-amber-800/50 bg-amber-950/10"
-                }`}>
-                  <span className={`font-semibold ${runnability.runnable ? "text-green-400" : "text-amber-400"}`}>
-                    {runnability.runnable ? "Runnable" : "Not runnable"}
-                  </span>
-                  {!runnability.runnable && runnability.reasons && (
-                    <ul className="mt-1 space-y-0.5 text-slate-400">
-                      {runnability.reasons.map((r, i) => <li key={i}>• {r}</li>)}
+                <div className="p-3 rounded border border-slate-800 bg-slate-950/50">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white mb-0.5">Deploy Runnability</p>
+                      <p className="text-xs text-slate-400">Strict precheck rules decide whether this compose file can be deployed.</p>
+                    </div>
+                    <Badge
+                      className={
+                        runnability.runnable
+                          ? "bg-green-500/20 text-green-400 border-green-500/30"
+                          : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                      }
+                    >
+                      {runnability.runnable ? "Runnable" : "Blocked"}
+                    </Badge>
+                  </div>
+                  {!runnability.runnable && (
+                    <ul className="mt-3 space-y-1 text-slate-300 list-disc list-inside">
+                      {(runnability.reasons ?? ["No runnability metadata found."]).map((r, i) => <li key={i}>{r}</li>)}
                     </ul>
+                  )}
+                  {runnability.rules && (
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-xs text-slate-400">
+                        Inspect runnability rules
+                      </summary>
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        {Object.entries(runnability.rules).map(([rule, passed]) => (
+                          <div
+                            key={rule}
+                            className={`flex items-center gap-2 p-2 rounded border ${
+                              passed
+                                ? "border-green-500/30 bg-green-500/5 text-green-300"
+                                : "border-amber-500/30 bg-amber-500/5 text-amber-300"
+                            }`}
+                          >
+                            <span className="font-mono truncate">{rule}</span>
+                            <span className="ml-auto">{passed ? "pass" : "fail"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
                   )}
                 </div>
               )}

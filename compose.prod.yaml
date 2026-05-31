@@ -1,0 +1,48 @@
+services:
+  api:
+    environment:
+      APP_ENV: prod
+    ports: !override []
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    mem_limit: ${API_MEM_LIMIT:-1g}
+    cpus: ${API_CPU_LIMIT:-1.00}
+
+  worker:
+    environment:
+      APP_ENV: prod
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    mem_limit: ${WORKER_MEM_LIMIT:-1g}
+    cpus: ${WORKER_CPU_LIMIT:-1.00}
+
+  frontend:
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    mem_limit: ${FRONTEND_MEM_LIMIT:-512m}
+    cpus: ${FRONTEND_CPU_LIMIT:-0.50}
+
+  postgres:
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
+    cpus: ${POSTGRES_CPU_LIMIT:-1.00}
+
+  redis:
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    mem_limit: ${REDIS_MEM_LIMIT:-512m}
+    cpus: ${REDIS_CPU_LIMIT:-0.50}

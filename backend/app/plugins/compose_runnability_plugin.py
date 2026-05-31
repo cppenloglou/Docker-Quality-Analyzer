@@ -3,6 +3,7 @@ from typing import Any
 
 import yaml
 
+from app.application.services.bind_mounts import runnability_bind_mount_reasons
 from app.plugins.base import BasePlugin
 
 UNRESOLVED_ENV_PATTERN = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
@@ -33,6 +34,7 @@ class ComposeRunnabilityPlugin(BasePlugin):
             rules["has_services"] = False
             return {"runnability": {"runnable": False, "reasons": reasons, "rules": rules}}
         rules["has_services"] = True
+        is_project_context = bool(context.get("project_path"))
 
         has_build = False
         has_missing_or_latest_tag = False
@@ -44,7 +46,8 @@ class ComposeRunnabilityPlugin(BasePlugin):
             if not isinstance(service, dict):
                 continue
 
-            if "build" in service:
+            has_build_context = "build" in service
+            if has_build_context and not is_project_context:
                 has_build = True
                 reasons.append(f"Service '{service_name}' uses build context and needs project files.")
 
@@ -57,6 +60,9 @@ class ComposeRunnabilityPlugin(BasePlugin):
                         reasons.append(
                             f"Service '{service_name}' image must use a non-latest explicit tag or digest."
                         )
+            elif has_build_context and is_project_context:
+                # In project analysis we can build services from context even without explicit image names.
+                pass
             else:
                 has_missing_or_latest_tag = True
                 reasons.append(f"Service '{service_name}' is missing an image reference.")
@@ -65,28 +71,10 @@ class ComposeRunnabilityPlugin(BasePlugin):
                 has_env_file = True
                 reasons.append(f"Service '{service_name}' references env_file, which is unavailable standalone.")
 
-            volumes = service.get("volumes", [])
-            if isinstance(volumes, list):
-                for volume in volumes:
-                    if isinstance(volume, str):
-                        source = volume.split(":", 1)[0].strip()
-                        if source.startswith(("./", "../", "/", "~")):
-                            has_bind_mount = True
-                            reasons.append(
-                                f"Service '{service_name}' uses host bind mount '{source}', unavailable standalone."
-                            )
-                    elif isinstance(volume, dict):
-                        if str(volume.get("type", "")).lower() == "bind":
-                            has_bind_mount = True
-                            reasons.append(
-                                f"Service '{service_name}' uses bind mount via long syntax, unavailable standalone."
-                            )
-                        source = str(volume.get("source") or "")
-                        if source.startswith(("./", "../", "/", "~")):
-                            has_bind_mount = True
-                            reasons.append(
-                                f"Service '{service_name}' uses host source '{source}', unavailable standalone."
-                            )
+            bind_reasons = runnability_bind_mount_reasons(str(service_name), service)
+            if bind_reasons:
+                has_bind_mount = True
+                reasons.extend(bind_reasons)
 
             if service.get("privileged") is True:
                 has_dangerous_runtime = True

@@ -152,12 +152,16 @@ def test_scan_detects_compose_files(tmp_path: Path) -> None:
         {
             "docker-compose.yml": "services: {}\n",
             "compose.yaml": "services: {}\n",
+            "docker-compose.prod.yml": "services: {}\n",
+            "docker-compose.images.yaml": "services: {}\n",
         },
     )
     result = scan_extracted_project(root, "project.zip")
     cfs = result["detected"]["compose_files"]
     assert any("docker-compose.yml" in cf for cf in cfs)
     assert any("compose.yaml" in cf for cf in cfs)
+    assert any("docker-compose.prod.yml" in cf for cf in cfs)
+    assert any("docker-compose.images.yaml" in cf for cf in cfs)
 
 
 def test_scan_ignores_node_modules(tmp_path: Path) -> None:

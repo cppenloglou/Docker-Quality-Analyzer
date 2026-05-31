@@ -7,13 +7,14 @@ import { dragActiveVariants, dragActiveTransition } from "./motion/variants";
 
 interface DragDropUploadProps {
   onFileSelect: (file: File, hint?: DockerFileKind) => void;
+  onFilesSelect?: (files: File[], hint?: DockerFileKind) => void;
 }
 
 const DOCKERFILE_ACCEPT = ".dockerfile,Dockerfile,dockerfile,text/plain";
 const COMPOSE_ACCEPT = ".yml,.yaml,application/x-yaml,text/yaml,text/plain";
 const DROP_ACCEPT = `${DOCKERFILE_ACCEPT},${COMPOSE_ACCEPT}`;
 
-export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
+export function DragDropUpload({ onFileSelect, onFilesSelect }: DragDropUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const reducedMotion = useReducedMotion();
   const dockerfileInputRef = useRef<HTMLInputElement>(null);
@@ -32,7 +33,13 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
+    const dropped = Array.from(e.dataTransfer.files ?? []);
+    if (!dropped.length) return;
+    if (dropped.length > 1 && onFilesSelect) {
+      onFilesSelect(dropped);
+      return;
+    }
+    const file = dropped[0];
     if (file) {
       onFileSelect(file);
     }
@@ -40,9 +47,15 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
 
   const handleInputChange =
     (hint: DockerFileKind) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        onFileSelect(file, hint);
+      const selected = Array.from(e.target.files ?? []);
+      if (!selected.length) {
+        e.target.value = "";
+        return;
+      }
+      if (selected.length > 1 && onFilesSelect) {
+        onFilesSelect(selected, hint);
+      } else {
+        onFileSelect(selected[0], hint);
       }
       e.target.value = "";
     };
@@ -110,6 +123,7 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
         <input
           ref={dockerfileInputRef}
           type="file"
+          multiple
           accept={DOCKERFILE_ACCEPT}
           onChange={handleInputChange("dockerfile")}
           className="hidden"
@@ -117,6 +131,7 @@ export function DragDropUpload({ onFileSelect }: DragDropUploadProps) {
         <input
           ref={composeInputRef}
           type="file"
+          multiple
           accept={COMPOSE_ACCEPT}
           onChange={handleInputChange("docker-compose")}
           className="hidden"

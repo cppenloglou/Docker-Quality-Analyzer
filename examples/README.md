@@ -24,6 +24,7 @@ examples/
 `-- projects/
     |-- node-hello-dockerfile.zip  # project with a single Dockerfile
     |-- compose-stack.zip          # project with a runnable compose stack
+|-- compose-exits-after-start.zip # runnable compose that crashes after startup
     |-- python-webapp.zip          # project with a blocked compose (build + bind)
     `-- src/                       # un-zipped sources for reference
 ```
@@ -78,6 +79,9 @@ Try:
   `Detected files in archive` block.
 - `compose-stack.zip` -> both Dockerfile and compose are detected.
   Runnability passes, so **Run Containers** is enabled on the Results page.
+- `compose-exits-after-start.zip` -> compose is runnable and deploy starts
+  successfully, then containers exit with code `1` after a short delay. Use this
+  to validate "started -> exited" runtime behavior and retry UX.
 - `python-webapp.zip` -> compose is flagged as not runnable (build context +
   bind mount). Project jobs are not hard-blocked from deploy, but the reasons
   are rendered clearly in the Results view.

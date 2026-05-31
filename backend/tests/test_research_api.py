@@ -315,3 +315,221 @@ def test_research_anonymized_submitter_stable(research_client: TestClient, resea
     # Both jobs owned by the same user_id should share the same anonymized_submitter.
     assert items[0]["anonymized_submitter"] == items[1]["anonymized_submitter"]
     assert items[0]["anonymized_submitter"] == anonymize_user_id(owner_id)
+
+
+def test_research_findings_empty_summary(research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch):
+    user = make_user()
+    research_app.dependency_overrides[get_current_user] = lambda: user
+
+    async def list_global(_self, **_kwargs):
+        return []
+
+    monkeypatch.setattr(JobRepository, "list_jobs_global", list_global)
+    response = research_client.get(
+        "/api/v1/research/findings",
+        headers=auth_header_for(user.id),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_findings"] == 0
+    assert body["total_jobs_considered"] == 0
+    assert body["top_overall"] == []
+    assert body["top_errors"] == []
+    assert body["top_warnings"] == []
+    assert body["top_info"] == []
+    assert body["top_security"] == []
+
+
+def test_research_findings_counts_top_level(research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch):
+    user = make_user()
+    research_app.dependency_overrides[get_current_user] = lambda: user
+
+    docker_job = AnalysisJobModel(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        type=JobType.dockerfile,
+        status=JobStatus.done,
+        input_metadata={},
+        result={
+            "errors": [{"code": "DL3008", "severity": "error", "message": "Pin apt versions"}],
+            "warnings": [{"code": "DL3006", "severity": "warning", "message": "Always tag image"}],
+            "suggestions": [{"code": "GEN001", "severity": "info", "message": "Use LABEL metadata"}],
+            "securityIssues": [{"code": "SEC001", "severity": "error", "message": "Hardcoded secret"}],
+        },
+        created_at=datetime.now(UTC),
+    )
+    compose_job = AnalysisJobModel(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        type=JobType.compose,
+        status=JobStatus.done,
+        input_metadata={},
+        result={
+            "errors": [{"code": "DL3008", "severity": "error", "message": "Pin apt versions"}],
+            "warnings": [],
+            "suggestions": [],
+            "securityIssues": [],
+        },
+        created_at=datetime.now(UTC),
+    )
+
+    async def list_global(_self, **_kwargs):
+        return [docker_job, compose_job]
+
+    monkeypatch.setattr(JobRepository, "list_jobs_global", list_global)
+
+    response = research_client.get(
+        "/api/v1/research/findings",
+        headers=auth_header_for(user.id),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_jobs_considered"] == 2
+    assert body["total_findings"] == 5
+    top_error = body["top_errors"][0]
+    assert top_error["code"] == "DL3008"
+    assert top_error["count"] == 2
+    assert top_error["workflow_counts"]["dockerfile"] == 1
+    assert top_error["workflow_counts"]["compose"] == 1
+    assert body["top_warnings"][0]["code"] == "DL3006"
+    assert body["top_info"][0]["code"] == "GEN001"
+    assert body["top_security"][0]["code"] == "SEC001"
+
+
+def test_research_findings_counts_project_per_file_results(research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch):
+    user = make_user()
+    research_app.dependency_overrides[get_current_user] = lambda: user
+
+    project_job = AnalysisJobModel(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        type=JobType.project,
+        status=JobStatus.done,
+        input_metadata={"project_path": "/tmp/private-project"},
+        result={
+            "errors": [{"code": "TOP001", "severity": "error", "message": "top level"}],
+            "per_file_results": [
+                {
+                    "file_path": "services/api/Dockerfile",
+                    "errors": [{"code": "DL3018", "severity": "error", "message": "Pin apk versions"}],
+                    "warnings": [],
+                    "suggestions": [],
+                    "securityIssues": [],
+                },
+                {
+                    "file_path": "compose.yml",
+                    "errors": [{"code": "DL3018", "severity": "error", "message": "Pin apk versions"}],
+                    "warnings": [{"code": "CMP001", "severity": "warning", "message": "Missing restart policy"}],
+                    "suggestions": [],
+                    "securityIssues": [],
+                },
+            ],
+        },
+        created_at=datetime.now(UTC),
+    )
+
+    async def list_global(_self, **_kwargs):
+        return [project_job]
+
+    monkeypatch.setattr(JobRepository, "list_jobs_global", list_global)
+
+    response = research_client.get(
+        "/api/v1/research/findings",
+        headers=auth_header_for(user.id),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_findings"] == 3
+    assert body["top_errors"][0]["code"] == "DL3018"
+    assert body["top_errors"][0]["count"] == 2
+    assert body["top_errors"][0]["workflow_counts"]["project"] == 2
+    assert body["top_warnings"][0]["code"] == "CMP001"
+
+
+def test_research_findings_limit_is_respected(research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch):
+    user = make_user()
+    research_app.dependency_overrides[get_current_user] = lambda: user
+
+    job = AnalysisJobModel(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        type=JobType.compose,
+        status=JobStatus.done,
+        input_metadata={},
+        result={
+            "errors": [],
+            "warnings": [
+                {"code": "W001", "severity": "warning", "message": "Warning one"},
+                {"code": "W002", "severity": "warning", "message": "Warning two"},
+                {"code": "W003", "severity": "warning", "message": "Warning three"},
+            ],
+            "suggestions": [],
+            "securityIssues": [],
+        },
+        created_at=datetime.now(UTC),
+    )
+
+    async def list_global(_self, **_kwargs):
+        return [job]
+
+    monkeypatch.setattr(JobRepository, "list_jobs_global", list_global)
+
+    response = research_client.get(
+        "/api/v1/research/findings",
+        params={"limit": 2},
+        headers=auth_header_for(user.id),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["top_warnings"]) == 2
+    assert len(body["top_overall"]) == 2
+
+
+def test_research_findings_privacy_no_sensitive_leak(research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch):
+    user = make_user()
+    research_app.dependency_overrides[get_current_user] = lambda: user
+
+    sensitive_job = AnalysisJobModel(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        type=JobType.dockerfile,
+        status=JobStatus.done,
+        input_metadata={
+            "project_path": "/tmp/private-repo",
+            "source_preview": "FROM private.registry.local/my-app",
+            "filename": "secret/Dockerfile",
+        },
+        result={
+            "errors": [
+                {
+                    "code": "DL4000",
+                    "severity": "error",
+                    "message": "Token leaked token=abc123 at /tmp/private-repo/Dockerfile from api.internal.local 10.1.2.3",
+                    "doc_url": "https://example.com/docs",
+                }
+            ],
+            "warnings": [],
+            "suggestions": [],
+            "securityIssues": [],
+        },
+        created_at=datetime.now(UTC),
+    )
+
+    async def list_global(_self, **_kwargs):
+        return [sensitive_job]
+
+    monkeypatch.setattr(JobRepository, "list_jobs_global", list_global)
+
+    response = research_client.get(
+        "/api/v1/research/findings",
+        headers=auth_header_for(user.id),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    blob = str(body)
+    assert "private-repo" not in blob
+    assert "token=abc123" not in blob
+    assert "api.internal.local" not in blob
+    assert "10.1.2.3" not in blob
+    assert "/tmp/private-repo" not in blob
+    assert "input_metadata" not in blob

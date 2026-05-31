@@ -49,6 +49,17 @@ class AnalysisEnqueueResponse(BaseModel):
     status: str
 
 
+class BatchAnalysisEnqueueItem(BaseModel):
+    filename: str
+    job_id: uuid.UUID
+    status: str
+
+
+class BatchAnalysisEnqueueResponse(BaseModel):
+    count: int
+    items: list[BatchAnalysisEnqueueItem]
+
+
 class Issue(BaseModel):
     line: int = 1
     code: str
@@ -91,6 +102,32 @@ class ResearchSummary(BaseModel):
     daily_buckets: list[ResearchTimeBucket]
 
 
+class ResearchFindingWorkflowCounts(BaseModel):
+    dockerfile: int | None = None
+    compose: int | None = None
+    project: int | None = None
+
+
+class ResearchFindingFrequency(BaseModel):
+    code: str
+    severity: Literal["error", "warning", "info", "security"]
+    message: str
+    count: int
+    percentage: float
+    doc_url: str | None = None
+    workflow_counts: ResearchFindingWorkflowCounts
+
+
+class ResearchFindingsSummary(BaseModel):
+    total_findings: int
+    total_jobs_considered: int
+    top_errors: list[ResearchFindingFrequency]
+    top_warnings: list[ResearchFindingFrequency]
+    top_info: list[ResearchFindingFrequency]
+    top_security: list[ResearchFindingFrequency]
+    top_overall: list[ResearchFindingFrequency]
+
+
 class PublicResearchJobRead(BaseModel):
     """Privacy-safe, anonymized job row for the public research dashboard."""
 
@@ -113,56 +150,21 @@ class PaginatedPublicResearchJobs(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Project scan / analyze schemas
+# Project schemas
 # ---------------------------------------------------------------------------
 
 
-class DetectedService(BaseModel):
-    name: str
-    compose_file: str
-    image: str | None = None
-    build_context: str | None = None
-    build_dockerfile: str | None = None
-    ports: list[Any] = []
-    depends_on: list[str] = []
-    db_hints: list[str] = []
+class ProjectPrimaryComposeRequest(BaseModel):
+    """Body for PATCH /project/{id}/primary-compose — sets the compose file used for deploy."""
+
+    primary_compose_file: str
 
 
-class ProjectDetectedAssets(BaseModel):
-    dockerfiles: list[str] = []
-    compose_files: list[str] = []
-    dockerignore_files: list[str] = []
-    env_examples: list[str] = []
-    stacks: list[str] = []
-    package_managers: list[str] = []
-    services: list[DetectedService] = []
+class ProjectGithubUploadRequest(BaseModel):
+    """Body for POST /project/upload/github."""
 
-
-class ProjectRecommendation(BaseModel):
-    analysis_mode: str
-    primary_dockerfile: str | None = None
-    primary_compose_file: str | None = None
-    can_build: bool = False
-    can_run: bool = False
-    reasons: list[str] = []
-
-
-class ProjectScanResponse(BaseModel):
-    project_id: uuid.UUID
-    archive_name: str
-    detected: ProjectDetectedAssets
-    recommendation: ProjectRecommendation
-    warnings: list[str] = []
-
-
-class ProjectAnalyzeRequest(BaseModel):
-    project_id: uuid.UUID
-    selected_dockerfiles: list[str] = []
-    selected_compose_files: list[str] = []
-    primary_compose_file: str | None = None
-    analysis_mode: Literal["auto", "dockerfile-only", "compose-only", "full-project"] = "auto"
-    build_selected_images: bool = False
-    run_after_analysis: bool = False
+    url: str
+    ref: str | None = None
 
 
 class PerFileAnalysisResult(BaseModel):

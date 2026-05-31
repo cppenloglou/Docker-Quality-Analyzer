@@ -12,3 +12,24 @@ dependencies = []
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+include = ["app"]
+exclude = [".venv", "**/__pycache__", "tests"]
+executionEnvironments = [
+  { root = ".", extraPaths = ["."] }
+]
+reportMissingTypeStubs = "none"
+reportCallInDefaultInitializer = "none"
+reportAny = "none"
+reportExplicitAny = "none"
+reportUnknownParameterType = "none"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportMissingParameterType = "none"
+reportUntypedFunctionDecorator = "none"

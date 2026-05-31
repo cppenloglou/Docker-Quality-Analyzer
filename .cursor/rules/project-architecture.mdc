@@ -5,6 +5,11 @@ alwaysApply: true
 
 # Project Architecture
 
+## When to apply
+
+- Use this file as the architectural source of truth.
+- Keep workflow details in `project-workflow.mdc` and runtime/deploy constraints in `project-runtime-safety.mdc`.
+
 ## Backend Layers (Hexagonal / Modular-Monolith)
 
 | Layer | Path | Responsibility |
@@ -25,7 +30,7 @@ alwaysApply: true
 
 ## Project Analysis Workflow
 
-ZIP upload → **safe scan** → user **selects** Dockerfiles/Compose files → **per-file plugin runs** → merged **`ProjectAnalysisResult`** (`per_file_results`, `project_summary`, `service_mappings`, optional **`image_build_results`**). Builds and Compose **run/deploy only on explicit user action** (`build_selected_images`, deploy controls). Details: **`project-workflow.mdc`**, **`project-runtime-safety.mdc`**.
+ZIP upload → **safe scan** → auto-queue analysis for all detected Dockerfiles/Compose files → **per-file plugin runs** → merged **`ProjectAnalysisResult`** (`per_file_results`, `project_summary`, `service_mappings`, optional **`image_build_results`**). Upload flow currently defaults `build_selected_images=true`; Compose **run/deploy remains explicit** via deploy controls (`run_stack`). Details: **`project-workflow.mdc`**, **`project-runtime-safety.mdc`**.
 
 ## Redis Channel Naming
 
@@ -43,7 +48,7 @@ Plugins live in `backend/app/plugins/`. Each extends `BasePlugin` (single `async
 
 ## Docker-in-Docker (DinD)
 
-Worker uses `DOCKER_HOST=tcp://dind:2375` to reach an isolated DinD sidecar. All `docker-compose` subprocess calls execute inside the worker container — never the host socket.
+Worker uses TLS DinD networking (`DOCKER_HOST=tcp://docker:2376`, `DOCKER_TLS_VERIFY=1`, `DOCKER_CERT_PATH=/certs/client`) to reach an isolated sidecar. All `docker-compose` subprocess calls execute inside the worker container — never the host socket.
 
 ## Research Privacy
 
@@ -51,7 +56,7 @@ Research endpoints and `ResearchAnalytics` UI expose **aggregated / anonymized**
 
 ## Runtime Monitoring
 
-Workers and Docker gateway expose **metrics** and **final container state** (running, exited, unhealthy, partial). Frontend monitoring pages must distinguish states honestly—no “Live” for exited containers. See **`results-and-monitoring.mdc`** and **`project-runtime-safety.mdc`**.
+Workers and Docker gateway expose **metrics** and **final container state** (`running`, `partial`, `unhealthy`, `exited`, `failed`, `stopped_by_user`, `cleanup_completed`). Frontend monitoring pages must distinguish states honestly—no "Live" for exited containers. See **`results-and-monitoring.mdc`** and **`project-runtime-safety.mdc`**.
 
 ## Frontend
 

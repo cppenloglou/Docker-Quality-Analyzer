@@ -59,7 +59,7 @@ export interface AuthResponse {
 }
 
 export type JobType = "dockerfile" | "compose" | "project";
-export type JobStatus = "queued" | "running" | "done" | "failed";
+export type JobStatus = "scanned" | "queued" | "running" | "done" | "failed";
 
 export interface Job {
   id: string;
@@ -101,6 +101,32 @@ export interface ResearchSummary {
   daily_buckets: ResearchTimeBucket[];
 }
 
+export interface ResearchFindingWorkflowCounts {
+  dockerfile?: number;
+  compose?: number;
+  project?: number;
+}
+
+export interface ResearchFindingFrequency {
+  code: string;
+  severity: "error" | "warning" | "info" | "security";
+  message: string;
+  count: number;
+  percentage: number;
+  doc_url?: string | null;
+  workflow_counts: ResearchFindingWorkflowCounts;
+}
+
+export interface ResearchFindingsSummary {
+  total_findings: number;
+  total_jobs_considered: number;
+  top_errors: ResearchFindingFrequency[];
+  top_warnings: ResearchFindingFrequency[];
+  top_info: ResearchFindingFrequency[];
+  top_security: ResearchFindingFrequency[];
+  top_overall: ResearchFindingFrequency[];
+}
+
 export interface PaginatedResearchJobsResponse {
   items: PublicResearchJob[];
   total: number;
@@ -111,6 +137,22 @@ export interface PaginatedResearchJobsResponse {
 export interface JobEnqueueResponse {
   job_id: string;
   status: string;
+}
+
+export interface BatchAnalysisEnqueueItem {
+  filename: string;
+  job_id: string;
+  status: string;
+}
+
+export interface BatchAnalysisEnqueueResponse {
+  count: number;
+  items: BatchAnalysisEnqueueItem[];
+}
+
+export interface ProjectGithubUploadRequest {
+  url: string;
+  ref?: string | null;
 }
 
 export interface RuntimeContainerState {
@@ -134,8 +176,11 @@ export type DeployRuntimeState =
   | "running"
   | "partial"
   | "exited"
+  | "failed"
   | "unhealthy"
-  | "stopping";
+  | "stopping"
+  | "stopped_by_user"
+  | "cleanup_completed";
 
 export interface DeployStatusResponse {
   active: boolean;
@@ -146,6 +191,14 @@ export interface DeployStatusResponse {
   running_count?: number;
   exited_count?: number;
   unhealthy_count?: number;
+  stopped_by_user?: boolean;
+  stop_reason?: string | null;
+  exit_reason?: string | null;
+  can_retry_runtime?: boolean;
+}
+
+export interface DindIpResponse {
+  dind_ip: string | null;
 }
 
 export interface ImageBuildResult {
@@ -513,6 +566,9 @@ export const jobs = {
   async getEvents(jobId: string): Promise<Job> {
     return request<Job>(`/api/v1/users/me/jobs/${jobId}/events`);
   },
+  async delete(jobId: string): Promise<void> {
+    return request<void>(`/api/v1/users/me/jobs/${jobId}`, { method: "DELETE" });
+  },
 };
 
 export const research = {
@@ -543,6 +599,24 @@ export const research = {
   async get(jobId: string): Promise<PublicResearchJob> {
     return request<PublicResearchJob>(`/api/v1/research/jobs/${jobId}`);
   },
+  async findings(params: {
+    limit?: number;
+    job_type?: string;
+    status?: string;
+    created_after?: string;
+    created_before?: string;
+  }): Promise<ResearchFindingsSummary> {
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set("limit", String(params.limit));
+    if (params.job_type) q.set("job_type", params.job_type);
+    if (params.status) q.set("status", params.status);
+    if (params.created_after) q.set("created_after", params.created_after);
+    if (params.created_before) q.set("created_before", params.created_before);
+    const suffix = q.toString();
+    return request<ResearchFindingsSummary>(
+      `/api/v1/research/findings${suffix ? `?${suffix}` : ""}`,
+    );
+  },
 };
 
 // ---------- workflows ----------
@@ -555,6 +629,14 @@ export const dockerfile = {
       body: formData,
     });
   },
+  async analyzeBatch(files: File[]): Promise<BatchAnalysisEnqueueResponse> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    return request<BatchAnalysisEnqueueResponse>("/api/v1/dockerfile/analyze/batch", {
+      method: "POST",
+      body: formData,
+    });
+  },
 };
 
 export const compose = {
@@ -562,6 +644,14 @@ export const compose = {
     const formData = new FormData();
     formData.append("file", file);
     return request<JobEnqueueResponse>("/api/v1/compose/analyze", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async analyzeBatch(files: File[]): Promise<BatchAnalysisEnqueueResponse> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    return request<BatchAnalysisEnqueueResponse>("/api/v1/compose/analyze/batch", {
       method: "POST",
       body: formData,
     });
@@ -578,6 +668,9 @@ export const compose = {
   async deployStatus(jobId: string): Promise<DeployStatusResponse> {
     return request<DeployStatusResponse>(`/api/v1/compose/deploy/status/${jobId}`);
   },
+  async dindIp(): Promise<DindIpResponse> {
+    return request<DindIpResponse>("/api/v1/compose/deploy/dind-ip");
+  },
   async stopDeploy(payload: {
     job_id: string;
     remove_volumes?: boolean;
@@ -589,54 +682,10 @@ export const compose = {
   },
 };
 
-// ---------- project scan types ----------
-export interface DetectedService {
-  name: string;
-  compose_file: string;
-  image?: string | null;
-  build_context?: string | null;
-  build_dockerfile?: string | null;
-  ports: unknown[];
-  depends_on: string[];
-  db_hints: string[];
-}
+// Backward-compatible alias while older imports are migrated.
+export const dockcompose = compose;
 
-export interface ProjectDetectedAssets {
-  dockerfiles: string[];
-  compose_files: string[];
-  dockerignore_files: string[];
-  env_examples: string[];
-  stacks: string[];
-  package_managers: string[];
-  services: DetectedService[];
-}
-
-export interface ProjectRecommendation {
-  analysis_mode: string;
-  primary_dockerfile?: string | null;
-  primary_compose_file?: string | null;
-  can_build: boolean;
-  can_run: boolean;
-  reasons: string[];
-}
-
-export interface ProjectScanResponse {
-  project_id: string;
-  archive_name: string;
-  detected: ProjectDetectedAssets;
-  recommendation: ProjectRecommendation;
-  warnings: string[];
-}
-
-export interface ProjectAnalyzeRequest {
-  project_id: string;
-  selected_dockerfiles: string[];
-  selected_compose_files: string[];
-  primary_compose_file?: string | null;
-  analysis_mode: "auto" | "dockerfile-only" | "compose-only" | "full-project";
-  build_selected_images: boolean;
-  run_after_analysis: boolean;
-}
+// ---------- project types ----------
 
 export interface PerFileAnalysisResult {
   file_path: string;
@@ -689,26 +738,24 @@ export interface ProjectAnalysisResult extends AnalysisResult {
 }
 
 export const project = {
-  async scan(file: File): Promise<ProjectScanResponse> {
-    const formData = new FormData();
-    formData.append("file", file);
-    return request<ProjectScanResponse>("/api/v1/project/scan", {
-      method: "POST",
-      body: formData,
-    });
-  },
-  async analyze(payload: ProjectAnalyzeRequest): Promise<JobEnqueueResponse> {
-    return request<JobEnqueueResponse>("/api/v1/project/analyze", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
   async upload(file: File): Promise<JobEnqueueResponse> {
     const formData = new FormData();
     formData.append("file", file);
     return request<JobEnqueueResponse>("/api/v1/project/upload", {
       method: "POST",
       body: formData,
+    });
+  },
+  async uploadGithub(payload: ProjectGithubUploadRequest): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>("/api/v1/project/upload/github", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async setPrimaryCompose(projectId: string, primaryComposeFile: string): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>(`/api/v1/project/${projectId}/primary-compose`, {
+      method: "PATCH",
+      body: JSON.stringify({ primary_compose_file: primaryComposeFile }),
     });
   },
 };
