@@ -121,6 +121,26 @@ services:
 
 
 @pytest.mark.asyncio
+async def test_compose_runnability_plugin_allows_project_build_without_image():
+    plugin = ComposeRunnabilityPlugin()
+    compose = """
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+"""
+    result = await plugin.run({"compose_content": compose, "project_path": "/tmp/project"})
+    runnability = result["runnability"]
+    assert runnability["runnable"] is True
+    assert runnability["rules"]["no_build_contexts"] is True
+    assert runnability["rules"]["explicit_non_latest_images"] is True
+    assert not any("missing an image reference" in reason for reason in runnability["reasons"])
+
+
+@pytest.mark.asyncio
 async def test_deploy_compose_blocks_non_runnable_compose(monkeypatch: pytest.MonkeyPatch):
     user_id = uuid.uuid4()
     job_id = uuid.uuid4()

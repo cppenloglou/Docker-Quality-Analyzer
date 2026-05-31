@@ -49,6 +49,17 @@ class AnalysisEnqueueResponse(BaseModel):
     status: str
 
 
+class BatchAnalysisEnqueueItem(BaseModel):
+    filename: str
+    job_id: uuid.UUID
+    status: str
+
+
+class BatchAnalysisEnqueueResponse(BaseModel):
+    count: int
+    items: list[BatchAnalysisEnqueueItem]
+
+
 class Issue(BaseModel):
     line: int = 1
     code: str
@@ -91,6 +102,32 @@ class ResearchSummary(BaseModel):
     daily_buckets: list[ResearchTimeBucket]
 
 
+class ResearchFindingWorkflowCounts(BaseModel):
+    dockerfile: int | None = None
+    compose: int | None = None
+    project: int | None = None
+
+
+class ResearchFindingFrequency(BaseModel):
+    code: str
+    severity: Literal["error", "warning", "info", "security"]
+    message: str
+    count: int
+    percentage: float
+    doc_url: str | None = None
+    workflow_counts: ResearchFindingWorkflowCounts
+
+
+class ResearchFindingsSummary(BaseModel):
+    total_findings: int
+    total_jobs_considered: int
+    top_errors: list[ResearchFindingFrequency]
+    top_warnings: list[ResearchFindingFrequency]
+    top_info: list[ResearchFindingFrequency]
+    top_security: list[ResearchFindingFrequency]
+    top_overall: list[ResearchFindingFrequency]
+
+
 class PublicResearchJobRead(BaseModel):
     """Privacy-safe, anonymized job row for the public research dashboard."""
 
@@ -121,6 +158,13 @@ class ProjectPrimaryComposeRequest(BaseModel):
     """Body for PATCH /project/{id}/primary-compose — sets the compose file used for deploy."""
 
     primary_compose_file: str
+
+
+class ProjectGithubUploadRequest(BaseModel):
+    """Body for POST /project/upload/github."""
+
+    url: str
+    ref: str | None = None
 
 
 class PerFileAnalysisResult(BaseModel):

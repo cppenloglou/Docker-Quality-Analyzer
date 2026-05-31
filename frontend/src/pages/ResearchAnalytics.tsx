@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -41,6 +42,8 @@ import {
   ApiError,
   research as researchApi,
   type JobStatus,
+  type ResearchFindingFrequency,
+  type ResearchFindingsSummary,
   type PublicResearchJob,
   type ResearchSummary,
 } from "../utils/api";
@@ -100,6 +103,19 @@ function scoreTone(score: number | null | undefined): string {
   return "text-red-600 dark:text-red-400";
 }
 
+function findingSeverityBadge(severity: ResearchFindingFrequency["severity"]): string {
+  switch (severity) {
+    case "error":
+      return "border-destructive/40 bg-destructive/10 text-destructive dark:text-red-300";
+    case "warning":
+      return "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    case "security":
+      return "border-orange-500/35 bg-orange-500/10 text-orange-700 dark:text-orange-300";
+    default:
+      return "border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  }
+}
+
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -115,6 +131,9 @@ export function ResearchAnalytics() {
   const ready = useMinLoader(!loading);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ResearchSummary | null>(null);
+  const [findings, setFindings] = useState<ResearchFindingsSummary | null>(null);
+  const [findingsLoading, setFindingsLoading] = useState(true);
+  const [findingsError, setFindingsError] = useState<string | null>(null);
   const [rows, setRows] = useState<PublicResearchJob[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -133,7 +152,14 @@ export function ResearchAnalytics() {
       setRefreshing(true);
     }
     setError(null);
+    setFindingsError(null);
+    setFindingsLoading(true);
     try {
+      const findingsPromise = researchApi.findings({
+        limit: 10,
+        job_type: filterType || undefined,
+        status: filterStatus || undefined,
+      });
       const [sum, page] = await Promise.all([
         researchApi.summary(90),
         researchApi.jobs({
@@ -146,6 +172,18 @@ export function ResearchAnalytics() {
       setSummary(sum);
       setRows(page.items);
       setTotal(page.total);
+      try {
+        const findingsData = await findingsPromise;
+        setFindings(findingsData);
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Failed to load findings.";
+        setFindingsError(message);
+      }
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -162,6 +200,7 @@ export function ResearchAnalytics() {
       } else {
         setRefreshing(false);
       }
+      setFindingsLoading(false);
     }
   }, [offset, filterType, filterStatus]);
 
@@ -266,6 +305,68 @@ export function ResearchAnalytics() {
     }
   };
 
+  const renderFindingRows = (
+    items: ResearchFindingFrequency[],
+    emptyMessage: string,
+  ) => {
+    if (items.length === 0) {
+      return <p className={cn("py-4 text-sm", captionMuted)}>{emptyMessage}</p>;
+    }
+    return (
+      <div className="space-y-2">
+        {items.map((item, index) => (
+          <article
+            key={`${item.severity}-${item.code}-${item.message}-${index}`}
+            className="rounded-xl border border-border bg-muted/20 p-3"
+          >
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="border-border text-foreground">
+                #{index + 1}
+              </Badge>
+              <Badge variant="outline" className={cn("font-mono", findingSeverityBadge(item.severity))}>
+                {item.severity}
+              </Badge>
+              <Badge variant="outline" className="border-border font-mono text-foreground">
+                {item.code}
+              </Badge>
+              <span className={cn("text-xs font-mono tabular-nums", bodyMuted)}>
+                {item.count} ({item.percentage.toFixed(2)}%)
+              </span>
+              {item.doc_url ? (
+                <a
+                  href={item.doc_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-sky-500 underline-offset-2 hover:underline dark:text-sky-400"
+                >
+                  Docs
+                </a>
+              ) : null}
+            </div>
+            <p className={cn("text-sm", bodyMuted)}>{item.message}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {item.workflow_counts.dockerfile ? (
+                <Badge variant="outline" className="border-border text-xs">
+                  Dockerfile {item.workflow_counts.dockerfile}
+                </Badge>
+              ) : null}
+              {item.workflow_counts.compose ? (
+                <Badge variant="outline" className="border-border text-xs">
+                  Compose {item.workflow_counts.compose}
+                </Badge>
+              ) : null}
+              {item.workflow_counts.project ? (
+                <Badge variant="outline" className="border-border text-xs">
+                  Project {item.workflow_counts.project}
+                </Badge>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </div>
+    );
+  };
+
   if (!ready) {
     return (
       <Layout>
@@ -322,6 +423,12 @@ export function ResearchAnalytics() {
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-500/90" aria-hidden />
                 Anonymized contributor data only
               </p>
+              <Link
+                to="/scoring"
+                className="text-xs text-sky-500 underline-offset-2 hover:underline dark:text-sky-400"
+              >
+                How scoring works
+              </Link>
             </div>
           </div>
         </header>
@@ -444,6 +551,98 @@ export function ResearchAnalytics() {
                 </div>
               </Card>
             </div>
+
+            <Card className={cn(panelCard, "mb-8 gap-0 p-6")}>
+              <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Most Common Findings
+                  </h2>
+                  <p className={cn("text-xs", captionMuted)}>
+                    Recurring anonymized issue patterns across filtered jobs
+                  </p>
+                </div>
+                {findings ? (
+                  <p className={cn("text-xs font-mono tabular-nums", captionMuted)}>
+                    {findings.total_findings} findings across {findings.total_jobs_considered} jobs
+                  </p>
+                ) : null}
+              </div>
+
+              {findingsLoading ? (
+                <div className={cn("flex items-center gap-2 rounded-xl border border-border bg-muted/20 p-4 text-sm", bodyMuted)}>
+                  <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                  Loading findings leaderboard...
+                </div>
+              ) : null}
+
+              {!findingsLoading && findingsError ? (
+                <div
+                  role="alert"
+                  className={cn(
+                    "flex items-start gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-4",
+                  )}
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                      Findings are temporarily unavailable
+                    </p>
+                    <p className="text-xs text-amber-700/90 dark:text-amber-200/90">
+                      {findingsError}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {!findingsLoading && !findingsError && findings ? (
+                findings.total_findings === 0 ? (
+                  <p className={cn("rounded-xl border border-border bg-muted/20 p-4 text-sm", captionMuted)}>
+                    No findings available yet.
+                  </p>
+                ) : (
+                  <div className="space-y-5">
+                    <div>
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">
+                        Top Overall
+                      </h3>
+                      {renderFindingRows(
+                        findings.top_overall,
+                        "No overall findings available.",
+                      )}
+                    </div>
+                    <Tabs defaultValue="errors" className="gap-4">
+                      <TabsList className="h-auto w-full flex-wrap justify-start gap-2 rounded-xl border border-border bg-muted/40 p-2">
+                        <TabsTrigger value="errors" className="min-h-[40px] rounded-lg px-3">
+                          Errors
+                        </TabsTrigger>
+                        <TabsTrigger value="warnings" className="min-h-[40px] rounded-lg px-3">
+                          Warnings
+                        </TabsTrigger>
+                        <TabsTrigger value="info" className="min-h-[40px] rounded-lg px-3">
+                          Info
+                        </TabsTrigger>
+                        <TabsTrigger value="security" className="min-h-[40px] rounded-lg px-3">
+                          Security
+                        </TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="errors" className="mt-0 outline-none">
+                        {renderFindingRows(findings.top_errors, "No errors found.")}
+                      </TabsContent>
+                      <TabsContent value="warnings" className="mt-0 outline-none">
+                        {renderFindingRows(findings.top_warnings, "No warnings found.")}
+                      </TabsContent>
+                      <TabsContent value="info" className="mt-0 outline-none">
+                        {renderFindingRows(findings.top_info, "No info findings found.")}
+                      </TabsContent>
+                      <TabsContent value="security" className="mt-0 outline-none">
+                        {renderFindingRows(findings.top_security, "No security findings found.")}
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                )
+              ) : null}
+            </Card>
 
             <Card className={cn(panelCard, "mb-10 gap-0 p-6")}>
               <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">

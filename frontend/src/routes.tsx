@@ -69,6 +69,20 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: "analysis/batch",
+        hydrateFallbackElement: routeHydrateFallbackElement,
+        lazy: async () => {
+          const m = await import("./pages/BatchAnalysisProgress");
+          return {
+            Component: () => (
+              <RequireAuth>
+                <m.BatchAnalysisProgress />
+              </RequireAuth>
+            ),
+          };
+        },
+      },
+      {
         path: "results",
         hydrateFallbackElement: routeHydrateFallbackElement,
         lazy: async () => {
@@ -105,6 +119,20 @@ export const router = createBrowserRouter([
             Component: () => (
               <RequireAuth>
                 <m.ResearchAnalytics />
+              </RequireAuth>
+            ),
+          };
+        },
+      },
+      {
+        path: "scoring",
+        hydrateFallbackElement: routeHydrateFallbackElement,
+        lazy: async () => {
+          const m = await import("./pages/ScoringGuide");
+          return {
+            Component: () => (
+              <RequireAuth>
+                <m.ScoringGuide />
               </RequireAuth>
             ),
           };

@@ -1,8 +1,12 @@
 import pytest
 import uuid
+from pathlib import Path
+
+import yaml
 
 from app.workers.tasks import (
     _compose_up,
+    _resolve_deploy_spec,
     _stderr_suggests_host_port_publish_conflict,
     run_compose_deploy,
     run_compose_stop,
@@ -91,6 +95,71 @@ async def test_run_compose_deploy_emits_expected_events(monkeypatch: pytest.Monk
     metrics_event = next(event for event in emitted_events if event.event_name == "container.metrics")
     assert started_event.payload["container_id"] == "web-123"
     assert metrics_event.payload["container_id"] == "web-123"
+
+
+@pytest.mark.asyncio
+async def test_run_compose_deploy_emits_reuse_log_when_prebuilt_images_available(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    emitted_events = []
+
+    async def fake_publish(event):
+        emitted_events.append(event)
+
+    class FakeSessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_job(self, _job_id, _user_id):
+            class _Job:
+                input_metadata = {"compose_content": "services: {web: {image: nginx:1.27}}"}
+
+            return _Job()
+
+    async def fake_set_state(_user_id: str, _job_id: str, _state: dict):
+        return None
+
+    async def fake_compose_up(_spec, **_kwargs):
+        return None
+
+    async def fake_compose_ps_ids(_spec):
+        return []
+
+    monkeypatch.setattr("app.workers.tasks.SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr("app.workers.tasks.JobRepository", FakeRepo)
+    monkeypatch.setattr(
+        "app.workers.tasks._resolve_deploy_spec",
+        lambda _user, _job, _meta: {
+            "project_name": "dqa-proj",
+            "project_dir": "/tmp",
+            "compose_file": "/tmp/docker-compose.yml",
+            "reused_service_names": ["app"],
+        },
+    )
+    monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_state)
+    monkeypatch.setattr("app.workers.tasks._compose_up", fake_compose_up)
+    monkeypatch.setattr("app.workers.tasks._compose_ps_ids", fake_compose_ps_ids)
+    monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
+
+    await run_compose_deploy(
+        None,
+        {
+            "user_id": str(uuid.uuid4()),
+            "job_id": str(uuid.uuid4()),
+            "run_stack": True,
+        },
+    )
+
+    log_events = [event for event in emitted_events if event.event_name == "deploy.compose_up_log"]
+    assert len(log_events) >= 1
+    assert "Reusing prebuilt analysis images for services: app" in log_events[0].payload.get("line", "")
 
 
 @pytest.mark.asyncio
@@ -376,3 +445,48 @@ async def test_compose_up_no_fallback_on_unrelated_error(monkeypatch: pytest.Mon
             }
         )
     assert len(calls) == 1
+
+
+def test_resolve_deploy_spec_reuses_project_built_images(tmp_path: Path):
+    compose_path = tmp_path / "docker-compose.yml"
+    compose_path.write_text(
+        "services:\n"
+        "  app:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: Dockerfile\n"
+        "    ports:\n"
+        '      - "8081:8081"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+
+    deploy_spec = _resolve_deploy_spec(
+        "user-1",
+        "job-1",
+        {
+            "project_path": str(tmp_path),
+            "primary_compose_file": "docker-compose.yml",
+            "_job_result": {
+                "image_build_results": [
+                    {"dockerfile_path": "Dockerfile", "image_tag": "dqa-job-1-main", "status": "success"},
+                ],
+                "service_mappings": [
+                    {
+                        "service": "app",
+                        "compose_file": "docker-compose.yml",
+                        "resolved_dockerfile": "Dockerfile",
+                        "can_build": True,
+                    }
+                ],
+            },
+        },
+    )
+
+    runtime_compose_path = Path(deploy_spec["compose_file"])
+    assert runtime_compose_path.name == ".dqa-runtime.compose.yml"
+    runtime_compose = yaml.safe_load(runtime_compose_path.read_text(encoding="utf-8"))
+    app_service = runtime_compose["services"]["app"]
+    assert app_service["image"] == "dqa-job-1-main"
+    assert "build" not in app_service
+    assert deploy_spec["reused_service_names"] == ["app"]

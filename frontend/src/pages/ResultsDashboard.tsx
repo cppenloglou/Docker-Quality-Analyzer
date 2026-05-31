@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -696,6 +696,14 @@ export function ResultsDashboard() {
                   <AnimatedNumber value={displayScore ?? 0} />
                 </div>
                 <div className="text-slate-400 text-sm mt-1">Quality Score</div>
+                <div className="mt-1">
+                  <Link
+                    to="/scoring"
+                    className="text-xs text-sky-400 underline-offset-2 hover:underline"
+                  >
+                    How scoring works
+                  </Link>
+                </div>
                 {standardResult?.line_count && (
                   <div className="text-xs text-slate-500 mt-0.5">
                     {standardResult.line_count} lines analyzed

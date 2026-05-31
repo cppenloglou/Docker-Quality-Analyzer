@@ -46,7 +46,8 @@ class ComposeRunnabilityPlugin(BasePlugin):
             if not isinstance(service, dict):
                 continue
 
-            if "build" in service and not is_project_context:
+            has_build_context = "build" in service
+            if has_build_context and not is_project_context:
                 has_build = True
                 reasons.append(f"Service '{service_name}' uses build context and needs project files.")
 
@@ -59,6 +60,9 @@ class ComposeRunnabilityPlugin(BasePlugin):
                         reasons.append(
                             f"Service '{service_name}' image must use a non-latest explicit tag or digest."
                         )
+            elif has_build_context and is_project_context:
+                # In project analysis we can build services from context even without explicit image names.
+                pass
             else:
                 has_missing_or_latest_tag = True
                 reasons.append(f"Service '{service_name}' is missing an image reference.")

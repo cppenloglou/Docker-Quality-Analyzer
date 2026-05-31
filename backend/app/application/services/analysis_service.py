@@ -1,7 +1,7 @@
 import json
 import uuid
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -201,12 +201,13 @@ class AnalysisService:
                 severity = "error"
             else:
                 severity = "info"
+        issue_severity = cast(Literal["error", "warning", "info"], severity)
         line = raw.get("line") or raw.get("location", {}).get("range", {}).get("start", {}).get("line") or 1
         code, doc_url = _rule_code_and_doc_url(raw)
         return Issue(
             line=int(line),
             code=code,
-            severity=severity,
+            severity=issue_severity,
             message=str(raw.get("message", "No details provided.")),
             suggestion=_suggestion_from_raw(raw),
             doc_url=doc_url,

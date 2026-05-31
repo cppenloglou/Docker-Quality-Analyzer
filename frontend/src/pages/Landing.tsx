@@ -16,6 +16,9 @@ import {
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { detectFileKind, type DockerFileKind } from "../utils/fileType";
+import { ApiError, compose as composeApi, dockerfile as dockerfileApi } from "../utils/api";
+
+const MAX_BATCH_FILES = 10;
 
 export function Landing() {
   const navigate = useNavigate();
@@ -54,6 +57,75 @@ export function Landing() {
     reader.readAsText(file);
   };
 
+  const handleFilesSelect = async (files: File[], hint?: DockerFileKind) => {
+    if (!files.length) {
+      toast.error("Please select at least one file.");
+      return;
+    }
+    if (files.length > MAX_BATCH_FILES) {
+      toast.error(`You can submit up to ${MAX_BATCH_FILES} files at a time.`);
+      return;
+    }
+
+    const typedFiles: { file: File; kind: DockerFileKind }[] = [];
+    for (const file of files) {
+      let content = "";
+      try {
+        content = await file.text();
+      } catch {
+        toast.error("Failed to read one of the selected files.", {
+          description: file.name,
+        });
+        return;
+      }
+      const detection = detectFileKind(file.name, content, hint);
+      if (detection.kind === "unknown") {
+        toast.error("Unsupported file in batch", {
+          description: `${file.name}: ${detection.reason}`,
+        });
+        return;
+      }
+      typedFiles.push({ file, kind: detection.kind });
+    }
+
+    const firstKind = typedFiles[0].kind;
+    if (typedFiles.some((entry) => entry.kind !== firstKind)) {
+      toast.error("Mixed batch types are not supported.", {
+        description: "Submit Dockerfiles and Compose files in separate batches.",
+      });
+      return;
+    }
+
+    try {
+      const response =
+        firstKind === "docker-compose"
+          ? await composeApi.analyzeBatch(typedFiles.map((entry) => entry.file))
+          : await dockerfileApi.analyzeBatch(typedFiles.map((entry) => entry.file));
+      sessionStorage.setItem(
+        "batchAnalysis",
+        JSON.stringify({
+          kind: firstKind,
+          submitted_at: new Date().toISOString(),
+          items: response.items.map((item) => ({
+            filename: item.filename,
+            job_id: item.job_id,
+            status: item.status,
+          })),
+        }),
+      );
+      toast.success(`Queued ${response.count} files for analysis.`);
+      navigate("/analysis/batch");
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to submit batch analysis.";
+      toast.error(message);
+    }
+  };
+
   return (
     <Layout>
       <MotionPage>
@@ -82,7 +154,7 @@ export function Landing() {
 
         {/* Upload Area */}
         <div className="mb-8">
-          <DragDropUpload onFileSelect={handleFileSelect} />
+          <DragDropUpload onFileSelect={handleFileSelect} onFilesSelect={handleFilesSelect} />
         </div>
 
         {/* Or Upload Project */}

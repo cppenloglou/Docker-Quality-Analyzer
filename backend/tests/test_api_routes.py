@@ -6,10 +6,12 @@ import uuid
 import zipfile
 
 import pytest
+import httpx
 from fastapi import HTTPException
 
 from app.api.deps import get_current_user
 from app.application.schemas import TokenResponse, UserRead
+from app.application.services.github_import import GithubRepoTarget
 from app.core.security import create_token
 from app.infrastructure.db.models import AnalysisJobModel, ApiKeyModel, JobStatus, JobType
 from app.infrastructure.db.session import get_db_session
@@ -99,6 +101,99 @@ def test_dockerfile_analyze_enqueues_job(client, monkeypatch, app, fake_db_sessi
     assert response.json()["job_id"] == str(job_id)
     assert response.json()["status"] == "queued"
     assert queue_calls and queue_calls[0]["task"] == "run_dockerfile_analysis"
+
+
+def test_dockerfile_batch_analyze_requires_auth(client, app, fake_db_session_dependency):
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    response = client.post(
+        "/api/v1/dockerfile/analyze/batch",
+        files=[("files", ("Dockerfile", b"FROM alpine:3.20\n", "text/plain"))],
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 401
+
+
+def test_dockerfile_batch_analyze_enqueues_multiple_jobs(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="owner@example.com")
+    issued = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+    enqueue_calls: list[dict] = []
+    idx = {"n": 0}
+
+    async def fake_enqueue_job(self, user_id, job_type, metadata):
+        assert user_id == user.id
+        assert job_type == JobType.dockerfile
+        assert metadata["filename"]
+        value = issued[idx["n"]]
+        idx["n"] += 1
+        return value
+
+    async def fake_enqueue(task_name: str, payload: dict):
+        enqueue_calls.append({"task": task_name, "payload": payload})
+
+    monkeypatch.setattr("app.application.services.analysis_service.AnalysisService.enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr("app.api.routers.dockerfile.enqueue_job", fake_enqueue)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+    response = client.post(
+        "/api/v1/dockerfile/analyze/batch",
+        files=[
+            ("files", ("Dockerfile", b"FROM alpine:3.20\n", "text/plain")),
+            ("files", ("Dockerfile.api", b"FROM python:3.12\n", "text/plain")),
+            ("files", ("worker.Dockerfile", b"FROM node:20\n", "text/plain")),
+        ],
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 3
+    assert len(payload["items"]) == 3
+    assert [item["job_id"] for item in payload["items"]] == [str(v) for v in issued]
+    assert all(c["task"] == "run_dockerfile_analysis" for c in enqueue_calls)
+    assert len(enqueue_calls) == 3
+
+
+def test_dockerfile_batch_analyze_rejects_more_than_ten_files(client, app, fake_db_session_dependency):
+    user = make_user(email="owner@example.com")
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+    files = [("files", (f"Dockerfile.{i}", b"FROM alpine:3.20\n", "text/plain")) for i in range(11)]
+    response = client.post(
+        "/api/v1/dockerfile/analyze/batch",
+        files=files,
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 400
+    assert "Maximum 10 files" in response.json()["detail"]
+
+
+def test_dockerfile_batch_analyze_rejects_oversized_file(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="owner@example.com")
+    monkeypatch.setattr("app.api.routers.dockerfile.MAX_DOCKERFILE_BYTES", 1)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+    response = client.post(
+        "/api/v1/dockerfile/analyze/batch",
+        files=[("files", ("Dockerfile", b"FROM alpine:3.20\n", "text/plain"))],
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 413
+
+
+def test_dockerfile_batch_analyze_rejects_missing_filename(client, app, fake_db_session_dependency):
+    user = make_user(email="owner@example.com")
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+    response = client.post(
+        "/api/v1/dockerfile/analyze/batch",
+        files=[("files", ("", b"FROM alpine:3.20\n", "text/plain"))],
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
 
 
 def test_compose_deploy_returns_404_when_job_missing(client, monkeypatch, app, fake_db_session_dependency):
@@ -446,6 +541,59 @@ def test_compose_analyze_enqueues_job(client, monkeypatch, app, fake_db_session_
     assert queue_calls and queue_calls[0]["task"] == "run_compose_analysis"
 
 
+def test_compose_batch_analyze_enqueues_multiple_jobs(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="compose-owner@example.com")
+    issued = [uuid.uuid4(), uuid.uuid4()]
+    enqueue_calls: list[dict] = []
+    idx = {"n": 0}
+
+    async def fake_enqueue_job(self, user_id, job_type, metadata):
+        assert user_id == user.id
+        assert job_type == JobType.compose
+        assert metadata["filename"]
+        value = issued[idx["n"]]
+        idx["n"] += 1
+        return value
+
+    async def fake_enqueue(task_name: str, payload: dict):
+        enqueue_calls.append({"task": task_name, "payload": payload})
+
+    monkeypatch.setattr("app.application.services.analysis_service.AnalysisService.enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr("app.api.routers.compose.enqueue_job", fake_enqueue)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+    response = client.post(
+        "/api/v1/compose/analyze/batch",
+        files=[
+            ("files", ("docker-compose.yml", b"services:\n  web:\n    image: nginx:1.27\n", "text/plain")),
+            ("files", ("compose.prod.yaml", b"services:\n  api:\n    image: python:3.12\n", "text/plain")),
+        ],
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 2
+    assert len(payload["items"]) == 2
+    assert [item["job_id"] for item in payload["items"]] == [str(v) for v in issued]
+    assert all(c["task"] == "run_compose_analysis" for c in enqueue_calls)
+    assert len(enqueue_calls) == 2
+
+
+def test_compose_batch_analyze_rejects_missing_filename(client, app, fake_db_session_dependency):
+    user = make_user(email="compose-owner@example.com")
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+    response = client.post(
+        "/api/v1/compose/analyze/batch",
+        files=[("files", ("", b"services:\n  web:\n    image: nginx:1.27\n", "text/plain"))],
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
 def test_list_jobs_returns_user_jobs(client, monkeypatch, app, fake_db_session_dependency):
     user = make_user(email="jobs-owner@example.com")
     job_id = uuid.uuid4()
@@ -624,6 +772,201 @@ def test_project_upload_rejects_oversized_archive(client, monkeypatch, app, fake
     app.dependency_overrides.clear()
     assert response.status_code == 413
     assert "too large" in response.json()["detail"]
+
+
+def test_project_github_upload_rejects_invalid_url(client, app, fake_db_session_dependency):
+    user = make_user(email="project-owner@example.com")
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "git@github.com:owner/repo.git"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 400
+    assert "Only public github.com repository URLs are allowed." in response.json()["detail"]
+
+
+def test_project_github_upload_rejects_non_github_host(client, app, fake_db_session_dependency):
+    user = make_user(email="project-owner@example.com")
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "https://example.com/owner/repo"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 400
+    assert "Only public github.com repository URLs are allowed." in response.json()["detail"]
+
+
+def test_project_github_upload_returns_403_for_private_repo(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="project-owner@example.com")
+
+    async def fake_resolve(_client, _url, _ref):
+        raise HTTPException(status_code=403, detail="Only public repositories are supported.")
+
+    monkeypatch.setattr("app.api.routers.project.resolve_public_repo_target", fake_resolve)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "https://github.com/owner/repo"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only public repositories are supported."
+
+
+def test_project_github_upload_returns_404_when_repo_missing(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="project-owner@example.com")
+
+    async def fake_resolve(_client, _url, _ref):
+        raise HTTPException(status_code=404, detail="Public GitHub repository not found.")
+
+    monkeypatch.setattr("app.api.routers.project.resolve_public_repo_target", fake_resolve)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "https://github.com/owner/missing-repo"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Public GitHub repository not found."
+
+
+def test_project_github_upload_rejects_oversized_archive(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="project-owner@example.com")
+
+    async def fake_resolve(_client, _url, _ref):
+        return GithubRepoTarget(
+            owner="owner",
+            repo="repo",
+            source_url="https://github.com/owner/repo",
+            resolved_ref="main",
+        )
+
+    async def fake_download(_client, _target, _destination, _max_bytes):
+        raise HTTPException(status_code=413, detail="Uploaded archive is too large.")
+
+    monkeypatch.setattr("app.api.routers.project.resolve_public_repo_target", fake_resolve)
+    monkeypatch.setattr("app.api.routers.project.download_repo_zipball", fake_download)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "https://github.com/owner/repo", "ref": "main"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Uploaded archive is too large."
+
+
+def test_project_github_upload_returns_dns_resolution_message_on_connect_error(
+    client, monkeypatch, app, fake_db_session_dependency
+):
+    user = make_user(email="project-owner@example.com")
+
+    async def fake_resolve(_client, _url, _ref):
+        raise httpx.ConnectError(
+            "Temporary failure in name resolution",
+            request=httpx.Request("GET", "https://api.github.com/repos/owner/repo"),
+        )
+
+    monkeypatch.setattr("app.api.routers.project.resolve_public_repo_target", fake_resolve)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "https://github.com/owner/repo"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 502
+    assert "DNS resolution failed from the API container" in response.json()["detail"]
+
+
+def test_project_github_upload_enqueues_project_analysis(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user(email="project-owner@example.com")
+    job_id = uuid.uuid4()
+    captured_meta: dict = {}
+    queue_calls: list[dict] = []
+
+    async def fake_resolve(_client, _url, _ref):
+        return GithubRepoTarget(
+            owner="owner",
+            repo="repo",
+            source_url="https://github.com/owner/repo",
+            resolved_ref="main",
+        )
+
+    async def fake_download(_client, _target, destination, _max_bytes):
+        mem_zip = io.BytesIO()
+        with zipfile.ZipFile(mem_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("Dockerfile", "FROM alpine:3.20\n")
+            archive.writestr("docker-compose.yml", "services:\n  web:\n    image: nginx:1.27\n")
+        destination.write_bytes(mem_zip.getvalue())
+
+    async def fake_enqueue_job(self, user_id, job_type, metadata, initial_status=None):
+        assert user_id == user.id
+        assert job_type == JobType.project
+        assert initial_status == JobStatus.queued
+        captured_meta.update(metadata)
+        return job_id
+
+    async def fake_enqueue(task_name: str, payload: dict):
+        queue_calls.append({"task": task_name, "payload": payload})
+
+    monkeypatch.setattr("app.api.routers.project.resolve_public_repo_target", fake_resolve)
+    monkeypatch.setattr("app.api.routers.project.download_repo_zipball", fake_download)
+    monkeypatch.setattr("app.application.services.analysis_service.AnalysisService.enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr("app.api.routers.project.enqueue_job", fake_enqueue)
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.post(
+        "/api/v1/project/upload/github",
+        json={"url": "https://github.com/owner/repo", "ref": "main"},
+        headers=auth_header_for(user.id),
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["job_id"] == str(job_id)
+    assert response.json()["status"] == "queued"
+
+    assert captured_meta["source_type"] == "github_public"
+    assert captured_meta["source_url"] == "https://github.com/owner/repo"
+    assert captured_meta["source_ref"] == "main"
+    assert captured_meta["repo_owner"] == "owner"
+    assert captured_meta["repo_name"] == "repo"
+    assert captured_meta["build_selected_images"] is True
+    assert captured_meta["analysis_confirmed"] is True
+
+    assert len(queue_calls) == 1
+    assert queue_calls[0]["task"] == "run_project_analysis"
+    worker_payload = queue_calls[0]["payload"]
+    assert worker_payload["build_selected_images"] is True
+    assert "Dockerfile" in worker_payload["dockerfiles"]
+    assert "docker-compose.yml" in worker_payload["compose_files"]
 
 
 def test_auth_refresh_issues_new_tokens(client, monkeypatch, app, fake_db_session_dependency):

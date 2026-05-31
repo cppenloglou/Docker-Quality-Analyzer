@@ -101,6 +101,32 @@ export interface ResearchSummary {
   daily_buckets: ResearchTimeBucket[];
 }
 
+export interface ResearchFindingWorkflowCounts {
+  dockerfile?: number;
+  compose?: number;
+  project?: number;
+}
+
+export interface ResearchFindingFrequency {
+  code: string;
+  severity: "error" | "warning" | "info" | "security";
+  message: string;
+  count: number;
+  percentage: number;
+  doc_url?: string | null;
+  workflow_counts: ResearchFindingWorkflowCounts;
+}
+
+export interface ResearchFindingsSummary {
+  total_findings: number;
+  total_jobs_considered: number;
+  top_errors: ResearchFindingFrequency[];
+  top_warnings: ResearchFindingFrequency[];
+  top_info: ResearchFindingFrequency[];
+  top_security: ResearchFindingFrequency[];
+  top_overall: ResearchFindingFrequency[];
+}
+
 export interface PaginatedResearchJobsResponse {
   items: PublicResearchJob[];
   total: number;
@@ -111,6 +137,22 @@ export interface PaginatedResearchJobsResponse {
 export interface JobEnqueueResponse {
   job_id: string;
   status: string;
+}
+
+export interface BatchAnalysisEnqueueItem {
+  filename: string;
+  job_id: string;
+  status: string;
+}
+
+export interface BatchAnalysisEnqueueResponse {
+  count: number;
+  items: BatchAnalysisEnqueueItem[];
+}
+
+export interface ProjectGithubUploadRequest {
+  url: string;
+  ref?: string | null;
 }
 
 export interface RuntimeContainerState {
@@ -557,6 +599,24 @@ export const research = {
   async get(jobId: string): Promise<PublicResearchJob> {
     return request<PublicResearchJob>(`/api/v1/research/jobs/${jobId}`);
   },
+  async findings(params: {
+    limit?: number;
+    job_type?: string;
+    status?: string;
+    created_after?: string;
+    created_before?: string;
+  }): Promise<ResearchFindingsSummary> {
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set("limit", String(params.limit));
+    if (params.job_type) q.set("job_type", params.job_type);
+    if (params.status) q.set("status", params.status);
+    if (params.created_after) q.set("created_after", params.created_after);
+    if (params.created_before) q.set("created_before", params.created_before);
+    const suffix = q.toString();
+    return request<ResearchFindingsSummary>(
+      `/api/v1/research/findings${suffix ? `?${suffix}` : ""}`,
+    );
+  },
 };
 
 // ---------- workflows ----------
@@ -569,6 +629,14 @@ export const dockerfile = {
       body: formData,
     });
   },
+  async analyzeBatch(files: File[]): Promise<BatchAnalysisEnqueueResponse> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    return request<BatchAnalysisEnqueueResponse>("/api/v1/dockerfile/analyze/batch", {
+      method: "POST",
+      body: formData,
+    });
+  },
 };
 
 export const compose = {
@@ -576,6 +644,14 @@ export const compose = {
     const formData = new FormData();
     formData.append("file", file);
     return request<JobEnqueueResponse>("/api/v1/compose/analyze", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  async analyzeBatch(files: File[]): Promise<BatchAnalysisEnqueueResponse> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    return request<BatchAnalysisEnqueueResponse>("/api/v1/compose/analyze/batch", {
       method: "POST",
       body: formData,
     });
@@ -668,6 +744,12 @@ export const project = {
     return request<JobEnqueueResponse>("/api/v1/project/upload", {
       method: "POST",
       body: formData,
+    });
+  },
+  async uploadGithub(payload: ProjectGithubUploadRequest): Promise<JobEnqueueResponse> {
+    return request<JobEnqueueResponse>("/api/v1/project/upload/github", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
   async setPrimaryCompose(projectId: string, primaryComposeFile: string): Promise<JobEnqueueResponse> {

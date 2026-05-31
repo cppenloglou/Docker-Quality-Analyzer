@@ -6,6 +6,7 @@ No personal identifiers, file contents, paths, or raw metadata are exposed.
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,11 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.api.research_privacy import (
     anonymize_user_id,
+    extract_public_research_findings,
     sanitize_research_metadata,
     sanitize_research_result,
 )
 from app.application.schemas import (
     PaginatedPublicResearchJobs,
+    ResearchFindingFrequency,
+    ResearchFindingsSummary,
+    ResearchFindingWorkflowCounts,
     PublicResearchJobRead,
     ResearchSummary,
     ResearchTimeBucket,
@@ -31,6 +36,9 @@ router = APIRouter(prefix="/api/v1/research", tags=["research"])
 _DEFAULT_CHART_DAYS = 90
 _MAX_LIMIT = 100
 _DEFAULT_LIMIT = 50
+_MAX_FINDINGS_LIMIT = 50
+_DEFAULT_FINDINGS_LIMIT = 10
+_MAX_FINDINGS_SCAN_JOBS = 1000
 
 
 def _extract_score_grade(result: dict | None) -> tuple[int | None, str | None]:
@@ -137,6 +145,104 @@ async def list_research_jobs(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/findings", response_model=ResearchFindingsSummary)
+async def research_findings(
+    limit: int = Query(default=_DEFAULT_FINDINGS_LIMIT, ge=1, le=_MAX_FINDINGS_LIMIT),
+    job_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    created_after: datetime | None = Query(default=None),
+    created_before: datetime | None = Query(default=None),
+    current_user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ResearchFindingsSummary:
+    _ = current_user
+    repo = JobRepository(session)
+    rows = await repo.list_jobs_global(
+        limit=_MAX_FINDINGS_SCAN_JOBS,
+        offset=0,
+        job_type=job_type,
+        status=status,
+        created_from=created_after,
+        created_to=created_before,
+    )
+
+    buckets: dict[tuple[str, str, str], dict[str, Any]] = {}
+    total_findings = 0
+
+    for job in rows:
+        if not isinstance(job.result, dict):
+            continue
+        workflow = job.type.value
+        findings = extract_public_research_findings(
+            job.result,
+            prefer_per_file=(workflow == "project"),
+        )
+        for finding in findings:
+            code = str(finding.get("code") or "UNKNOWN")
+            severity = str(finding.get("severity") or "info")
+            message = str(finding.get("message") or "No details provided")
+            if severity not in {"error", "warning", "info", "security"}:
+                severity = "info"
+            key = (code, severity, message)
+            entry = buckets.get(key)
+            if entry is None:
+                entry = {
+                    "code": code,
+                    "severity": severity,
+                    "message": message,
+                    "count": 0,
+                    "doc_url": finding.get("doc_url"),
+                    "workflow_counts": {"dockerfile": 0, "compose": 0, "project": 0},
+                }
+                buckets[key] = entry
+            entry["count"] += 1
+            total_findings += 1
+            if workflow in entry["workflow_counts"]:
+                entry["workflow_counts"][workflow] += 1
+            if entry.get("doc_url") is None and finding.get("doc_url"):
+                entry["doc_url"] = finding.get("doc_url")
+
+    ordered = sorted(
+        buckets.values(),
+        key=lambda x: (-int(x["count"]), str(x["code"]), str(x["message"])),
+    )
+
+    def to_frequency(row: dict[str, Any]) -> ResearchFindingFrequency:
+        count = int(row["count"])
+        percentage = round((count / total_findings) * 100, 2) if total_findings else 0.0
+        raw_counts = row.get("workflow_counts", {})
+        workflow_counts = ResearchFindingWorkflowCounts(
+            **{
+                key: int(value)
+                for key, value in raw_counts.items()
+                if key in {"dockerfile", "compose", "project"} and int(value) > 0
+            }
+        )
+        return ResearchFindingFrequency(
+            code=str(row["code"]),
+            severity=str(row["severity"]),
+            message=str(row["message"]),
+            count=count,
+            percentage=percentage,
+            doc_url=str(row["doc_url"]) if row.get("doc_url") else None,
+            workflow_counts=workflow_counts,
+        )
+
+    def top_by(severity: str | None) -> list[ResearchFindingFrequency]:
+        subset = ordered if severity is None else [row for row in ordered if row["severity"] == severity]
+        return [to_frequency(row) for row in subset[:limit]]
+
+    return ResearchFindingsSummary(
+        total_findings=total_findings,
+        total_jobs_considered=len(rows),
+        top_errors=top_by("error"),
+        top_warnings=top_by("warning"),
+        top_info=top_by("info"),
+        top_security=top_by("security"),
+        top_overall=top_by(None),
     )
 
 
