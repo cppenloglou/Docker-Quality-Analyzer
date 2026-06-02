@@ -8,13 +8,18 @@ import { dragActiveVariants, dragActiveTransition } from "./motion/variants";
 interface DragDropUploadProps {
   onFileSelect: (file: File, hint?: DockerFileKind) => void;
   onFilesSelect?: (files: File[], hint?: DockerFileKind) => void;
+  maxBatchFiles?: number;
 }
 
 const DOCKERFILE_ACCEPT = ".dockerfile,Dockerfile,dockerfile,text/plain";
 const COMPOSE_ACCEPT = ".yml,.yaml,application/x-yaml,text/yaml,text/plain";
 const DROP_ACCEPT = `${DOCKERFILE_ACCEPT},${COMPOSE_ACCEPT}`;
 
-export function DragDropUpload({ onFileSelect, onFilesSelect }: DragDropUploadProps) {
+export function DragDropUpload({
+  onFileSelect,
+  onFilesSelect,
+  maxBatchFiles = 10,
+}: DragDropUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const reducedMotion = useReducedMotion();
   const dockerfileInputRef = useRef<HTMLInputElement>(null);
@@ -97,8 +102,10 @@ export function DragDropUpload({ onFileSelect, onFilesSelect }: DragDropUploadPr
           <h3 className="text-lg font-medium text-white mb-2">
             Drop your Docker file here
           </h3>
-          <p className="text-slate-400 text-sm mb-4">
-            Supported: Dockerfile (any name), docker-compose.yml / compose.yaml
+          <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+            Drop one file to preview, or select multiple (up to {maxBatchFiles}) for
+            batch analysis. Supported: Dockerfile (any name), docker-compose.yml /
+            compose.yaml
           </p>
         </div>
 

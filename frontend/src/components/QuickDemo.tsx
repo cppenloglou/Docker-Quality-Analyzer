@@ -8,6 +8,7 @@ export function QuickDemo() {
   const navigate = useNavigate();
 
   const loadSampleFile = (type: "dockerfile" | "docker-compose") => {
+    sessionStorage.removeItem("batchAnalysis");
     const fileData = {
       name: type === "dockerfile" ? "Dockerfile" : "docker-compose.yml",
       content:
@@ -16,24 +17,23 @@ export function QuickDemo() {
     };
 
     sessionStorage.setItem("uploadedFile", JSON.stringify(fileData));
-    navigate("/upload");
+    navigate("/analysis");
   };
 
   return (
-    <Card className="p-6 bg-gradient-to-br from-blue-500/10 to-purple-500/10 border-blue-500/30">
+    <Card className="p-6 bg-gradient-to-br from-blue-500/10 to-purple-500/10 border-border">
       <div className="flex items-start gap-4">
         <div className="p-3 bg-blue-500/20 rounded-lg">
           <Zap className="w-6 h-6 text-blue-400" />
         </div>
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-white mb-2">
+          <h3 className="text-lg font-semibold text-foreground mb-2">
             Try a Quick Demo
           </h3>
-          <p className="text-slate-300 mb-4 text-sm">
-            Don't have a Docker file handy? Load a sample file to see the
-            analyzer in action.
+          <p className="text-muted-foreground mb-4 text-sm">
+            No Docker file handy? Runs analysis immediately with a sample file.
           </p>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button
               onClick={() => loadSampleFile("dockerfile")}
               size="sm"
@@ -46,7 +46,7 @@ export function QuickDemo() {
               onClick={() => loadSampleFile("docker-compose")}
               size="sm"
               variant="outline"
-              className="border-blue-500/50 text-blue-300 hover:bg-blue-500/10"
+              className="border-slate-700 text-slate-300 hover:bg-slate-800"
             >
               <FileCode className="w-4 h-4 mr-2" />
               Demo Compose

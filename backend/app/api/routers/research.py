@@ -59,11 +59,12 @@ def _extract_score_grade(result: dict | None) -> tuple[int | None, str | None]:
     return score, grade
 
 
-def _to_public_research_job(job: AnalysisJobModel) -> PublicResearchJobRead:
+def _to_public_research_job(job: AnalysisJobModel, current_user: UserModel) -> PublicResearchJobRead:
     score, grade = _extract_score_grade(job.result)
     return PublicResearchJobRead(
         id=job.id,
         anonymized_submitter=anonymize_user_id(job.user_id),
+        is_own_job=job.user_id == current_user.id,
         type=job.type.value,
         status=job.status.value,
         created_at=job.created_at,
@@ -141,7 +142,7 @@ async def list_research_jobs(
         created_to=created_before,
     )
     return PaginatedPublicResearchJobs(
-        items=[_to_public_research_job(j) for j in rows],
+        items=[_to_public_research_job(j, current_user) for j in rows],
         total=total,
         limit=limit,
         offset=offset,
@@ -257,4 +258,4 @@ async def get_research_job(
     job = await repo.get_job_global(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
-    return _to_public_research_job(job)
+    return _to_public_research_job(job, current_user)

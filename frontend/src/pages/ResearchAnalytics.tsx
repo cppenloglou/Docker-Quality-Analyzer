@@ -119,6 +119,228 @@ function findingSeverityBadge(severity: ResearchFindingFrequency["severity"]): s
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+const METADATA_LABELS: Record<string, string> = {
+  file_extension: "File extension",
+  line_count: "Line count",
+  service_count: "Compose services",
+  has_dockerfile: "Includes Dockerfile",
+  has_compose: "Includes Compose",
+  uses_build: "Uses build",
+  uses_volumes: "Uses volumes",
+  uses_networks: "Uses networks",
+  detected_analyzer: "Analyzer",
+};
+
+function formatMetaValue(value: unknown): string {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (value == null || value === "") return "—";
+  return String(value);
+}
+
+function ResearchSourcePrivacyNotice() {
+  return (
+    <div
+      className="flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 text-sm"
+      role="note"
+    >
+      <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+      <div className="space-y-1 text-slate-700 dark:text-slate-300">
+        <p className="font-medium text-foreground">No Dockerfile or Compose source here</p>
+        <p>
+          Research is anonymized: filenames, file contents, and paths are never shown. You only
+          see aggregate metadata and issue codes. For full file preview and highlighted findings,
+          open your own job from{" "}
+          <Link to="/history" className="font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
+            History
+          </Link>{" "}
+          or{" "}
+          <Link to="/results" className="font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
+            Results
+          </Link>
+          .
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ResearchJobIdentity({ job }: { job: PublicResearchJob }) {
+  return (
+    <dl className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-xl border border-border bg-muted/25 p-4">
+        <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
+          Job ID
+        </dt>
+        <dd className="mt-2 break-all font-mono text-xs text-foreground">{job.id}</dd>
+      </div>
+      <div className="rounded-xl border border-border bg-muted/25 p-4">
+        <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
+          Anonymized contributor
+        </dt>
+        <dd className="mt-2 break-all font-mono text-xs text-foreground">{job.anonymized_submitter}</dd>
+      </div>
+      <div className="sm:col-span-2">
+        <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
+          Type / status
+        </dt>
+        <dd className="mt-2 flex flex-wrap gap-2">
+          <Badge variant="outline" className="capitalize">
+            {job.type}
+          </Badge>
+          <Badge variant="outline" className={cn("capitalize", rowStatusBadge(job.status))}>
+            {job.status}
+          </Badge>
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function ResearchJobDetailSummary({ job }: { job: PublicResearchJob }) {
+  const result = job.public_result;
+  const severity =
+    result && typeof result.severity_distribution === "object"
+      ? (result.severity_distribution as Record<string, number>)
+      : null;
+  const issueCodes =
+    result && Array.isArray(result.issue_codes)
+      ? (result.issue_codes as string[]).filter(Boolean)
+      : [];
+  const docUrls =
+    result && Array.isArray(result.doc_urls)
+      ? (result.doc_urls as string[]).filter(Boolean)
+      : [];
+
+  const metaRows = Object.entries(METADATA_LABELS)
+    .map(([key, label]) => {
+      const value = job.public_metadata[key];
+      if (value == null || value === "") return null;
+      return { label, value: formatMetaValue(value) };
+    })
+    .filter((row): row is { label: string; value: string } => row != null);
+
+  const signalRows: { label: string; value: string }[] = [];
+  const score = job.score ?? (typeof result?.score === "number" ? result.score : null);
+  const grade = job.grade ?? (typeof result?.grade === "string" ? result.grade : null);
+  if (score != null) signalRows.push({ label: "Score", value: String(score) });
+  if (grade) signalRows.push({ label: "Grade", value: grade });
+  for (const [key, label] of [
+    ["errors_count", "Errors"],
+    ["warnings_count", "Warnings"],
+    ["suggestions_count", "Suggestions"],
+    ["security_count", "Security findings"],
+  ] as const) {
+    const n = result?.[key];
+    if (typeof n === "number") signalRows.push({ label, value: String(n) });
+  }
+
+  return (
+    <div className="space-y-6">
+      <ResearchSourcePrivacyNotice />
+      <ResearchJobIdentity job={job} />
+
+      {metaRows.length > 0 ? (
+        <section>
+          <h3 className={cn("mb-3 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+            Public metadata
+          </h3>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            {metaRows.map((row) => (
+              <div
+                key={row.label}
+                className="rounded-xl border border-border bg-muted/25 px-4 py-3"
+              >
+                <dt className={cn("text-xs font-medium", captionMuted)}>{row.label}</dt>
+                <dd className="mt-1 text-sm font-medium text-foreground">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
+      {signalRows.length > 0 ? (
+        <section>
+          <h3 className={cn("mb-3 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+            Analysis signals
+          </h3>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            {signalRows.map((row) => (
+              <div
+                key={row.label}
+                className="rounded-xl border border-border bg-muted/25 px-4 py-3"
+              >
+                <dt className={cn("text-xs font-medium", captionMuted)}>{row.label}</dt>
+                <dd
+                  className={cn(
+                    "mt-1 text-sm font-medium",
+                    row.label === "Score" ? cn("tabular-nums", scoreTone(Number(row.value))) : "text-foreground",
+                  )}
+                >
+                  {row.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : (
+        <p className={cn("text-sm", captionMuted)}>No aggregated analysis signals for this job yet.</p>
+      )}
+
+      {severity && Object.keys(severity).length > 0 ? (
+        <section>
+          <h3 className={cn("mb-3 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+            Severity mix
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(severity).map(([sev, count]) => (
+              <Badge key={sev} variant="outline" className={findingSeverityBadge(sev as ResearchFindingFrequency["severity"])}>
+                {sev}: {count}
+              </Badge>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {issueCodes.length > 0 ? (
+        <section>
+          <h3 className={cn("mb-3 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+            Issue codes
+          </h3>
+          <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+            {issueCodes.map((code) => (
+              <Badge key={code} variant="outline" className="font-mono text-xs">
+                {code}
+              </Badge>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {docUrls.length > 0 ? (
+        <section>
+          <h3 className={cn("mb-3 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+            Documentation links
+          </h3>
+          <ul className="max-h-32 space-y-2 overflow-y-auto text-sm">
+            {docUrls.map((url) => (
+              <li key={url}>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export function ResearchAnalytics() {
   const dialogTitleId = useId();
   const dialogPanelRef = useRef<HTMLDivElement>(null);
@@ -141,8 +363,10 @@ export function ResearchAnalytics() {
   const [filterStatus, setFilterStatus] = useState<string>("");
 
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState("summary");
   const [detailJob, setDetailJob] = useState<PublicResearchJob | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailScrollRef = useRef<HTMLDivElement>(null);
 
   const loadAll = useCallback(async () => {
     const isInitialPass = !initialFetchCompletedRef.current;
@@ -230,7 +454,13 @@ export function ResearchAnalytics() {
   const closeDetail = useCallback(() => {
     setDetailOpen(false);
     setDetailJob(null);
+    setDetailTab("summary");
     window.setTimeout(() => triggerRef.current?.focus?.(), 0);
+  }, []);
+
+  const handleDetailTabChange = useCallback((value: string) => {
+    setDetailTab(value);
+    detailScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
   useEffect(() => {
@@ -289,6 +519,7 @@ export function ResearchAnalytics() {
   const openDetail = async (jobId: string) => {
     triggerRef.current = document.activeElement as HTMLElement;
     setDetailOpen(true);
+    setDetailTab("summary");
     setDetailJob(null);
     setDetailLoading(true);
     try {
@@ -974,7 +1205,10 @@ export function ResearchAnalytics() {
               </Button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <div
+              ref={detailScrollRef}
+              className="min-h-0 flex-1 overflow-y-auto px-6 py-5"
+            >
               {detailLoading ? (
                 <div className={cn("flex items-center gap-3 text-sm", captionMuted)}>
                   <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
@@ -983,59 +1217,53 @@ export function ResearchAnalytics() {
               ) : null}
 
               {!detailLoading && detailJob ? (
-                <Tabs defaultValue="meta" className="gap-4">
+                <Tabs value={detailTab} onValueChange={handleDetailTabChange} className="gap-4">
                   <TabsList className="h-auto w-full flex-wrap justify-start gap-2 rounded-xl border border-border bg-muted/40 p-2">
-                    <TabsTrigger value="meta" className="min-h-[44px] rounded-lg px-4">
-                      Metadata
+                    <TabsTrigger value="summary" className="min-h-[44px] rounded-lg px-4">
+                      Summary
                     </TabsTrigger>
-                    <TabsTrigger value="result" className="min-h-[44px] rounded-lg px-4">
-                      Public signals
+                    <TabsTrigger value="raw" className="min-h-[44px] rounded-lg px-4">
+                      Raw JSON
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="meta" className="mt-4 space-y-4 text-sm outline-none">
-                    <dl className="grid gap-4 sm:grid-cols-2">
-                      <div className="rounded-xl border border-border bg-muted/25 p-4">
-                        <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
-                          Job ID
-                        </dt>
-                        <dd className="mt-2 break-all font-mono text-xs text-foreground">{detailJob.id}</dd>
-                      </div>
-                      <div className="rounded-xl border border-border bg-muted/25 p-4">
-                        <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
-                          Anonymized contributor
-                        </dt>
-                        <dd className="mt-2 break-all font-mono text-xs text-foreground">{detailJob.anonymized_submitter}</dd>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <dt className={cn("text-xs font-medium uppercase tracking-wide", captionMuted)}>
-                          Type / status
-                        </dt>
-                        <dd className="mt-2 flex flex-wrap gap-2">
-                          <Badge variant="outline" className="capitalize">{detailJob.type}</Badge>
-                          <Badge variant="outline" className={cn("capitalize", rowStatusBadge(detailJob.status))}>
-                            {detailJob.status}
-                          </Badge>
-                        </dd>
-                      </div>
-                    </dl>
-                    <pre className="max-h-[42vh] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground">
-                      {JSON.stringify(detailJob.public_metadata, null, 2)}
-                    </pre>
+                  <TabsContent value="summary" tabIndex={-1} className="mt-4 outline-none focus-visible:outline-none">
+                    <ResearchJobDetailSummary job={detailJob} />
                   </TabsContent>
 
-                  <TabsContent value="result" className="mt-4 outline-none">
-                    <pre className="max-h-[min(50vh,420px)] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground">
-                      {detailJob.public_result
-                        ? JSON.stringify(detailJob.public_result, null, 2)
-                        : "null"}
-                    </pre>
+                  <TabsContent value="raw" tabIndex={-1} className="mt-4 space-y-4 outline-none focus-visible:outline-none">
+                    <p className={cn("text-sm", captionMuted)}>
+                      Privacy-filtered payloads only—no source file text.
+                    </p>
+                    <div>
+                      <p className={cn("mb-2 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+                        public_metadata
+                      </p>
+                      <pre className="max-h-[28vh] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground">
+                        {JSON.stringify(detailJob.public_metadata, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <p className={cn("mb-2 text-xs font-semibold uppercase tracking-wide", captionMuted)}>
+                        public_result
+                      </p>
+                      <pre className="max-h-[28vh] overflow-auto rounded-xl border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground">
+                        {detailJob.public_result
+                          ? JSON.stringify(detailJob.public_result, null, 2)
+                          : "null"}
+                      </pre>
+                    </div>
                   </TabsContent>
                 </Tabs>
               ) : null}
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-border bg-muted/20 px-6 py-4">
+            <div className="flex flex-wrap justify-end gap-3 border-t border-border bg-muted/20 px-6 py-4">
+              {detailJob?.is_own_job ? (
+                <Button type="button" variant="outline" className="h-11" asChild>
+                  <Link to={`/results?jobId=${detailJob.id}`}>Open full results</Link>
+                </Button>
+              ) : null}
               <Button type="button" variant="outline" className="h-11 min-w-[96px]" onClick={closeDetail}>
                 Close
               </Button>

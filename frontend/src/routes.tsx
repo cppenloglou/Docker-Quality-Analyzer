@@ -180,20 +180,6 @@ export const router = createBrowserRouter([
           };
         },
       },
-      {
-        path: "settings/api-keys",
-        hydrateFallbackElement: routeHydrateFallbackElement,
-        lazy: async () => {
-          const m = await import("./pages/ApiKeys");
-          return {
-            Component: () => (
-              <RequireAuth>
-                <m.ApiKeys />
-              </RequireAuth>
-            ),
-          };
-        },
-      },
     ],
   },
 ]);

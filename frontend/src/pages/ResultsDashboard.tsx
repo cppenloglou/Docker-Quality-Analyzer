@@ -183,11 +183,24 @@ export function ResultsDashboard() {
           (fetched.input_metadata?.filename as string | undefined) ??
           "uploaded file";
         if (!uploadedFile) {
-          setUploadedFile({
-            name: metaFilename,
-            type: fetched.type === "compose" ? "docker-compose" : fetched.type,
-            content: "",
-          });
+          const storedUpload = sessionStorage.getItem("uploadedFile");
+          if (storedUpload) {
+            try {
+              setUploadedFile(JSON.parse(storedUpload) as UploadedFile);
+            } catch {
+              setUploadedFile({
+                name: metaFilename,
+                type: fetched.type === "compose" ? "docker-compose" : fetched.type,
+                content: "",
+              });
+            }
+          } else {
+            setUploadedFile({
+              name: metaFilename,
+              type: fetched.type === "compose" ? "docker-compose" : fetched.type,
+              content: "",
+            });
+          }
         }
       } catch (err) {
         if (cancelled) return;

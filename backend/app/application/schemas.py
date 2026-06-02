@@ -32,18 +32,6 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-class ApiKeyRead(BaseModel):
-    id: uuid.UUID
-    key_prefix: str
-    created_at: datetime
-
-
-class ApiKeyCreateResponse(BaseModel):
-    id: uuid.UUID
-    key: str
-    key_prefix: str
-
-
 class AnalysisEnqueueResponse(BaseModel):
     job_id: uuid.UUID
     status: str
@@ -133,6 +121,7 @@ class PublicResearchJobRead(BaseModel):
 
     id: uuid.UUID
     anonymized_submitter: str
+    is_own_job: bool
     type: str
     status: str
     created_at: datetime

@@ -13,7 +13,7 @@ from app.api.deps import get_current_user
 from app.application.schemas import TokenResponse, UserRead
 from app.application.services.github_import import GithubRepoTarget
 from app.core.security import create_token
-from app.infrastructure.db.models import AnalysisJobModel, ApiKeyModel, JobStatus, JobType
+from app.infrastructure.db.models import AnalysisJobModel, JobStatus, JobType
 from app.infrastructure.db.session import get_db_session
 from tests.conftest import auth_header_for, make_user
 
@@ -666,95 +666,6 @@ def test_history_returns_user_history_list(client, monkeypatch, app, fake_db_ses
     assert len(payload) == 1
     assert payload[0]["id"] == str(job_id)
     assert payload[0]["type"] == "project"
-
-
-def test_api_key_create_returns_new_key(client, monkeypatch, app, fake_db_session_dependency):
-    user = make_user(email="apikey-owner@example.com")
-    key_id = uuid.uuid4()
-
-    class ApiKeyRepo:
-        def __init__(self, _session):
-            pass
-
-        async def create_key(self, requested_user_id):
-            assert requested_user_id == user.id
-            record = ApiKeyModel(id=key_id, user_id=user.id, key_prefix="dpa_prefix123")
-            return record, "dpa_secret_value"
-
-    monkeypatch.setattr("app.api.routers.api_keys.ApiKeyRepository", ApiKeyRepo)
-    app.dependency_overrides[get_db_session] = fake_db_session_dependency
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.post("/api/v1/users/me/api-keys", headers=auth_header_for(user.id))
-
-    app.dependency_overrides.clear()
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["id"] == str(key_id)
-    assert payload["key"] == "dpa_secret_value"
-    assert payload["key_prefix"] == "dpa_prefix123"
-
-
-def test_api_key_list_returns_active_keys(client, monkeypatch, app, fake_db_session_dependency):
-    user = make_user(email="apikey-owner@example.com")
-    key_id = uuid.uuid4()
-    created_at = datetime.now(timezone.utc)
-
-    class ApiKeyRepo:
-        def __init__(self, _session):
-            pass
-
-        async def list_keys(self, requested_user_id):
-            assert requested_user_id == user.id
-            return [
-                ApiKeyModel(
-                    id=key_id,
-                    user_id=user.id,
-                    key_prefix="dpa_prefix123",
-                    key_hash="hash",
-                    created_at=created_at,
-                )
-            ]
-
-    monkeypatch.setattr("app.api.routers.api_keys.ApiKeyRepository", ApiKeyRepo)
-    app.dependency_overrides[get_db_session] = fake_db_session_dependency
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.get("/api/v1/users/me/api-keys", headers=auth_header_for(user.id))
-
-    app.dependency_overrides.clear()
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["id"] == str(key_id)
-    assert payload[0]["key_prefix"] == "dpa_prefix123"
-
-
-def test_api_key_revoke_returns_404_when_missing(client, monkeypatch, app, fake_db_session_dependency):
-    user = make_user(email="apikey-owner@example.com")
-    key_id = uuid.uuid4()
-
-    class ApiKeyRepo:
-        def __init__(self, _session):
-            pass
-
-        async def revoke(self, requested_user_id, requested_key_id):
-            assert requested_user_id == user.id
-            assert requested_key_id == key_id
-            return False
-
-    monkeypatch.setattr("app.api.routers.api_keys.ApiKeyRepository", ApiKeyRepo)
-    app.dependency_overrides[get_db_session] = fake_db_session_dependency
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.delete(
-        f"/api/v1/users/me/api-keys/{key_id}",
-        headers=auth_header_for(user.id),
-    )
-
-    app.dependency_overrides.clear()
-    assert response.status_code == 404
-    assert response.json()["detail"] == "API key not found."
 
 
 def test_project_upload_rejects_oversized_archive(client, monkeypatch, app, fake_db_session_dependency):

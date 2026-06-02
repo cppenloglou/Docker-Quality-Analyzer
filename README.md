@@ -9,7 +9,6 @@ A multi-tenant platform for analyzing, scoring, and deploying Docker artifacts. 
 - **Project Archives**: Upload full `.zip` projects. The platform automatically detects Dockerfiles and Compose stacks, analyzes them, and prepares them for deployment.
 - **Live Container Execution**: Deploy runnable Compose stacks directly from the UI to the underlying Docker daemon.
 - **Real-time Monitoring**: Stream live container logs and view real-time CPU/Memory usage charts via WebSockets.
-- **API Keys**: Generate API keys for programmatic access and CI/CD integration.
 - **Analysis History**: Keep track of all your past analyses and deployments.
 
 ## 🏗️ Tech Stack & Architecture
@@ -17,7 +16,7 @@ A multi-tenant platform for analyzing, scoring, and deploying Docker artifacts. 
 - **Backend**: FastAPI (`backend/`) using modular-monolith + hexagonal architecture.
 - **Frontend**: React SPA (`frontend/`) with Tailwind CSS, Recharts for monitoring, and real-time WebSocket integration.
 - **Workers**: Redis event bus + arq workers for asynchronous analysis and deployment pipelines.
-- **Database**: PostgreSQL for persistence (users, jobs, projects, containers, images, API keys).
+- **Database**: PostgreSQL for persistence (users, jobs, projects, containers, images).
 - **Proxy**: Nginx for serving the frontend and proxying API/WebSocket traffic.
 - **Docker-in-Docker (DinD)**: We utilize a `dind` service to securely isolate the building and execution of user-submitted Dockerfiles and Compose stacks from the host system. The worker service communicates with this isolated daemon via TCP.
 

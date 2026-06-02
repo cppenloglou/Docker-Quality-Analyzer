@@ -169,9 +169,37 @@ def test_research_job_by_id(research_client: TestClient, research_app, monkeypat
     assert "user_id" not in data
     assert data["anonymized_submitter"] == anonymize_user_id(owner_id)
     assert data["score"] == 50
+    assert data["is_own_job"] is False
 
     r404 = research_client.get(f"/api/v1/research/jobs/{uuid.uuid4()}", headers=auth_header_for(requester.id))
     assert r404.status_code == 404
+
+
+def test_research_job_is_own_job_when_viewer_is_owner(
+    research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch
+):
+    owner = make_user()
+    jid = uuid.uuid4()
+    research_app.dependency_overrides[get_current_user] = lambda: owner
+
+    job_row = AnalysisJobModel(
+        id=jid,
+        user_id=owner.id,
+        type=JobType.dockerfile,
+        status=JobStatus.done,
+        input_metadata={},
+        result={"score": 90, "grade": "A", "errors": [], "warnings": [], "suggestions": [], "securityIssues": []},
+        created_at=datetime.now(UTC),
+    )
+
+    async def get_job_global(_self, job_id):
+        return job_row if job_id == jid else None
+
+    monkeypatch.setattr(JobRepository, "get_job_global", get_job_global)
+
+    response = research_client.get(f"/api/v1/research/jobs/{jid}", headers=auth_header_for(owner.id))
+    assert response.status_code == 200
+    assert response.json()["is_own_job"] is True
 
 
 def test_research_jobs_pagination_total(research_client: TestClient, research_app, monkeypatch: pytest.MonkeyPatch):
@@ -245,6 +273,7 @@ def test_research_privacy_no_leak(research_client: TestClient, research_app, mon
     # Must not leak user identity.
     assert "user_id" not in data
     assert "email" not in data
+    assert data["is_own_job"] is False
 
     # Must not leak raw metadata.
     assert "input_metadata" not in data

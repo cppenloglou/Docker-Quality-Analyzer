@@ -77,6 +77,7 @@ export interface Job {
 export interface PublicResearchJob {
   id: string;
   anonymized_submitter: string;
+  is_own_job: boolean;
   type: JobType;
   status: JobStatus;
   public_metadata: Record<string, unknown>;
@@ -228,18 +229,6 @@ export interface ImageBuildResult {
   repo_digests?: string[];
   build_logs?: string[];
   error_message?: string | null;
-}
-
-export interface ApiKey {
-  id: string;
-  key_prefix: string;
-  created_at: string;
-}
-
-export interface ApiKeyCreated {
-  id: string;
-  key: string;
-  key_prefix: string;
 }
 
 export interface DomainEvent {
@@ -536,19 +525,6 @@ export const auth = {
   },
   async me(): Promise<User> {
     return request<User>("/auth/me");
-  },
-};
-
-// ---------- api keys ----------
-export const apiKeys = {
-  async list(): Promise<ApiKey[]> {
-    return request<ApiKey[]>("/api/v1/users/me/api-keys");
-  },
-  async create(): Promise<ApiKeyCreated> {
-    return request<ApiKeyCreated>("/api/v1/users/me/api-keys", { method: "POST" });
-  },
-  async revoke(keyId: string): Promise<void> {
-    return request<void>(`/api/v1/users/me/api-keys/${keyId}`, { method: "DELETE" });
   },
 };
 

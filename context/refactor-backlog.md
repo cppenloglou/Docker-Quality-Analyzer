@@ -15,7 +15,7 @@
 | 2 | Split project upload orchestration from router into service-level use case (`backend/app/api/routers/project.py`) | 5 | 3 | 3 | 0.5 | Router currently owns scan + queue + payload defaults; extraction improves testability and policy control. |
 | 3 | Centralize deploy status derivation contract (`backend/app/api/routers/compose.py`, `backend/app/workers/tasks.py`) | 4 | 2 | 3 | 0.5 | Keeps runtime-state semantics consistent between API response and worker state writes. |
 | 4 | Introduce typed project-flow metadata object in backend schemas (`backend/app/application/schemas.py`, project/compose routers) | 4 | 2 | 4 | 0.0 | Replaces ad-hoc dict metadata usage and lowers merge/regression risk. |
-| 5 | Harden TODO/FIXME debt in frontend auth and API keys pages (`frontend/src/pages/Login.tsx`, `Register.tsx`, `ApiKeys.tsx`) | 3 | 1 | 2 | 1.0 | Small cleanup wins that reduce recurring warnings and behavior ambiguity. |
+| 5 | Harden TODO/FIXME debt in frontend auth pages (`frontend/src/pages/Login.tsx`, `Register.tsx`) | 3 | 1 | 2 | 1.0 | Small cleanup wins that reduce recurring warnings and behavior ambiguity. |
 | 6 | Normalize scanner/analysis decision boundaries (`backend/app/application/services/project_scanner.py`, `analysis_service.py`, `workers/tasks.py`) | 4 | 3 | 4 | -1.0 | Clarifies scan-time metadata vs analysis-time decisions for long-term maintainability. |
 
 ## Batch plan
