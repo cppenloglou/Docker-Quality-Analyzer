@@ -41,6 +41,11 @@ import {
   TabsTrigger,
 } from "../components/ui/tabs";
 import {
+  clearSessionStopping,
+  isSessionStopping,
+  markSessionStopping,
+} from "../utils/deploySession";
+import {
   ApiError,
   compose as composeApi,
   jobs as jobsApi,
@@ -140,8 +145,12 @@ export function ResultsDashboard() {
   const reducedMotion = useReducedMotion();
   const [error, setError] = useState<string | null>(null);
   const [containerStatus, setContainerStatus] = useState<"stopped" | "running" | "stopping" | "exited" | "partial" | "unhealthy" | "stopped_by_user">(() => {
-    const stored = sessionStorage.getItem("dqa:containerStatus");
-    if (stored === "stopping") return "stopping";
+    const jobId =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("jobId") ||
+          sessionStorage.getItem("analysisJobId")
+        : null;
+    if (isSessionStopping(jobId ?? undefined)) return "stopping";
     return "stopped";
   });
   const [runtimeSelfExited, setRuntimeSelfExited] = useState(false);
@@ -182,12 +191,25 @@ export function ResultsDashboard() {
         const metaFilename =
           (fetched.input_metadata?.filename as string | undefined) ??
           "uploaded file";
-        if (!uploadedFile) {
-          setUploadedFile({
-            name: metaFilename,
-            type: fetched.type === "compose" ? "docker-compose" : fetched.type,
-            content: "",
-          });
+        if (!uploadedFile && fetched.type !== "project") {
+          const storedUpload = sessionStorage.getItem("uploadedFile");
+          if (storedUpload) {
+            try {
+              setUploadedFile(JSON.parse(storedUpload) as UploadedFile);
+            } catch {
+              setUploadedFile({
+                name: metaFilename,
+                type: fetched.type === "compose" ? "docker-compose" : fetched.type,
+                content: "",
+              });
+            }
+          } else {
+            setUploadedFile({
+              name: metaFilename,
+              type: fetched.type === "compose" ? "docker-compose" : fetched.type,
+              content: "",
+            });
+          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -216,88 +238,114 @@ export function ResultsDashboard() {
     setRequiresResubmit(sessionStorage.getItem(key) === "1");
   }, [job?.id, job]);
 
-  const reconcileDeployStatus = useCallback(async (jobId: string) => {
-    try {
-      const status = await composeApi.deployStatus(jobId);
+  const notifyStopCompleted = useCallback((jobId: string) => {
+    toast.success("Containers stopped");
+    pushNotification("success", "Containers Stopped", "All containers have been successfully stopped", {
+      dedupeKey: `deploy.stop.completed:${jobId}`,
+    });
+  }, []);
 
-      const rs = status.runtime_state ?? "none";
-      const sessionStopping =
-        typeof sessionStorage !== "undefined" &&
-        sessionStorage.getItem("dqa:containerStatus") === "stopping";
+  const reconcileDeployStatus = useCallback(
+    async (jobId: string): Promise<boolean> => {
+      try {
+        const status = await composeApi.deployStatus(jobId);
+        const rs = status.runtime_state ?? "none";
+        const wasStopping = isSessionStopping(jobId);
 
-      const treatAsStopping =
-        rs === "stopping" ||
-        Boolean(status.active && sessionStopping);
+        const userStopped =
+          rs === "stopped_by_user" ||
+          (!status.active &&
+            (status.stopped_by_user || status.stop_reason === "user_requested"));
 
-      if (treatAsStopping) {
-        setContainerStatus("stopping");
-        return;
-      }
-
-      // Backend is authoritative — check explicit states first
-      if (rs === "stopped_by_user") {
-        setContainerStatus("stopped_by_user");
-        setRuntimeSelfExited(false);
-        sessionStorage.removeItem("dqa:containerStatus");
-        return;
-      }
-      if (rs === "exited" || rs === "failed" || rs === "cleanup_completed") {
-        if (status.stopped_by_user || status.stop_reason === "user_requested") {
+        if (userStopped) {
           setContainerStatus("stopped_by_user");
           setRuntimeSelfExited(false);
-          sessionStorage.removeItem("dqa:containerStatus");
-          return;
+          clearSessionStopping(jobId);
+          if (wasStopping) notifyStopCompleted(jobId);
+          return false;
         }
-        setContainerStatus("exited");
-        setRuntimeSelfExited(!status.stopped_by_user);
-        sessionStorage.removeItem("dqa:containerStatus");
-        return;
-      }
-      if (rs === "running") {
-        setContainerStatus("running");
-        sessionStorage.removeItem("dqa:containerStatus");
-      } else if (rs === "partial") {
-        setContainerStatus("partial");
-        sessionStorage.removeItem("dqa:containerStatus");
-      } else if (rs === "unhealthy") {
-        setContainerStatus("unhealthy");
-        sessionStorage.removeItem("dqa:containerStatus");
-      } else {
-        const exitedCount = status.exited_count ?? 0;
-        const runningCount = status.running_count ?? 0;
-        const unhealthyCount = status.unhealthy_count ?? 0;
-        if (!status.active) {
-          if (exitedCount > 0 && runningCount === 0) {
+
+        if (rs === "stopping" || (status.active && wasStopping)) {
+          setContainerStatus("stopping");
+          return true;
+        }
+
+        if (!status.active && wasStopping) {
+          setContainerStatus("stopped");
+          setRuntimeSelfExited(false);
+          clearSessionStopping(jobId);
+          notifyStopCompleted(jobId);
+          return false;
+        }
+
+        // Backend is authoritative — check explicit states first
+        if (rs === "exited" || rs === "failed" || rs === "cleanup_completed") {
+          setContainerStatus("exited");
+          setRuntimeSelfExited(!status.stopped_by_user);
+          clearSessionStopping(jobId);
+          return false;
+        }
+        if (rs === "running") {
+          setContainerStatus("running");
+          clearSessionStopping(jobId);
+        } else if (rs === "partial") {
+          setContainerStatus("partial");
+          clearSessionStopping(jobId);
+        } else if (rs === "unhealthy") {
+          setContainerStatus("unhealthy");
+          clearSessionStopping(jobId);
+        } else {
+          const exitedCount = status.exited_count ?? 0;
+          const runningCount = status.running_count ?? 0;
+          const unhealthyCount = status.unhealthy_count ?? 0;
+          if (!status.active) {
+            if (exitedCount > 0 && runningCount === 0) {
+              setContainerStatus("exited");
+              setRuntimeSelfExited(!status.stopped_by_user);
+            } else {
+              setContainerStatus("stopped");
+              setRuntimeSelfExited(false);
+              clearSessionStopping(jobId);
+            }
+          } else if (unhealthyCount > 0) {
+            setContainerStatus("unhealthy");
+          } else if (exitedCount > 0 && runningCount > 0) {
+            setContainerStatus("partial");
+          } else if (exitedCount > 0 && runningCount === 0) {
             setContainerStatus("exited");
             setRuntimeSelfExited(!status.stopped_by_user);
           } else {
-            setContainerStatus("stopped");
-            setRuntimeSelfExited(false);
-            sessionStorage.removeItem("dqa:containerStatus");
+            setContainerStatus("running");
           }
-        } else if (unhealthyCount > 0) {
-          setContainerStatus("unhealthy");
-        } else if (exitedCount > 0 && runningCount > 0) {
-          setContainerStatus("partial");
-        } else if (exitedCount > 0 && runningCount === 0) {
-          setContainerStatus("exited");
-          setRuntimeSelfExited(!status.stopped_by_user);
-        } else {
-          setContainerStatus("running");
         }
+        return false;
+      } catch {
+        return isSessionStopping(jobId);
       }
-    } catch {
-      // ignore
-    }
-  }, []);
+    },
+    [notifyStopCompleted],
+  );
 
   useEffect(() => {
     if (!job || (job.type !== "compose" && job.type !== "project")) return;
-    void reconcileDeployStatus(job.id);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      const needsPoll = await reconcileDeployStatus(job.id);
+      if (cancelled) return;
+      if (needsPoll || isSessionStopping(job.id)) {
+        timer = setTimeout(poll, 1000);
+      }
+    };
+
+    void poll();
 
     const handleFocus = () => void reconcileDeployStatus(job.id);
     window.addEventListener("focus", handleFocus);
     return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
       window.removeEventListener("focus", handleFocus);
     };
   }, [job, reconcileDeployStatus]);
@@ -429,40 +477,47 @@ export function ResultsDashboard() {
     }
     const previousStatus = containerStatus;
     setContainerStatus("stopping");
-    sessionStorage.setItem("dqa:containerStatus", "stopping");
+    markSessionStopping(job.id);
     pushNotification("info", "Stopping Containers", "Stop signal sent, waiting for shutdown...", {
       dedupeKey: `deploy.stop.requested:${job.id}`,
     });
     try {
       await composeApi.stopDeploy({ job_id: job.id });
-      for (let i = 0; i < 30; i++) {
+      let confirmed = false;
+      for (let i = 0; i < 45; i++) {
         if (unmountedRef.current) break;
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 1000));
         if (unmountedRef.current) break;
         try {
           const status = await composeApi.deployStatus(job.id);
-          if (!status.active) {
+          const rs = status.runtime_state ?? "none";
+          if (rs === "stopping") {
+            setContainerStatus("stopping");
+          }
+          if (
+            rs === "stopped_by_user" ||
+            (!status.active && (status.stopped_by_user || rs === "none"))
+          ) {
+            confirmed = true;
             if (unmountedRef.current) break;
-            setContainerStatus("stopped");
-            sessionStorage.removeItem("dqa:containerStatus");
-            toast.success("Containers stopped");
-            pushNotification("success", "Containers Stopped", "All containers have been successfully stopped", {
-              dedupeKey: `deploy.stop.completed:${job.id}`,
-            });
+            setContainerStatus(
+              status.stopped_by_user || rs === "stopped_by_user" ? "stopped_by_user" : "stopped",
+            );
+            clearSessionStopping(job.id);
+            notifyStopCompleted(job.id);
             return;
           }
         } catch {
           break;
         }
       }
-      if (!unmountedRef.current) {
-        setContainerStatus("stopped");
-        sessionStorage.removeItem("dqa:containerStatus");
+      if (!unmountedRef.current && !confirmed) {
+        setContainerStatus("stopping");
       }
     } catch {
       if (!unmountedRef.current) {
         setContainerStatus(previousStatus);
-        sessionStorage.removeItem("dqa:containerStatus");
+        clearSessionStopping(job.id);
         toast.error("Failed to stop containers");
         pushNotification("error", "Stop Failed", "Failed to stop containers", {
           dedupeKey: `deploy.stop.failed:${job.id}`,
@@ -597,7 +652,7 @@ export function ResultsDashboard() {
               </h1>
               <p className="text-slate-400">
                 {(job.input_metadata?.filename as string | undefined) ??
-                  uploadedFile?.name ??
+                  (!isProjectJob ? uploadedFile?.name : undefined) ??
                   job.id}
               </p>
               <p className="text-xs text-slate-500 mt-1">Job ID: {job.id}</p>
@@ -1023,18 +1078,14 @@ export function ResultsDashboard() {
           </Tabs>
         )}
 
-        {uploadedFile?.content && (
+        {uploadedFile?.content && !isProjectJob && (
           <div className="mt-8">
             <h3 className="text-lg font-semibold text-white mb-4">
               Uploaded file preview
             </h3>
             <CodePreview
               code={uploadedFile.content}
-              language={
-                job.type === "compose" || job.type === "project"
-                  ? "yaml"
-                  : "docker"
-              }
+              language={job.type === "compose" ? "yaml" : "docker"}
               highlightedLines={highlightedLines}
               maxHeight="500px"
             />
@@ -1570,18 +1621,20 @@ function buildMarkdownReport(
   }
   lines.push("");
 
-  lines.push("## Source File");
-  lines.push("");
-  lines.push(`File: \`${filename}\``);
-  lines.push("");
-  if (sourceContent) {
-    lines.push("```" + language);
-    lines.push(sourceContent.replace(/```/g, "``\u200b`"));
-    lines.push("```");
-  } else {
-    lines.push("_Source file content not embedded in this report._");
+  if (!projectResult) {
+    lines.push("## Source File");
+    lines.push("");
+    lines.push(`File: \`${filename}\``);
+    lines.push("");
+    if (sourceContent) {
+      lines.push("```" + language);
+      lines.push(sourceContent.replace(/```/g, "``\u200b`"));
+      lines.push("```");
+    } else {
+      lines.push("_Source file content not embedded in this report._");
+    }
+    lines.push("");
   }
-  lines.push("");
 
   if (projectResult) {
     lines.push("## Per-File Results");

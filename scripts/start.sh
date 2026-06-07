@@ -102,33 +102,37 @@ ensure_secret_file() {
 }
 
 run_migrations() {
-  local migration_log
+  local migration_log alembic_subcmd
   migration_log="$(mktemp)"
-  if compose_cmd exec -T -w /app api sh -lc '
-    export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)"
-    export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-docker_platform}"
-    PYTHONPATH=/app alembic upgrade head
-  ' >"$migration_log" 2>&1; then
+  alembic_subcmd="upgrade head"
+
+  run_alembic_once() {
+    compose_cmd run --rm --no-deps -w /app api sh -lc "set -euo pipefail
+export POSTGRES_PASSWORD=\"\$(cat /run/secrets/postgres_password)\"
+export DATABASE_URL=\"postgresql+asyncpg://\${POSTGRES_USER:-postgres}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB:-docker_platform}\"
+export PYTHONPATH=/app
+cd /app
+alembic ${alembic_subcmd}"
+  }
+
+  # Run before API boot so lifespan create_all cannot race Alembic (common after --wipe).
+  if run_alembic_once >"$migration_log" 2>&1; then
     rm -f "$migration_log"
     log "Migrations are up to date"
     return 0
   fi
-  if rg -i 'duplicate|already exists|DuplicateTable' "$migration_log" >/dev/null 2>&1; then
+
+  if rg -i 'duplicate|already exists|DuplicateTable|DuplicateObject' "$migration_log" >/dev/null 2>&1; then
     log "Detected existing schema without Alembic state; stamping head then retrying"
-    compose_cmd exec -T -w /app api sh -lc '
-      export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)"
-      export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-docker_platform}"
-      PYTHONPATH=/app alembic stamp head
-    ' >>"$migration_log" 2>&1
-    compose_cmd exec -T -w /app api sh -lc '
-      export POSTGRES_PASSWORD="$(cat /run/secrets/postgres_password)"
-      export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-docker_platform}"
-      PYTHONPATH=/app alembic upgrade head
-    ' >>"$migration_log" 2>&1
+    alembic_subcmd="stamp head"
+    run_alembic_once >>"$migration_log" 2>&1
+    alembic_subcmd="upgrade head"
+    run_alembic_once >>"$migration_log" 2>&1
     rm -f "$migration_log"
     log "Migration bootstrap completed"
     return 0
   fi
+
   echo "[start][error] Migration failed. Logs:" >&2
   cat "$migration_log" >&2
   rm -f "$migration_log"
@@ -149,13 +153,18 @@ ensure_secret_file "secrets/postgres_password.txt" "secrets/postgres_password.tx
 ensure_secret_file "secrets/jwt_secret.txt" "secrets/jwt_secret.txt.example"
 
 log "Starting stack in mode: $MODE"
-compose_cmd up -d --build
+log "Building API image and bringing up Postgres (and Redis) before API boot"
+compose_cmd build api
+compose_cmd up -d postgres redis
 
 log "Waiting for Postgres"
 wait_postgres 180
 
 log "Running migrations"
 run_migrations
+
+log "Starting remaining services"
+compose_cmd up -d
 
 wait_http "http://127.0.0.1:${FRONTEND_PORT:-3000}" "Frontend" 180
 
@@ -170,4 +179,8 @@ else
 fi
 
 echo "Use ./scripts/status.sh --$MODE for runtime status"
-echo "Use ./scripts/stop.sh --$MODE --wipe to reset everything"
+if [[ "$MODE" == "dev" ]]; then
+  echo "Use ./scripts/stop.sh --$MODE --wipe to reset volumes and backend/storage/uploads"
+else
+  echo "Use ./scripts/stop.sh --$MODE --wipe to reset volumes"
+fi

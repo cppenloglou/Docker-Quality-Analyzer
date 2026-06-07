@@ -10,7 +10,7 @@ alwaysApply: false
 
 - Constructor takes `AsyncSession` — instantiated inside services, not injected by FastAPI.
 - All queries enforce **user-scoped access**: `WHERE user_id = :user_id` on every read/write.
-- Pattern: `UserRepository`, `JobRepository`, `ApiKeyRepository` in `db/repositories.py`.
+- Pattern: `UserRepository`, `JobRepository` in `db/repositories.py`.
 
 ## Database Access
 
@@ -19,7 +19,6 @@ alwaysApply: false
 - Session: `async_sessionmaker` with `expire_on_commit=False`.
 - `get_db_session()` is an async generator yielding from `SessionLocal()` — used as `Depends()`.
 - UUID primary keys, JSONB columns for flexible data (`input_metadata`, `result`).
-- Soft delete for API keys via `revoked_at` timestamp.
 
 ## Docker Gateway (`docker/client.py`)
 

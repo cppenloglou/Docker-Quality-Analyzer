@@ -14,15 +14,28 @@ redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
 
 async def publish_event(event: DomainEvent) -> None:
     payload = asdict(event)
-    await redis_client.publish(f"user:{event.user_id}:events", json.dumps(payload))
+    data = json.dumps(payload)
+
+    # Container log lines are high-volume; keep them isolated on a dedicated
+    # user-scoped logs channel so they never flood the user/job event streams.
+    if event.event_name == "container.log":
+        container_id = event.payload.get("container_id")
+        if container_id:
+            await redis_client.publish(
+                f"user:{event.user_id}:container:{container_id}:logs",
+                data,
+            )
+        return
+
+    await redis_client.publish(f"user:{event.user_id}:events", data)
     if event.job_id:
-        await redis_client.publish(f"job:{event.job_id}:events", json.dumps(payload))
+        await redis_client.publish(f"job:{event.job_id}:events", data)
     container_id = event.payload.get("container_id")
     if container_id:
-        await redis_client.publish(f"container:{container_id}:metrics", json.dumps(payload))
+        await redis_client.publish(f"container:{container_id}:metrics", data)
         await redis_client.publish(
             f"user:{event.user_id}:container:{container_id}:metrics",
-            json.dumps(payload),
+            data,
         )
 
 

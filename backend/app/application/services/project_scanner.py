@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from app.application.services.build_selection import compose_file_sort_key
+
 _IGNORED_DIRS: frozenset[str] = frozenset(
     {
         "node_modules",
@@ -40,7 +42,7 @@ _COMPOSE_NAMES: frozenset[str] = frozenset(
 )
 
 # ZIP bomb limits
-_MAX_ENTRIES = 10_000
+_MAX_ENTRIES = 15_000
 _MAX_TOTAL_BYTES = 500 * 1024 * 1024  # 500 MB
 _MAX_SINGLE_BYTES = 100 * 1024 * 1024  # 100 MB per file
 _MAX_COMPRESSION_RATIO = 100  # decompressed / compressed
@@ -324,9 +326,9 @@ def scan_extracted_project(extract_root: Path, archive_name: str) -> dict[str, A
         elif path.name in {".env.example", ".env.sample", ".env.template"}:
             env_examples.append(rel(path))
 
-    # Sort for determinism; shortest path first = root-level files preferred
+    # Sort for determinism; prefer canonical root compose files over variants.
     dockerfiles.sort(key=lambda p: (p.count("/"), p))
-    compose_files.sort(key=lambda p: (p.count("/"), p))
+    compose_files.sort(key=compose_file_sort_key)
 
     # Detect stacks from all non-ignored files
     stacks = _detect_stacks(extract_root, all_paths)

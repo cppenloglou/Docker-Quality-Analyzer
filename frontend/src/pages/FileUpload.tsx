@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
@@ -8,16 +8,25 @@ import { Card } from "../components/ui/card";
 import { FileCode, Play, ArrowLeft } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 
+type UploadedFileData = {
+  name: string;
+  content: string;
+  type: string;
+};
+
+function readUploadedFile(): UploadedFileData | null {
+  const stored = sessionStorage.getItem("uploadedFile");
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as UploadedFileData;
+  } catch {
+    return null;
+  }
+}
+
 export function FileUpload() {
   const navigate = useNavigate();
-  const [fileData] = useState<{
-    name: string;
-    content: string;
-    type: string;
-  } | null>(() => {
-    const stored = sessionStorage.getItem("uploadedFile");
-    return stored ? JSON.parse(stored) : null;
-  });
+  const fileData = readUploadedFile();
 
   useEffect(() => {
     if (!fileData) {

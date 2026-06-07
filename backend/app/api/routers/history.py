@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.api.routers.compose import compute_deploy_status, deploy_state_redis_key, deploy_stop_redis_key
 from app.application.schemas import JobRead
+from app.application.services.job_cleanup import cleanup_job_artifacts
 from app.infrastructure.db.models import JobStatus, JobType, UserModel
 from app.infrastructure.db.repositories import JobRepository
 from app.infrastructure.db.session import get_db_session
@@ -100,6 +101,13 @@ async def delete_job(
                 status_code=409,
                 detail="Stop running containers for this job before deleting it.",
             )
+
+    await cleanup_job_artifacts(
+        user_id=current_user.id,
+        job_id=job_id,
+        input_metadata=dict(job.input_metadata or {}),
+        result=dict(job.result) if isinstance(job.result, dict) else job.result,
+    )
 
     deleted = await repo.delete_job(job_id, current_user.id)
     if not deleted:

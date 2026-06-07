@@ -1,4 +1,7 @@
 import asyncio
+import threading
+from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from typing import Any
 
 import docker
@@ -52,11 +55,16 @@ class DockerGateway:
         dockerfile: str,
         tag: str,
         buildargs: dict[str, str] | None = None,
+        timeout: int | None = None,
     ) -> tuple[Any, list[str]]:
         """Build a Docker image and return (image, log_lines)."""
-        image, log_gen = await asyncio.to_thread(
+        build_coro = asyncio.to_thread(
             self._build_image_sync, path, dockerfile, tag, buildargs or {}
         )
+        if timeout and timeout > 0:
+            image, log_gen = await asyncio.wait_for(build_coro, timeout=timeout)
+        else:
+            image, log_gen = await build_coro
         log_lines: list[str] = []
         for chunk in log_gen:
             if isinstance(chunk, dict):
@@ -84,6 +92,17 @@ class DockerGateway:
 
     async def inspect_image(self, image_id_or_tag: str) -> dict[str, Any]:
         return await asyncio.to_thread(self._inspect_image_sync, image_id_or_tag)
+
+    async def remove_image(self, tag: str) -> bool:
+        """Remove an image by tag or id. Returns True if removed, False if not found."""
+        return await asyncio.to_thread(self._remove_image_sync, tag)
+
+    def _remove_image_sync(self, tag: str) -> bool:
+        try:
+            self.client.images.remove(tag, force=True)
+            return True
+        except docker.errors.ImageNotFound:
+            return False
 
     def _inspect_image_sync(self, image_id_or_tag: str) -> dict[str, Any]:
         img = self.client.images.get(image_id_or_tag)
@@ -120,6 +139,31 @@ class DockerGateway:
             "workdir": cfg.get("WorkingDir") or None,
         }
 
+    @staticmethod
+    def _decode_log_bytes(raw_logs: bytes | str) -> list[str]:
+        if isinstance(raw_logs, bytes):
+            text = raw_logs.decode("utf-8", errors="ignore")
+        else:
+            text = raw_logs
+        return [line for line in text.splitlines() if line]
+
+    async def tail_container_logs(self, container_id: str, *, tail: int = 200) -> list[str]:
+        """Return the last ``tail`` log lines (non-streaming snapshot)."""
+        return await asyncio.to_thread(self._tail_container_logs_sync, container_id, tail)
+
+    def _tail_container_logs_sync(self, container_id: str, tail: int) -> list[str]:
+        try:
+            container = self.client.containers.get(container_id)
+        except docker.errors.NotFound:
+            return []
+        try:
+            raw_logs = container.logs(tail=tail, stream=False)
+            if isinstance(raw_logs, bytes):
+                return self._decode_log_bytes(raw_logs)
+        except Exception:
+            pass
+        return []
+
     # ── Container final state (for exited containers) ─────────────────────────
 
     async def inspect_container_final_state(self, container_id: str) -> dict[str, Any]:
@@ -135,13 +179,7 @@ class DockerGateway:
         state = attrs.get("State") or {}
         cfg = attrs.get("Config") or {}
 
-        last_logs: list[str] = []
-        try:
-            raw_logs = container.logs(tail=50, stream=False)
-            if isinstance(raw_logs, bytes):
-                last_logs = [l for l in raw_logs.decode("utf-8", errors="ignore").splitlines() if l]
-        except Exception:
-            pass
+        last_logs = self._tail_container_logs_sync(container_id, 50)
 
         return {
             "container_id": container_id,
@@ -170,6 +208,145 @@ class DockerGateway:
         state = attrs.get("State") or {}
         status = str(state.get("Status") or "").lower()
         return {"container_id": container_id, "status": status}
+
+    # ── Container runtime info (no stats; for deploy-state enrichment) ─────────
+
+    async def inspect_container_runtime(self, container_id: str) -> dict[str, Any]:
+        """Lightweight inspect (no stats) for deploy-state enrichment: name, service, ports, health."""
+        return await asyncio.to_thread(self._inspect_container_runtime_sync, container_id)
+
+    def _inspect_container_runtime_sync(self, container_id: str) -> dict[str, Any]:
+        try:
+            container = self.client.containers.get(container_id)
+        except docker.errors.NotFound:
+            return {"id": container_id, "status": "not_found"}
+        attrs = container.attrs or {}
+        state = attrs.get("State") or {}
+        cfg = attrs.get("Config") or {}
+        labels = cfg.get("Labels") or {}
+        return {
+            "id": container_id,
+            "name": str(attrs.get("Name", "")).lstrip("/") or None,
+            "service": labels.get("com.docker.compose.service"),
+            "image": str(cfg.get("Image", "")) or None,
+            "status": state.get("Status"),
+            "health_status": (state.get("Health") or {}).get("Status"),
+            "restart_count": int(attrs.get("RestartCount") or 0),
+            "ip_address": self._extract_ip(attrs),
+            "ports": self._extract_ports(attrs),
+        }
+
+    # ── Container log streaming ───────────────────────────────────────────────
+
+    @staticmethod
+    def _split_log_timestamp(text: str) -> tuple[str | None, str]:
+        """Split a ``docker logs --timestamps`` line into (timestamp, message)."""
+        if " " not in text:
+            return None, text
+        candidate, _, rest = text.partition(" ")
+        # RFC3339 timestamps from the Docker daemon look like 2024-01-02T03:04:05.123456789Z
+        if "T" in candidate and (candidate.endswith("Z") or "+" in candidate or candidate.count(":") >= 2):
+            normalized = candidate.replace("Z", "+00:00")
+            try:
+                datetime.fromisoformat(normalized)
+                return candidate, rest
+            except ValueError:
+                return None, text
+        return None, text
+
+    async def follow_container_logs(
+        self,
+        container_id: str,
+        *,
+        tail: int = 200,
+        max_buffer: int = 2000,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Yield ``{stream, line, timestamp}`` dicts, tailing then following container logs.
+
+        The synchronous Docker SDK log generator is consumed in a background thread and
+        pushed onto a bounded asyncio queue so the event loop never blocks. The stream ends
+        naturally when the container stops or is removed (EOF).
+        """
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=max_buffer)
+        sentinel = object()
+
+        def _put(item: Any) -> None:
+            try:
+                queue.put_nowait(item)
+            except asyncio.QueueFull:
+                # Drop oldest to keep memory bounded under log floods.
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(item)
+                except asyncio.QueueFull:
+                    pass
+
+        def _reader() -> None:
+            try:
+                container = self.client.containers.get(container_id)
+                # docker-py Container.logs() does not accept demux= (only attach() does).
+                # Streamed logs arrive as multiplexed payload bytes without stream ids.
+                stream = container.logs(
+                    stream=True,
+                    follow=True,
+                    timestamps=True,
+                    tail=tail,
+                    stdout=True,
+                    stderr=True,
+                )
+                for chunk in stream:
+                    if isinstance(chunk, tuple):
+                        # attach()-style demux tuples if a future caller passes them through
+                        chunks = (("stdout", chunk[0]), ("stderr", chunk[1]))
+                    elif isinstance(chunk, bytes):
+                        chunks = (("stdout", chunk),)
+                    else:
+                        chunks = (("stdout", str(chunk).encode()),)
+                    for source, raw in chunks:
+                        if not raw:
+                            continue
+                        decoded = raw.decode("utf-8", errors="ignore")
+                        for line in decoded.splitlines():
+                            if not line:
+                                continue
+                            timestamp, message = DockerGateway._split_log_timestamp(line)
+                            loop.call_soon_threadsafe(
+                                _put,
+                                {"stream": source, "line": message, "timestamp": timestamp},
+                            )
+            except docker.errors.NotFound:
+                loop.call_soon_threadsafe(
+                    _put,
+                    {
+                        "stream": "system",
+                        "line": f"Container {container_id[:12]} not found.",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001 - surface as a system log line
+                loop.call_soon_threadsafe(
+                    _put,
+                    {
+                        "stream": "system",
+                        "line": f"Log stream error: {exc}",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            finally:
+                loop.call_soon_threadsafe(_put, sentinel)
+
+        thread = threading.Thread(target=_reader, name=f"logs-{container_id[:12]}", daemon=True)
+        thread.start()
+
+        while True:
+            item = await queue.get()
+            if item is sentinel:
+                break
+            yield item
 
     # ── Container metrics ─────────────────────────────────────────────────────
 

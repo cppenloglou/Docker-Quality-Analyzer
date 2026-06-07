@@ -1,7 +1,5 @@
-import hashlib
-import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import Date, Numeric, Select, and_, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password, verify_password
 from app.infrastructure.db.models import (
     AnalysisJobModel,
-    ApiKeyModel,
     JobStatus,
     JobType,
     UserModel,
@@ -38,46 +35,6 @@ class UserRepository:
         if not user:
             return None
         return user if verify_password(password, user.hashed_password) else None
-
-
-class ApiKeyRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-
-    async def create_key(self, user_id: uuid.UUID) -> tuple[ApiKeyModel, str]:
-        raw = f"dpa_{secrets.token_urlsafe(32)}"
-        key_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-        record = ApiKeyModel(user_id=user_id, key_prefix=raw[:12], key_hash=key_hash)
-        self.session.add(record)
-        await self.session.flush()
-        return record, raw
-
-    async def list_keys(self, user_id: uuid.UUID) -> list[ApiKeyModel]:
-        stmt = (
-            select(ApiKeyModel)
-            .where(ApiKeyModel.user_id == user_id)
-            .where(ApiKeyModel.revoked_at.is_(None))
-            .order_by(ApiKeyModel.created_at.desc())
-        )
-        rows = await self.session.scalars(stmt)
-        return list(rows)
-
-    async def get_by_raw_key(self, raw_key: str) -> ApiKeyModel | None:
-        key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
-        stmt = (
-            select(ApiKeyModel)
-            .where(ApiKeyModel.key_hash == key_hash)
-            .where(ApiKeyModel.revoked_at.is_(None))
-        )
-        return await self.session.scalar(stmt)
-
-    async def revoke(self, user_id: uuid.UUID, key_id: uuid.UUID) -> bool:
-        key = await self.session.get(ApiKeyModel, key_id)
-        if not key or key.user_id != user_id or key.revoked_at is not None:
-            return False
-        key.revoked_at = datetime.now(UTC)
-        await self.session.flush()
-        return True
 
 
 class JobRepository:

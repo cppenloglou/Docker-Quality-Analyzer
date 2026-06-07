@@ -371,6 +371,28 @@ services:
     assert any("env_file" in issue for issue in api_mapping["issues"])
 
 
+def test_compose_mapper_env_file_object_form(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "docker").mkdir()
+    (project_root / "docker" / ".env").write_text("FOO=bar\n", encoding="utf-8")
+    compose_content = """
+services:
+  api:
+    image: myapp:latest
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+"""
+    (project_root / "docker-compose.yml").write_text(compose_content, encoding="utf-8")
+
+    mappings = map_compose_services("docker-compose.yml", project_root)
+    api_mapping = mappings[0]
+    assert api_mapping["issues"] == []
+
+
 def test_compose_mapper_missing_compose_file(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

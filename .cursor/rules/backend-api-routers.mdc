@@ -21,7 +21,7 @@ async def analyze(
 
 ## Dependency Injection
 
-- **Auth**: `Depends(get_current_user)` — supports both Bearer JWT and `X-API-Key` header.
+- **Auth**: `Depends(get_current_user)` — Bearer JWT only.
 - **Database**: `Depends(get_db_session)` — yields an `AsyncSession`.
 - **Services**: Instantiated in the handler body, not injected:
   ```python

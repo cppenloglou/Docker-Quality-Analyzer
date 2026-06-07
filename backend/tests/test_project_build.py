@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.infrastructure.db.models import JobStatus
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,7 @@ def _make_payload(
     build_selected_images: bool = False,
     dockerfiles: list[str] | None = None,
     compose_files: list[str] | None = None,
+    build_dockerfiles: list[str] | None = None,
 ) -> dict[str, Any]:
     user_id = str(uuid.uuid4())
     job_id = str(uuid.uuid4())
@@ -32,7 +35,7 @@ def _make_payload(
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("version: '3'\nservices:\n  web:\n    image: python:3.12\n")
 
-    return {
+    payload: dict[str, Any] = {
         "user_id": user_id,
         "job_id": job_id,
         "project_path": str(tmp_path),
@@ -40,6 +43,19 @@ def _make_payload(
         "compose_files": compose_files,
         "build_selected_images": build_selected_images,
     }
+    if build_selected_images:
+        if build_dockerfiles is not None:
+            payload["build_dockerfiles"] = build_dockerfiles
+        else:
+            from app.application.services.build_selection import select_dockerfiles_for_build
+
+            primary = compose_files[0] if compose_files else None
+            payload["build_dockerfiles"] = select_dockerfiles_for_build(
+                dockerfiles,
+                tmp_path,
+                primary_compose_file=primary,
+            )
+    return payload
 
 
 def _make_fake_session():
@@ -113,7 +129,7 @@ async def test_build_selected_images_true_records_results(tmp_path):
 
     mock_image = MagicMock()
 
-    async def fake_build_image(path, dockerfile, tag, buildargs=None):
+    async def fake_build_image(path, dockerfile, tag, buildargs=None, **kwargs):
         return mock_image, ["Step 1/2 : FROM python:3.12", "Successfully built abc123def456"]
 
     async def fake_inspect_image(image_id_or_tag):
@@ -286,7 +302,7 @@ async def test_build_image_nested_dockerfile_passes_parent_dir_and_filename(tmp_
 
     captured: dict[str, str] = {}
 
-    async def fake_build_image(path: str, dockerfile: str, tag: str, buildargs=None):
+    async def fake_build_image(path: str, dockerfile: str, tag: str, buildargs=None, **kwargs):
         captured["path"] = path
         captured["dockerfile"] = dockerfile
         captured["tag"] = tag
@@ -357,7 +373,7 @@ async def test_build_image_tag_includes_sha256_prefix_of_relative_path(tmp_path)
 
     captured: dict[str, str] = {}
 
-    async def fake_build_image(path: str, dockerfile: str, tag: str, buildargs=None):
+    async def fake_build_image(path: str, dockerfile: str, tag: str, buildargs=None, **kwargs):
         captured["tag"] = tag
         return MagicMock(), []
 
@@ -420,7 +436,12 @@ async def test_build_image_tag_includes_sha256_prefix_of_relative_path(tmp_path)
 
 @pytest.mark.asyncio
 async def test_successful_project_build_records_base_image(tmp_path):
-    payload = _make_payload(tmp_path, build_selected_images=True, dockerfiles=["Dockerfile.api"])
+    payload = _make_payload(
+        tmp_path,
+        build_selected_images=True,
+        dockerfiles=["Dockerfile.api"],
+        build_dockerfiles=["Dockerfile.api"],
+    )
     api_df = tmp_path / "Dockerfile.api"
     api_df.write_text("FROM node:22-alpine AS build\nCOPY . .\n", encoding="utf-8")
 
@@ -479,3 +500,57 @@ async def test_successful_project_build_records_base_image(tmp_path):
 
     builds = result.get("image_build_results") or []
     assert builds and builds[0].get("base_image") == "node:22-alpine"
+
+
+@pytest.mark.asyncio
+async def test_run_project_analysis_marks_job_failed_on_unhandled_error(tmp_path):
+    """Unexpected worker errors must fail the job and publish failure events."""
+    payload = _make_payload(
+        tmp_path,
+        build_selected_images=False,
+        dockerfiles=["Dockerfile"],
+        compose_files=["docker-compose.yml"],
+    )
+
+    fake_repo = _make_fake_job_repo()
+    fake_svc = AsyncMock()
+    fake_svc.analyze_content = AsyncMock(return_value={
+        "score": 70,
+        "grade": "B",
+        "errors": [],
+        "warnings": [],
+        "securityIssues": [],
+        "suggestions": [],
+        "meta": {},
+    })
+    publish_mock = AsyncMock()
+
+    def boom(_compose_file, _project_root):
+        raise TypeError("unsupported operand type(s) for /: 'PosixPath' and 'dict'")
+
+    with (
+        patch("app.workers.tasks.SessionLocal") as mock_sl,
+        patch("app.workers.tasks.JobRepository", return_value=fake_repo),
+        patch("app.workers.tasks.AnalysisService", return_value=fake_svc),
+        patch("app.workers.tasks.publish_event", new=publish_mock),
+        patch("app.workers.tasks.map_compose_services", side_effect=boom),
+    ):
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_sl.return_value = session_ctx
+
+        from app.workers.tasks import run_project_analysis
+
+        result = await run_project_analysis(None, payload)
+
+    assert "Project analysis failed" in result["message"]
+    failed_calls = [
+        call
+        for call in fake_repo.update_status.await_args_list
+        if len(call.args) >= 3 and call.args[2] == JobStatus.failed
+    ]
+    assert failed_calls
+    event_names = [call.args[0].event_name for call in publish_mock.await_args_list]
+    assert "project.analysis_failed" in event_names
+    assert "user.analysis.failed" in event_names

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { FileCode, History, Home, KeyRound, LogOut, BarChart3 } from "lucide-react";
+import { FileCode, History, Home, LogOut, BarChart3 } from "lucide-react";
+import { AppFooter } from "./AppFooter";
 import { useAuth } from "../auth/AuthProvider";
 import { NotificationEventBridge } from "./NotificationEventBridge";
 import { NotificationPanel } from "./NotificationPanel";
@@ -68,10 +69,6 @@ export function Layout({ children }: LayoutProps) {
                 <BarChart3 className="w-4 h-4" />
                 <span className="hidden sm:inline">Research</span>
               </Link>
-              <Link to="/settings/api-keys" className={navLinkClass("/settings/api-keys")}>
-                <KeyRound className="w-4 h-4" />
-                <span className="hidden sm:inline">API Keys</span>
-              </Link>
               <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
                 <NotificationPanel />
                 <span
@@ -110,11 +107,7 @@ export function Layout({ children }: LayoutProps) {
 
       <main className="container mx-auto px-4 py-8 flex-1">{children}</main>
 
-      <footer className="border-t border-slate-800 py-6">
-        <div className="container mx-auto px-4 text-center text-sm text-slate-400">
-          Docker Analyzer - Lint and analyze your Docker configurations
-        </div>
-      </footer>
+      <AppFooter />
     </div>
   );
 }

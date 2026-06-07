@@ -30,6 +30,7 @@ import {
   type Job,
   type RunnabilityMeta,
 } from "../utils/api";
+import { clearSessionStopping, markSessionStopping } from "../utils/deploySession";
 import { clearState, loadState, saveState } from "../utils/monitoringState";
 import { pushNotification } from "../utils/notifications";
 
@@ -232,7 +233,7 @@ export function ContainerExecution() {
     setStopping(false);
     setDeployPhase("failed");
     clearDeployTimeout();
-    sessionStorage.removeItem("dqa:containerStatus");
+    if (job?.id) clearSessionStopping(job.id);
     if (!options?.keepExitData) {
       resetExecutionViewState();
     }
@@ -383,7 +384,7 @@ export function ContainerExecution() {
       clearDeployTimeout();
       setContainerIds([]);
       setDeployJobId(null);
-      sessionStorage.removeItem("dqa:containerStatus");
+      if (job?.id) clearSessionStopping(job.id);
       if (stateKey) clearState(stateKey);
       toast.success("Compose stack stopped");
       pushNotification("warning", "Containers Stopped", "All containers have been stopped", {
@@ -412,7 +413,7 @@ export function ContainerExecution() {
       setStopping(false);
       setContainerIds([]);
       setDeployJobId(null);
-      sessionStorage.removeItem("dqa:containerStatus");
+      if (job?.id) clearSessionStopping(job.id);
       if (stateKey) clearState(stateKey);
       pushLog({
         message: `Cleanup completed for ${projectName}`,
@@ -522,7 +523,7 @@ export function ContainerExecution() {
             setDeployJobId(null);
             resetExecutionViewState();
             if (stateKey) clearState(stateKey);
-            sessionStorage.removeItem("dqa:containerStatus");
+            if (job?.id) clearSessionStopping(job.id);
             return;
           }
           setStackRunning(false);
@@ -559,7 +560,7 @@ export function ContainerExecution() {
           setDeployJobId(null);
           resetExecutionViewState();
           if (stateKey) clearState(stateKey);
-          sessionStorage.removeItem("dqa:containerStatus");
+          if (job?.id) clearSessionStopping(job.id);
         } else {
           setStackRunning(false);
           setStopping(false);
@@ -568,7 +569,7 @@ export function ContainerExecution() {
           setDeployJobId(null);
           resetExecutionViewState();
           if (stateKey) clearState(stateKey);
-          sessionStorage.removeItem("dqa:containerStatus");
+          if (job?.id) clearSessionStopping(job.id);
         }
       } catch (err) {
         if (cancelled) return;
@@ -691,8 +692,8 @@ export function ContainerExecution() {
     const previousContainerIds = containerIds;
     setStopping(true);
     setStackRunning(false);
-    setContainerIds([]);
-    sessionStorage.setItem("dqa:containerStatus", "stopping");
+    setDeployPhase("idle");
+    markSessionStopping(job.id);
     pushLog({ message: `Stop requested for deploy ${job.id}`, tone: "warning" });
     try {
       const response = await composeApi.stopDeploy({ job_id: job.id });
@@ -706,17 +707,28 @@ export function ContainerExecution() {
         dedupeKey: `deploy.stop.requested:${job.id}`,
       });
 
-      for (let i = 0; i < 30; i++) {
+      let confirmed = false;
+      for (let i = 0; i < 45; i++) {
         if (unmountedRef.current) break;
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 1000));
         if (unmountedRef.current) break;
         try {
           const status = await composeApi.deployStatus(job.id);
-          if (!status.active) {
+          const rs = status.runtime_state ?? "none";
+          if (rs === "stopping") {
+            setStopping(true);
+            setStackRunning(false);
+          }
+          if (
+            rs === "stopped_by_user" ||
+            (!status.active && (status.stopped_by_user || rs === "none"))
+          ) {
+            confirmed = true;
             if (unmountedRef.current) break;
             setDeployJobId(null);
+            setContainerIds([]);
             if (stateKey) clearState(stateKey);
-            sessionStorage.removeItem("dqa:containerStatus");
+            if (job?.id) clearSessionStopping(job.id);
             pushLog({ message: "Stack confirmed stopped", tone: "success" });
             pushNotification("success", "Containers Stopped", "All containers have been successfully stopped", {
               dedupeKey: `deploy.stop.completed:${job.id}`,
@@ -727,17 +739,39 @@ export function ContainerExecution() {
           break;
         }
       }
+      if (!confirmed && !unmountedRef.current) {
+        pushLog({
+          message: "Stop still in progress; refresh Monitoring for latest state",
+          tone: "warning",
+        });
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to stop deployment";
       pushLog({ message, tone: "error" });
       toast.error(message);
+      if (job?.id) clearSessionStopping(job.id);
       if (!unmountedRef.current) {
         setStackRunning(true);
         setContainerIds(previousContainerIds);
+        setStopping(false);
       }
     } finally {
       if (!unmountedRef.current) {
-        setStopping(false);
+        try {
+          const status = await composeApi.deployStatus(job.id);
+          const rs = status.runtime_state ?? "none";
+          if (
+            rs === "stopped_by_user" ||
+            (!status.active && (status.stopped_by_user || rs === "none"))
+          ) {
+            setStopping(false);
+            setStackRunning(false);
+            setContainerIds([]);
+            if (job?.id) clearSessionStopping(job.id);
+          }
+        } catch {
+          // Keep stopping UI until a later deployStatus poll or page reload confirms state.
+        }
       }
     }
   };

@@ -16,7 +16,9 @@ import { Layout } from "../components/Layout";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
+import { useAuth } from "../auth/AuthProvider";
 import { ApiError, compose as composeApi, jobs as jobsApi, type Job } from "../utils/api";
+import { clearJobSessionState } from "../utils/jobSessionCleanup";
 import { MotionPage, StaggerList, StaggerItem, MotionCard } from "../components/motion";
 
 interface HistoryItem {
@@ -79,6 +81,7 @@ function formatTimestamp(date: Date) {
 }
 
 export function History() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [jobList, setJobList] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,16 +232,7 @@ export function History() {
         next.delete(item.id);
         return next;
       });
-      try {
-        if (sessionStorage.getItem("analysisJobId") === item.id) {
-          sessionStorage.removeItem("analysisJobId");
-        }
-        if (sessionStorage.getItem("projectJobId") === item.id) {
-          sessionStorage.removeItem("projectJobId");
-        }
-      } catch {
-        // ignore
-      }
+      clearJobSessionState(item.id, user?.id ?? null);
       toast.success("Analysis removed from history");
     } catch (err) {
       const message =

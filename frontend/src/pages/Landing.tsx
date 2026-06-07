@@ -12,6 +12,7 @@ import {
   CheckCircle,
   Play,
   Package,
+  Info,
 } from "lucide-react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -146,15 +147,31 @@ export function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94], delay: 0.08 }}
           >
-            Upload your Dockerfile or docker-compose.yml to analyze for errors,
-            security issues, and best practices. Get instant feedback from
-            industry-standard linters.
+            Upload a single Dockerfile or docker-compose.yml—or batch up to{" "}
+            {MAX_BATCH_FILES} files of the same kind—for linting, security checks,
+            and best-practice feedback from industry-standard tools.
           </motion.p>
         </div>
 
         {/* Upload Area */}
-        <div className="mb-8">
-          <DragDropUpload onFileSelect={handleFileSelect} onFilesSelect={handleFilesSelect} />
+        <div className="mb-8 space-y-4">
+          <DragDropUpload
+            onFileSelect={handleFileSelect}
+            onFilesSelect={handleFilesSelect}
+            maxBatchFiles={MAX_BATCH_FILES}
+          />
+          <Card className="p-4 bg-card border-border">
+            <div className="flex gap-3 text-sm text-slate-600 dark:text-slate-400">
+              <Info className="w-5 h-5 shrink-0 text-blue-400 mt-0.5" aria-hidden />
+              <p>
+                <span className="font-medium text-foreground">Batch analysis:</span> select
+                up to {MAX_BATCH_FILES} Dockerfiles or Compose files at once (not mixed).
+                All jobs are queued together and tracked on the batch progress page (
+                <span className="text-foreground/90">/analysis/batch</span>).
+              </p>
+            </div>
+          </Card>
+          <QuickDemo />
         </div>
 
         {/* Or Upload Project */}
@@ -332,11 +349,6 @@ export function Landing() {
             </MotionCard>
           </StaggerItem>
         </StaggerList>
-
-        {/* Quick Demo */}
-        <div className="mt-16">
-          <QuickDemo />
-        </div>
       </div>
       </MotionPage>
     </Layout>

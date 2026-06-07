@@ -11,6 +11,8 @@ import {
   Zap,
 } from "lucide-react";
 
+import { AppFooter } from "../AppFooter";
+
 interface AuthShellProps {
   mode: "login" | "register";
   children: ReactNode;
@@ -374,7 +376,7 @@ export function AuthShell({ mode, children }: AuthShellProps) {
   ] as const;
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-slate-950">
+    <div className="relative min-h-screen overflow-x-hidden bg-slate-950 flex flex-col">
       <div className="absolute inset-0">
         <div ref={vantaRef} className="auth-vanta-layer absolute inset-0" />
         <div className="pointer-events-none absolute inset-0">
@@ -444,7 +446,7 @@ export function AuthShell({ mode, children }: AuthShellProps) {
         `}
       </style>
 
-      <div className="relative mx-auto grid min-h-screen max-w-7xl grid-cols-1 lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="relative mx-auto grid flex-1 w-full max-w-7xl grid-cols-1 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="hidden min-h-0 flex-col border-r border-slate-800/80 px-10 py-12 lg:flex">
           <div className="shrink-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-500/80 bg-slate-950/88 px-3 py-1 text-xs text-white">
@@ -496,6 +498,8 @@ export function AuthShell({ mode, children }: AuthShellProps) {
           <div className="w-full max-w-lg">{children}</div>
         </section>
       </div>
+
+      <AppFooter />
     </div>
   );
 }

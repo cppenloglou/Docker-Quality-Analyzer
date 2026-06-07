@@ -8,6 +8,9 @@ source "$SCRIPT_DIR/common.sh" "$@"
 if [[ " $* " == *" --wipe "* ]]; then
   echo "[stop] Stopping $MODE stack and removing volumes"
   compose_cmd down -v --remove-orphans
+  if [[ "$MODE" == "dev" ]]; then
+    clean_dev_upload_storage
+  fi
 else
   echo "[stop] Stopping $MODE stack"
   compose_cmd down --remove-orphans

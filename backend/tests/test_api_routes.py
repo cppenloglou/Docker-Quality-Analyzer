@@ -13,7 +13,7 @@ from app.api.deps import get_current_user
 from app.application.schemas import TokenResponse, UserRead
 from app.application.services.github_import import GithubRepoTarget
 from app.core.security import create_token
-from app.infrastructure.db.models import AnalysisJobModel, ApiKeyModel, JobStatus, JobType
+from app.infrastructure.db.models import AnalysisJobModel, JobStatus, JobType
 from app.infrastructure.db.session import get_db_session
 from tests.conftest import auth_header_for, make_user
 
@@ -82,8 +82,8 @@ def test_dockerfile_analyze_enqueues_job(client, monkeypatch, app, fake_db_sessi
 
     queue_calls: list[dict] = []
 
-    async def fake_enqueue(task_name: str, payload: dict):
-        queue_calls.append({"task": task_name, "payload": payload})
+    async def fake_enqueue(task_name: str, payload: dict, **kwargs):
+        queue_calls.append({"task": task_name, "payload": payload, "kwargs": kwargs})
 
     monkeypatch.setattr("app.application.services.analysis_service.AnalysisService.enqueue_job", fake_enqueue_job)
     monkeypatch.setattr("app.api.routers.dockerfile.enqueue_job", fake_enqueue)
@@ -318,8 +318,14 @@ def test_compose_stop_enqueues_stop_job(client, monkeypatch, app, fake_db_sessio
     async def fake_enqueue(task_name: str, payload: dict):
         calls.append({"task": task_name, "payload": payload})
 
+    mark_calls: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    async def fake_mark_pending(user_id: uuid.UUID, job_id_arg: uuid.UUID) -> None:
+        mark_calls.append((user_id, job_id_arg))
+
     monkeypatch.setattr("app.api.routers.compose.JobRepository", RunnableJobRepo)
     monkeypatch.setattr("app.api.routers.compose.enqueue_job", fake_enqueue)
+    monkeypatch.setattr("app.api.routers.compose.mark_deploy_stop_pending", fake_mark_pending)
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
     app.dependency_overrides[get_current_user] = lambda: user
 
@@ -331,6 +337,7 @@ def test_compose_stop_enqueues_stop_job(client, monkeypatch, app, fake_db_sessio
     app.dependency_overrides.clear()
     assert response.status_code == 200
     assert response.json()["status"] == "queued"
+    assert mark_calls == [(user.id, job_id)]
     assert calls and calls[0]["task"] == "run_compose_stop"
     assert calls[0]["payload"]["remove_volumes"] is False
 
@@ -359,8 +366,12 @@ def test_compose_stop_enqueue_forwards_remove_volumes_true(client, monkeypatch, 
     async def fake_enqueue(task_name: str, payload: dict):
         calls.append({"task": task_name, "payload": payload})
 
+    async def fake_mark_pending(_user_id: uuid.UUID, _job_id: uuid.UUID) -> None:
+        return None
+
     monkeypatch.setattr("app.api.routers.compose.JobRepository", RunnableJobRepo)
     monkeypatch.setattr("app.api.routers.compose.enqueue_job", fake_enqueue)
+    monkeypatch.setattr("app.api.routers.compose.mark_deploy_stop_pending", fake_mark_pending)
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
     app.dependency_overrides[get_current_user] = lambda: user
 
@@ -374,6 +385,118 @@ def test_compose_stop_enqueue_forwards_remove_volumes_true(client, monkeypatch, 
     assert response.json()["status"] == "queued"
     assert calls and calls[0]["task"] == "run_compose_stop"
     assert calls[0]["payload"]["remove_volumes"] is True
+
+
+def test_compose_preview_check_rejects_platform_api_url(client, app):
+    user = make_user()
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    response = client.get(
+        "/api/v1/compose/deploy/preview-check",
+        params={"url": "http://127.0.0.1:8000/"},
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["frameable"] is False
+    assert data["reachable"] is False
+    assert "platform API" in (data["reason"] or "")
+
+
+def test_compose_preview_check_detects_x_frame_options_deny(client, monkeypatch, app):
+    user = make_user()
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    class FakeResponse:
+        status_code = 200
+        url = "http://172.18.0.9:8080/"
+        headers = httpx.Headers({"x-frame-options": "DENY"})
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def head(self, _url: str):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.api.routers.compose.httpx.AsyncClient", lambda **kwargs: FakeClient())
+
+    response = client.get(
+        "/api/v1/compose/deploy/preview-check",
+        params={"url": "http://172.18.0.9:8080/"},
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reachable"] is True
+    assert data["frameable"] is False
+    assert data["proxy_available"] is True
+    assert "X-Frame-Options" in (data["reason"] or "")
+
+
+def test_compose_preview_proxy_session_and_strip_xfo(client, monkeypatch, app, fake_db_session_dependency):
+    user = make_user()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db_session] = fake_db_session_dependency
+
+    stored: dict[str, str] = {}
+
+    async def fake_set(key, value, ex=None):
+        stored[str(key)] = value
+
+    async def fake_get(key):
+        return stored.get(str(key))
+
+    class FakeResponse:
+        status_code = 200
+        url = "http://172.18.0.9:8080/"
+        headers = httpx.Headers(
+            {
+                "content-type": "text/html",
+                "x-frame-options": "DENY",
+            }
+        )
+        content = b"<html><head></head><body>ok</body></html>"
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def request(self, _method, _url, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.api.routers.preview_proxy.redis_client.set", fake_set)
+    monkeypatch.setattr("app.api.routers.preview_proxy.redis_client.get", fake_get)
+    monkeypatch.setattr("app.api.routers.preview_proxy.httpx.AsyncClient", lambda **kwargs: FakeClient())
+
+    create = client.post(
+        "/api/v1/compose/deploy/preview-proxy/session",
+        json={"url": "http://172.18.0.9:8080/"},
+        headers=auth_header_for(user.id),
+    )
+    assert create.status_code == 200
+    session_id = create.json()["session_id"]
+
+    proxied = client.get(
+        f"/api/v1/compose/deploy/preview-proxy/{session_id}/",
+        headers=auth_header_for(user.id),
+    )
+    app.dependency_overrides.clear()
+
+    assert proxied.status_code == 200
+    assert "x-frame-options" not in {k.lower() for k in proxied.headers.keys()}
+    assert b"<base href=" in proxied.content
+    assert b"ok" in proxied.content
 
 
 def test_compose_dind_ip_endpoint_returns_resolved_ip(client, monkeypatch, app):
@@ -460,8 +583,8 @@ def test_project_upload_enqueues_project_analysis(client, monkeypatch, app, fake
 
     queue_calls: list[dict] = []
 
-    async def fake_enqueue(task_name: str, payload: dict):
-        queue_calls.append({"task": task_name, "payload": payload})
+    async def fake_enqueue(task_name: str, payload: dict, **kwargs):
+        queue_calls.append({"task": task_name, "payload": payload, "kwargs": kwargs})
 
     monkeypatch.setattr("app.application.services.analysis_service.AnalysisService.enqueue_job", fake_enqueue_job)
     monkeypatch.setattr("app.api.routers.project.enqueue_job", fake_enqueue)
@@ -520,8 +643,8 @@ def test_compose_analyze_enqueues_job(client, monkeypatch, app, fake_db_session_
 
     queue_calls: list[dict] = []
 
-    async def fake_enqueue(task_name: str, payload: dict):
-        queue_calls.append({"task": task_name, "payload": payload})
+    async def fake_enqueue(task_name: str, payload: dict, **kwargs):
+        queue_calls.append({"task": task_name, "payload": payload, "kwargs": kwargs})
 
     monkeypatch.setattr("app.application.services.analysis_service.AnalysisService.enqueue_job", fake_enqueue_job)
     monkeypatch.setattr("app.api.routers.compose.enqueue_job", fake_enqueue)
@@ -666,95 +789,6 @@ def test_history_returns_user_history_list(client, monkeypatch, app, fake_db_ses
     assert len(payload) == 1
     assert payload[0]["id"] == str(job_id)
     assert payload[0]["type"] == "project"
-
-
-def test_api_key_create_returns_new_key(client, monkeypatch, app, fake_db_session_dependency):
-    user = make_user(email="apikey-owner@example.com")
-    key_id = uuid.uuid4()
-
-    class ApiKeyRepo:
-        def __init__(self, _session):
-            pass
-
-        async def create_key(self, requested_user_id):
-            assert requested_user_id == user.id
-            record = ApiKeyModel(id=key_id, user_id=user.id, key_prefix="dpa_prefix123")
-            return record, "dpa_secret_value"
-
-    monkeypatch.setattr("app.api.routers.api_keys.ApiKeyRepository", ApiKeyRepo)
-    app.dependency_overrides[get_db_session] = fake_db_session_dependency
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.post("/api/v1/users/me/api-keys", headers=auth_header_for(user.id))
-
-    app.dependency_overrides.clear()
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["id"] == str(key_id)
-    assert payload["key"] == "dpa_secret_value"
-    assert payload["key_prefix"] == "dpa_prefix123"
-
-
-def test_api_key_list_returns_active_keys(client, monkeypatch, app, fake_db_session_dependency):
-    user = make_user(email="apikey-owner@example.com")
-    key_id = uuid.uuid4()
-    created_at = datetime.now(timezone.utc)
-
-    class ApiKeyRepo:
-        def __init__(self, _session):
-            pass
-
-        async def list_keys(self, requested_user_id):
-            assert requested_user_id == user.id
-            return [
-                ApiKeyModel(
-                    id=key_id,
-                    user_id=user.id,
-                    key_prefix="dpa_prefix123",
-                    key_hash="hash",
-                    created_at=created_at,
-                )
-            ]
-
-    monkeypatch.setattr("app.api.routers.api_keys.ApiKeyRepository", ApiKeyRepo)
-    app.dependency_overrides[get_db_session] = fake_db_session_dependency
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.get("/api/v1/users/me/api-keys", headers=auth_header_for(user.id))
-
-    app.dependency_overrides.clear()
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["id"] == str(key_id)
-    assert payload[0]["key_prefix"] == "dpa_prefix123"
-
-
-def test_api_key_revoke_returns_404_when_missing(client, monkeypatch, app, fake_db_session_dependency):
-    user = make_user(email="apikey-owner@example.com")
-    key_id = uuid.uuid4()
-
-    class ApiKeyRepo:
-        def __init__(self, _session):
-            pass
-
-        async def revoke(self, requested_user_id, requested_key_id):
-            assert requested_user_id == user.id
-            assert requested_key_id == key_id
-            return False
-
-    monkeypatch.setattr("app.api.routers.api_keys.ApiKeyRepository", ApiKeyRepo)
-    app.dependency_overrides[get_db_session] = fake_db_session_dependency
-    app.dependency_overrides[get_current_user] = lambda: user
-
-    response = client.delete(
-        f"/api/v1/users/me/api-keys/{key_id}",
-        headers=auth_header_for(user.id),
-    )
-
-    app.dependency_overrides.clear()
-    assert response.status_code == 404
-    assert response.json()["detail"] == "API key not found."
 
 
 def test_project_upload_rejects_oversized_archive(client, monkeypatch, app, fake_db_session_dependency):
@@ -932,8 +966,8 @@ def test_project_github_upload_enqueues_project_analysis(client, monkeypatch, ap
         captured_meta.update(metadata)
         return job_id
 
-    async def fake_enqueue(task_name: str, payload: dict):
-        queue_calls.append({"task": task_name, "payload": payload})
+    async def fake_enqueue(task_name: str, payload: dict, **kwargs):
+        queue_calls.append({"task": task_name, "payload": payload, "kwargs": kwargs})
 
     monkeypatch.setattr("app.api.routers.project.resolve_public_repo_target", fake_resolve)
     monkeypatch.setattr("app.api.routers.project.download_repo_zipball", fake_download)
@@ -1087,7 +1121,12 @@ def test_job_events_returns_404_for_missing_job(client, monkeypatch, app, fake_d
 def test_delete_job_success_returns_204(client, monkeypatch, app, fake_db_session_dependency):
     user = make_user(email="delete-owner@example.com")
     job_id = uuid.uuid4()
-    calls = {"deleted": False}
+    calls = {"deleted": False, "cleanup": False}
+
+    async def fake_cleanup(**kwargs):
+        calls["cleanup"] = True
+        assert kwargs["user_id"] == user.id
+        assert kwargs["job_id"] == job_id
 
     class JobRepo:
         def __init__(self, _session):
@@ -1114,6 +1153,7 @@ def test_delete_job_success_returns_204(client, monkeypatch, app, fake_db_sessio
 
     redis_del = AsyncMock()
     monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    monkeypatch.setattr("app.api.routers.history.cleanup_job_artifacts", fake_cleanup)
     monkeypatch.setattr("app.api.routers.history.redis_client.delete", redis_del)
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
     app.dependency_overrides[get_current_user] = lambda: user
@@ -1126,6 +1166,7 @@ def test_delete_job_success_returns_204(client, monkeypatch, app, fake_db_sessio
     assert response.status_code == 204
     assert response.content == b""
     assert calls["deleted"] is True
+    assert calls["cleanup"] is True
     assert redis_del.await_count == 2
 
 
@@ -1182,7 +1223,11 @@ def test_delete_job_returns_409_when_in_progress(
         async def delete_job(self, *_a, **_k):
             raise AssertionError("delete_job should not be called")
 
+    async def fake_cleanup(**_kwargs):
+        raise AssertionError("cleanup_job_artifacts should not be called")
+
     monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    monkeypatch.setattr("app.api.routers.history.cleanup_job_artifacts", fake_cleanup)
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
     app.dependency_overrides[get_current_user] = lambda: user
 
@@ -1376,7 +1421,11 @@ def test_delete_job_allows_project_job(client, monkeypatch, app, fake_db_session
     """Project jobs (done or otherwise) must be deletable."""
     user = make_user(email="delete-project@example.com")
     job_id = uuid.uuid4()
-    calls: dict = {}
+    calls: dict = {"cleanup": False}
+
+    async def fake_cleanup(**kwargs):
+        calls["cleanup"] = True
+        assert kwargs["job_id"] == job_id
 
     class JobRepo:
         def __init__(self, _session):
@@ -1401,6 +1450,7 @@ def test_delete_job_allows_project_job(client, monkeypatch, app, fake_db_session
             return True
 
     monkeypatch.setattr("app.api.routers.history.JobRepository", JobRepo)
+    monkeypatch.setattr("app.api.routers.history.cleanup_job_artifacts", fake_cleanup)
     monkeypatch.setattr("app.api.routers.history.compute_deploy_status", AsyncMock(return_value=SimpleNamespace(active=False)))
     monkeypatch.setattr("app.api.routers.history.redis_client.delete", AsyncMock())
     app.dependency_overrides[get_db_session] = fake_db_session_dependency
@@ -1413,3 +1463,4 @@ def test_delete_job_allows_project_job(client, monkeypatch, app, fake_db_session
     app.dependency_overrides.clear()
     assert response.status_code == 204
     assert calls.get("deleted") is True
+    assert calls.get("cleanup") is True

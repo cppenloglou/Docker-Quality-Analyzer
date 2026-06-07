@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import socket
@@ -7,7 +8,8 @@ import uuid
 from typing import Literal
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +28,21 @@ from app.infrastructure.events.bus import redis_client
 from app.workers.queue import enqueue_job
 
 router = APIRouter(prefix="/api/v1/compose", tags=["compose"])
+logger = logging.getLogger(__name__)
+
+DEPLOY_STATE_TTL_SECONDS = 60 * 60 * 6
+_PREVIEW_ALLOWED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "docker",
+        "dind",
+        "docker-platform-dind",
+        "docker-platform-dind-1",
+    }
+)
+_PREVIEW_API_PORTS = frozenset({8000, 8001})
 
 
 class ComposeDeployRequest(BaseModel):
@@ -222,6 +239,7 @@ async def stop_compose_deploy(
         raise HTTPException(status_code=404, detail="Job not found.")
     if job.type not in {JobType.compose, JobType.project}:
         raise HTTPException(status_code=400, detail="Stop deploy is supported only for compose or project jobs.")
+    await mark_deploy_stop_pending(current_user.id, payload.job_id)
     await enqueue_job(
         "run_compose_stop",
         {
@@ -262,6 +280,15 @@ class DindIpResponse(BaseModel):
     dind_ip: str | None = None
 
 
+class PreviewCheckResponse(BaseModel):
+    reachable: bool
+    frameable: bool
+    proxy_available: bool = False
+    status_code: int | None = None
+    reason: str | None = None
+    final_url: str | None = None
+
+
 def deploy_state_redis_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
     return f"deploy:{user_id}:{job_id}"
 
@@ -270,8 +297,177 @@ def deploy_stop_redis_key(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
     return f"deploy-stop:{user_id}:{job_id}"
 
 
+async def mark_deploy_stop_pending(user_id: uuid.UUID, job_id: uuid.UUID) -> None:
+    """Persist stop intent before the worker runs so deploy/status reflects stopping immediately."""
+    await redis_client.set(
+        deploy_stop_redis_key(user_id, job_id),
+        "1",
+        ex=DEPLOY_STATE_TTL_SECONDS,
+    )
+    raw = await redis_client.get(deploy_state_redis_key(user_id, job_id))
+    if not raw:
+        return
+    try:
+        state = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return
+    if not isinstance(state, dict):
+        return
+    state["stopping"] = True
+    state["stop_requested_by_user"] = True
+    state["stop_reason"] = "user_requested"
+    await redis_client.set(
+        deploy_state_redis_key(user_id, job_id),
+        json.dumps(state),
+        ex=DEPLOY_STATE_TTL_SECONDS,
+    )
+
+
 def _is_ipv4(value: str) -> bool:
     return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", value))
+
+
+def _is_private_or_loopback_ipv4(host: str) -> bool:
+    if not _is_ipv4(host):
+        return False
+    parts = [int(x) for x in host.split(".")]
+    if parts[0] == 10:
+        return True
+    if parts[0] == 172 and 16 <= parts[1] <= 31:
+        return True
+    if parts[0] == 192 and parts[1] == 168:
+        return True
+    return parts[0] == 127
+
+
+def _is_allowed_preview_host(host: str) -> bool:
+    normalized = (host or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized in _PREVIEW_ALLOWED_HOSTNAMES:
+        return True
+    return _is_private_or_loopback_ipv4(normalized)
+
+
+def _normalize_preview_url(raw_url: str) -> str:
+    trimmed = (raw_url or "").strip()
+    if not trimmed:
+        raise HTTPException(status_code=400, detail="Preview URL is required.")
+    parsed = urlparse(trimmed)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Preview URL must use http or https.")
+    if not parsed.hostname or not _is_allowed_preview_host(parsed.hostname):
+        raise HTTPException(
+            status_code=400,
+            detail="Preview host must be a container/DinD address (private IP or DinD hostname).",
+        )
+    port = parsed.port
+    if port is not None and not (1 <= port <= 65535):
+        raise HTTPException(status_code=400, detail="Preview port is out of range.")
+    return trimmed
+
+
+def _frame_headers_block_embedding(headers: httpx.Headers) -> str | None:
+    xfo = (headers.get("x-frame-options") or "").lower()
+    if "deny" in xfo:
+        return "X-Frame-Options: deny"
+    if "sameorigin" in xfo:
+        return "X-Frame-Options: SAMEORIGIN (parent origin differs from the app)"
+    csp = (headers.get("content-security-policy") or "").lower()
+    if "frame-ancestors 'none'" in csp or "frame-ancestors 'self'" in csp:
+        return "Content-Security-Policy blocks framing"
+    return None
+
+
+def _looks_like_platform_api_url(parsed_url) -> bool:
+    host = (parsed_url.hostname or "").lower()
+    port = parsed_url.port
+    path = parsed_url.path or "/"
+    if port in _PREVIEW_API_PORTS and host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    if path.startswith(("/api", "/docs", "/redoc", "/openapi.json", "/metrics")):
+        return True
+    return False
+
+
+async def _probe_preview_url(url: str) -> PreviewCheckResponse:
+    parsed = urlparse(url)
+    if _looks_like_platform_api_url(parsed):
+        return PreviewCheckResponse(
+            reachable=False,
+            frameable=False,
+            status_code=None,
+            reason="URL points at the platform API, not a container web port.",
+            final_url=url,
+        )
+
+    timeout = httpx.Timeout(connect=5.0, read=8.0, write=8.0, pool=5.0)
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            max_redirects=5,
+        ) as client:
+            try:
+                response = await client.head(url)
+            except httpx.HTTPError:
+                response = await client.get(url, headers={"Range": "bytes=0-0"})
+
+        final_url = str(response.url)
+        final_parsed = urlparse(final_url)
+        if _looks_like_platform_api_url(final_parsed):
+            return PreviewCheckResponse(
+                reachable=True,
+                frameable=False,
+                status_code=response.status_code,
+                reason="App redirects to the platform API, which cannot be embedded.",
+                final_url=final_url,
+            )
+
+        block_reason = _frame_headers_block_embedding(response.headers)
+        if block_reason:
+            return PreviewCheckResponse(
+                reachable=True,
+                frameable=False,
+                proxy_available=True,
+                status_code=response.status_code,
+                reason=block_reason,
+                final_url=final_url,
+            )
+
+        return PreviewCheckResponse(
+            reachable=True,
+            frameable=True,
+            proxy_available=False,
+            status_code=response.status_code,
+            reason=None,
+            final_url=final_url,
+        )
+    except httpx.ConnectError:
+        return PreviewCheckResponse(
+            reachable=False,
+            frameable=False,
+            status_code=None,
+            reason="Could not connect to the preview URL from the platform network.",
+            final_url=url,
+        )
+    except httpx.TimeoutException:
+        return PreviewCheckResponse(
+            reachable=False,
+            frameable=False,
+            status_code=None,
+            reason="Preview URL timed out.",
+            final_url=url,
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("preview_check_failed url=%s err=%s", url, exc)
+        return PreviewCheckResponse(
+            reachable=False,
+            frameable=False,
+            status_code=None,
+            reason="Failed to probe the preview URL.",
+            final_url=url,
+        )
 
 
 def _resolve_dind_ip() -> str | None:
@@ -372,7 +568,7 @@ async def compute_deploy_status(user_id: uuid.UUID, job_id: uuid.UUID) -> Deploy
     runtime_state_val: str = "none"
     active = False
 
-    if explicit_runtime_state in ("stopped_by_user", "cleanup_completed"):
+    if explicit_runtime_state in ("stopped_by_user", "cleanup_completed", "exited", "unhealthy"):
         runtime_state_val = explicit_runtime_state
         active = False
     elif explicit_runtime_state == "failed":
@@ -423,7 +619,7 @@ async def compute_deploy_status(user_id: uuid.UUID, job_id: uuid.UUID) -> Deploy
         running_count=running_count,
         exited_count=exited_count,
         unhealthy_count=unhealthy_count,
-        stopped_by_user=stored_stopped_by_user,
+        stopped_by_user=stored_stopped_by_user and not stop_pending,
         stop_reason=stop_reason,
         exit_reason=exit_reason,
         can_retry_runtime=can_retry_runtime,
@@ -442,3 +638,13 @@ async def get_deploy_status(
 async def get_dind_ip(current_user: UserModel = Depends(get_current_user)) -> DindIpResponse:
     _ = current_user
     return DindIpResponse(dind_ip=_resolve_dind_ip())
+
+
+@router.get("/deploy/preview-check", response_model=PreviewCheckResponse)
+async def check_deploy_preview(
+    url: str = Query(..., min_length=1),
+    current_user: UserModel = Depends(get_current_user),
+) -> PreviewCheckResponse:
+    _ = current_user
+    normalized = _normalize_preview_url(url)
+    return await _probe_preview_url(normalized)

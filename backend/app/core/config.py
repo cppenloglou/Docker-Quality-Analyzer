@@ -23,8 +23,12 @@ class Settings(BaseSettings):
     refresh_token_expire_minutes: int = 60 * 24 * 7
 
     upload_dir: str = "storage/uploads"
-    max_upload_size_mb: int = 30
+    max_upload_size_mb: int = 200
     project_draft_ttl_seconds: int = 3600
+
+    project_job_timeout_seconds: int = 7200
+    image_build_timeout_seconds: int = 3600
+    max_image_builds: int = 3
 
 
 @lru_cache

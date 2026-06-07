@@ -22,6 +22,26 @@ import {
 
 type StepStatus = "pending" | "running" | "complete" | "error";
 
+interface StoredUploadedFile {
+  name: string;
+  content: string;
+  type: string;
+}
+
+/** Survives StrictMode remount so upload enqueue runs at most once per file. */
+let uploadEnqueuePromise: Promise<string> | null = null;
+
+async function enqueueUploadedFile(uploadedFile: StoredUploadedFile): Promise<string> {
+  const file = new File([uploadedFile.content], uploadedFile.name, {
+    type: "text/plain",
+  });
+  const response =
+    uploadedFile.type === "docker-compose"
+      ? await composeApi.analyze(file)
+      : await dockerfileApi.analyze(file);
+  return response.job_id;
+}
+
 interface AnalysisStep {
   id: string;
   label: string;
@@ -180,7 +200,7 @@ export function AnalysisProgress() {
   const [steps, setSteps] = useState<AnalysisStep[]>(() =>
     BASE_STEPS.map((step) => ({ ...step })),
   );
-  const [jobId, setJobId] = useState<string | null>(queryJobId);
+  const jobId = queryJobId;
   const [jobStatus, setJobStatus] = useState<Job["status"] | null>(null);
   const [progressValue, setProgressValue] = useState<number>(queryJobId ? 15 : 5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -265,35 +285,29 @@ export function AnalysisProgress() {
 
         if (!activeJobId) {
           const storedFile = sessionStorage.getItem("uploadedFile");
-          if (!storedFile) {
+          if (!storedFile && !uploadEnqueuePromise) {
             navigate("/");
             return;
           }
-          const uploadedFile = JSON.parse(storedFile) as {
-            name: string;
-            content: string;
-            type: string;
-          };
-          pushLog({
-            message: `Uploading ${uploadedFile.name} to the analysis queue...`,
-            tone: "info",
-          });
-          const file = new File([uploadedFile.content], uploadedFile.name, {
-            type: "text/plain",
-          });
-          const response =
-            uploadedFile.type === "docker-compose"
-              ? await composeApi.analyze(file)
-              : await dockerfileApi.analyze(file);
-          if (cancelled) return;
-          activeJobId = response.job_id;
-          setJobId(activeJobId);
-          setJobStatus("queued");
-          setProgressValue(25);
-          pushLog({
-            message: `Job ${activeJobId} queued (status: ${response.status})`,
-            tone: "success",
-          });
+
+          if (!uploadEnqueuePromise && storedFile) {
+            const uploadedFile = JSON.parse(storedFile) as StoredUploadedFile;
+            pushLog({
+              message: `Uploading ${uploadedFile.name} to the analysis queue...`,
+              tone: "info",
+            });
+            uploadEnqueuePromise = enqueueUploadedFile(uploadedFile).finally(() => {
+              uploadEnqueuePromise = null;
+            });
+          }
+
+          if (uploadEnqueuePromise) {
+            activeJobId = await uploadEnqueuePromise;
+            if (cancelled) return;
+            sessionStorage.setItem("analysisJobId", activeJobId);
+            navigate(`/analysis?jobId=${activeJobId}`, { replace: true });
+            return;
+          }
         } else {
           pushLog({
             message: `Attaching to existing job ${activeJobId}`,

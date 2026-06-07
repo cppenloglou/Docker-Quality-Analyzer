@@ -10,6 +10,20 @@ import yaml
 from app.application.services.bind_mounts import validate_bind_mounts
 
 
+def _normalize_env_file_ref(entry: Any) -> tuple[str | None, bool]:
+    """Return project-relative env file path and whether the reference is required."""
+    if isinstance(entry, str):
+        path = entry.strip()
+        return (path or None, True)
+    if isinstance(entry, dict):
+        raw_path = entry.get("path")
+        required = entry.get("required", True)
+        if isinstance(raw_path, str):
+            path = raw_path.strip()
+            return (path or None, bool(required))
+    return (None, True)
+
+
 def map_compose_services(
     compose_file_rel: str,
     project_root: Path,
@@ -104,9 +118,13 @@ def map_compose_services(
             if isinstance(env_files, str):
                 env_files = [env_files]
             for ef in env_files:
-                ef_path = (project_root / ef).resolve()
-                if not ef_path.exists():
-                    issues.append(f"env_file '{ef}' does not exist in project.")
+                ef_ref, required = _normalize_env_file_ref(ef)
+                if not ef_ref:
+                    issues.append("env_file entry is invalid or missing a path.")
+                    continue
+                ef_path = (project_root / ef_ref).resolve()
+                if not ef_path.exists() and required:
+                    issues.append(f"env_file '{ef_ref}' does not exist in project.")
 
         issues.extend(validate_bind_mounts(str(service_name), service_def, project_root))
 

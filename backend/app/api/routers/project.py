@@ -13,6 +13,7 @@ from app.application.schemas import (
     ProjectPrimaryComposeRequest,
 )
 from app.application.services.analysis_service import AnalysisService
+from app.application.services.build_selection import select_dockerfiles_for_build
 from app.application.services.github_import import download_repo_zipball, resolve_public_repo_target
 from app.application.services.project_scanner import safe_extract_zip, scan_extracted_project
 from app.core.config import get_settings
@@ -41,6 +42,19 @@ async def _enqueue_project_analysis_job(
     if metadata_overrides:
         metadata.update(metadata_overrides)
 
+    dockerfiles: list[str] = metadata.get("dockerfiles", [])
+    compose_files: list[str] = metadata.get("compose_files", [])
+    primary_compose_file = compose_files[0] if compose_files else None
+    build_dockerfiles = select_dockerfiles_for_build(
+        dockerfiles,
+        extract_dir,
+        primary_compose_file=primary_compose_file,
+        max_builds=settings.max_image_builds,
+    )
+    metadata["primary_compose_file"] = primary_compose_file
+    metadata["build_dockerfiles"] = build_dockerfiles
+    metadata["build_selected_images"] = bool(build_dockerfiles)
+
     service = AnalysisService(session)
     job_id = await service.enqueue_job(
         current_user.id,
@@ -49,8 +63,6 @@ async def _enqueue_project_analysis_job(
         initial_status=JobStatus.queued,
     )
 
-    dockerfiles: list[str] = metadata.get("dockerfiles", [])
-    compose_files: list[str] = metadata.get("compose_files", [])
     await enqueue_job(
         "run_project_analysis",
         {
@@ -59,9 +71,10 @@ async def _enqueue_project_analysis_job(
             "project_path": str(extract_dir),
             "dockerfiles": dockerfiles,
             "compose_files": compose_files,
-            "primary_compose_file": compose_files[0] if compose_files else None,
+            "primary_compose_file": primary_compose_file,
+            "build_dockerfiles": build_dockerfiles,
             "analysis_mode": "auto",
-            "build_selected_images": True,
+            "build_selected_images": bool(build_dockerfiles),
         },
     )
     return AnalysisEnqueueResponse(job_id=uuid.UUID(str(job_id)), status="queued")
@@ -115,7 +128,9 @@ async def upload_project_github(
     upload_root = Path(settings.upload_dir) / str(current_user.id)
     upload_root.mkdir(parents=True, exist_ok=True)
 
-    timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+    # Scale read timeout with upload cap (~0.75s per MB, minimum 30s).
+    read_timeout_s = max(30.0, settings.max_upload_size_mb * 0.75)
+    timeout = httpx.Timeout(connect=10.0, read=read_timeout_s, write=30.0, pool=10.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             target = await resolve_public_repo_target(client, payload.url, payload.ref)

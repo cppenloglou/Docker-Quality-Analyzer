@@ -60,6 +60,13 @@ function notifyFromEvent(event: DomainEvent) {
       );
       return;
     case "container.stopped":
+      pushNotification(
+        "success",
+        "Containers Stopped",
+        "All containers have been successfully stopped",
+        { dedupeKey: `deploy.stop.completed:${event.job_id ?? "none"}` },
+      );
+      return;
     case "project.runtime_stopped":
       pushNotification(
         "warning",
@@ -92,6 +99,7 @@ function notifyFromEvent(event: DomainEvent) {
 export function NotificationEventBridge() {
   const { user } = useAuth();
   const socketRef = useRef<WebSocket | null>(null);
+  const connectionGenRef = useRef(0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -147,11 +155,24 @@ export function NotificationEventBridge() {
 
     const connect = () => {
       if (closedByEffect) return;
+      const connectionGen = ++connectionGenRef.current;
       const socket = ws.connectUserEvents(user.id);
       socketRef.current = socket;
-      void reconcileMissedJobOutcomes();
+
+      socket.onopen = () => {
+        if (connectionGen !== connectionGenRef.current) {
+          try {
+            socket.close();
+          } catch {
+            /* noop */
+          }
+          return;
+        }
+        void reconcileMissedJobOutcomes();
+      };
 
       socket.onmessage = (rawEvent) => {
+        if (connectionGen !== connectionGenRef.current) return;
         try {
           const event = JSON.parse(rawEvent.data as string) as DomainEvent;
           notifyFromEvent(event);
@@ -161,6 +182,7 @@ export function NotificationEventBridge() {
       };
 
       socket.onclose = () => {
+        if (connectionGen !== connectionGenRef.current) return;
         if (closedByEffect) return;
         reconnectTimer = setTimeout(connect, 2000);
       };
@@ -169,16 +191,18 @@ export function NotificationEventBridge() {
     connect();
     return () => {
       closedByEffect = true;
+      connectionGenRef.current += 1;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
       }
-      if (socketRef.current) {
+      const socket = socketRef.current;
+      socketRef.current = null;
+      if (socket?.readyState === WebSocket.OPEN) {
         try {
-          socketRef.current.close();
+          socket.close();
         } catch {
-          // noop
+          /* noop */
         }
-        socketRef.current = null;
       }
     };
   }, [user?.id]);

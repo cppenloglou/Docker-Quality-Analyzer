@@ -188,4 +188,9 @@ else {
 }
 
 Write-Host "Use .\scripts\status.ps1 --$script:Mode for runtime status"
-Write-Host "Use .\scripts\stop.ps1 --$script:Mode --wipe to reset everything"
+if ($script:Mode -eq "dev") {
+  Write-Host "Use .\scripts\stop.ps1 --$script:Mode --wipe to reset volumes and backend/storage/uploads"
+}
+else {
+  Write-Host "Use .\scripts\stop.ps1 --$script:Mode --wipe to reset volumes"
+}

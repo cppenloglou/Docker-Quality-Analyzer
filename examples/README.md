@@ -86,25 +86,7 @@ Try:
   bind mount). Project jobs are not hard-blocked from deploy, but the reasons
   are rendered clearly in the Results view.
 
-## D. API keys + direct API
-
-1. Open the top-right **API Keys** link in the nav.
-2. Click **Create new key**. Copy the displayed raw key immediately (it is only
-   shown once).
-3. Use it from a terminal:
-
-```bash
-API=http://localhost:3000
-KEY=dpa_XXXXXXXXXXXXXXXXXX
-
-curl -s -H "X-Api-Key: $KEY" $API/api/v1/users/me/history | jq .
-
-curl -s -H "X-Api-Key: $KEY" \
-    -F "file=@examples/dockerfiles/issues.Dockerfile" \
-    $API/api/v1/dockerfile/analyze | jq .
-```
-
-## E. Live event stream (optional)
+## D. Live event stream (optional)
 
 Once a job is running, the WebSocket feed is available at
 `ws://localhost:3000/ws/jobs/<job_id>?token=<access_token>` through the nginx

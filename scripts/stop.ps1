@@ -9,6 +9,9 @@ $wipe = $args -contains "--wipe"
 if ($wipe) {
   Write-Host "[stop] Stopping $script:Mode stack and removing volumes"
   Invoke-ComposeChecked down -v --remove-orphans
+  if ($script:Mode -eq "dev") {
+    Clear-DevUploadStorage
+  }
 }
 else {
   Write-Host "[stop] Stopping $script:Mode stack"
