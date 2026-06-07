@@ -152,7 +152,6 @@ export function ProjectUpload() {
   useEffect(() => {
     if (step !== "uploading") {
       importStartedAtRef.current = null;
-      setElapsedSeconds(0);
       return;
     }
 
@@ -194,6 +193,7 @@ export function ProjectUpload() {
     setError(null);
     setSelectedFile(file);
     setImportPhases(buildInitialPhases("zip"));
+    setElapsedSeconds(0);
     setStep("uploading");
 
     try {
@@ -208,6 +208,7 @@ export function ProjectUpload() {
       setImportPhases((prev) => failImportPhases(prev));
       setError(msg);
       toast.error(msg);
+      setElapsedSeconds(0);
       setStep("upload");
     }
   };
@@ -225,6 +226,7 @@ export function ProjectUpload() {
     setError(null);
     setSelectedFile(null);
     setImportPhases(buildInitialPhases("github"));
+    setElapsedSeconds(0);
     setStep("uploading");
     try {
       const resp = await project.uploadGithub({ url, ref: ref || null });
@@ -243,6 +245,7 @@ export function ProjectUpload() {
       setImportPhases((prev) => failImportPhases(prev));
       setError(msg);
       toast.error(msg);
+      setElapsedSeconds(0);
       setStep("upload");
     }
   };

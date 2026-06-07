@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { CodePreview } from "../components/CodePreview";
 import { MotionPage } from "../components/motion";
@@ -26,11 +26,7 @@ function readUploadedFile(): UploadedFileData | null {
 
 export function FileUpload() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const fileData = useMemo(
-    () => readUploadedFile(),
-    [location.key, location.pathname],
-  );
+  const fileData = readUploadedFile();
 
   useEffect(() => {
     if (!fileData) {
