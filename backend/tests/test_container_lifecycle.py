@@ -64,12 +64,19 @@ async def test_stream_metrics_publishes_container_exited_on_not_found():
     async def fake_set_state(uid, jid, state):
         fake_state.update(state)
 
+    teardown_calls: list[dict] = []
+
+    async def fake_teardown(_uid, _jid, **kwargs):
+        teardown_calls.append(kwargs)
+        return True
+
     with (
         patch("app.workers.tasks.DockerGateway", return_value=fake_gateway),
         patch("app.workers.tasks.publish_event", side_effect=capture_event),
         patch("app.workers.tasks._is_stop_requested", side_effect=fake_is_stop),
         patch("app.workers.tasks._get_deploy_state", side_effect=fake_get_state),
         patch("app.workers.tasks._set_deploy_state", side_effect=fake_set_state),
+        patch("app.workers.tasks._teardown_deploy_stack", side_effect=fake_teardown),
     ):
         from app.workers.tasks import _stream_metrics
         # Run one iteration — all containers exit immediately
@@ -78,6 +85,9 @@ async def test_stream_metrics_publishes_container_exited_on_not_found():
     event_names = [e.event_name for e in published_events]
     assert "container.exited" in event_names
     assert "project.runtime_stopped" in event_names
+    assert len(teardown_calls) == 1
+    assert teardown_calls[0]["remove_images"] is True
+    assert teardown_calls[0]["terminal_runtime_state"] == "exited"
 
     exited_event = next(e for e in published_events if e.event_name == "container.exited")
     assert exited_event.payload["exit_code"] == 1
@@ -196,6 +206,60 @@ def test_deploy_status_returns_exited_container_state(client, app):
     assert data["containers"][0]["exit_code"] == 1
 
 
+def test_deploy_status_returns_ports_and_ip_for_running_container(client, app):
+    """deployStatus exposes ports + ip_address so Monitoring can build preview targets."""
+    from app.api.deps import get_current_user
+    from app.infrastructure.db.session import get_db_session
+    from tests.conftest import auth_header_for, make_user
+
+    user = make_user()
+    job_id = uuid.uuid4()
+    state = {
+        "container_ids": ["web1"],
+        "containers": [
+            {
+                "id": "web1",
+                "name": "dqa-web-1",
+                "service": "web",
+                "status": "running",
+                "health_status": "healthy",
+                "ip_address": "172.18.0.5",
+                "ports": [
+                    {
+                        "container_port": "80/tcp",
+                        "host_bindings": [{"host_ip": "0.0.0.0", "host_port": "8080"}],
+                    }
+                ],
+            }
+        ],
+        "project_name": "demo",
+    }
+    from app.infrastructure.events.bus import redis_client as _redis
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db_session] = AsyncMock
+
+    async def fake_get(key: str):
+        if "deploy-stop:" in str(key):
+            return None
+        return json.dumps(state)
+
+    with patch.object(_redis, "get", new=AsyncMock(side_effect=fake_get)):
+        response = client.get(
+            f"/api/v1/compose/deploy/status/{job_id}",
+            headers=auth_header_for(user.id),
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    container = data["containers"][0]
+    assert container["ip_address"] == "172.18.0.5"
+    assert container["service"] == "web"
+    assert container["ports"][0]["container_port"] == "80/tcp"
+    assert container["ports"][0]["host_bindings"][0]["host_port"] == "8080"
+
+
 def test_deploy_status_runtime_state_partial(client, app):
     """Mixed running + exited yields partial and active=true; counts recomputed from containers."""
     from app.api.deps import get_current_user
@@ -274,6 +338,43 @@ def test_deploy_status_unhealthy_priority_over_running(client, app):
     data = response.json()
     assert data["runtime_state"] == "unhealthy"
     assert data["active"] is True
+
+
+def test_deploy_status_stopping_via_redis_flag(client, app):
+    """``deploy-stop`` redis key yields runtime_state=stopping even before worker updates JSON."""
+    from app.api.deps import get_current_user
+    from app.infrastructure.db.session import get_db_session
+    from tests.conftest import auth_header_for, make_user
+
+    user = make_user()
+    job_id = uuid.uuid4()
+    state = {
+        "container_ids": ["a"],
+        "containers": [{"id": "a", "status": "running"}],
+        "project_name": "demo",
+    }
+    from app.infrastructure.events.bus import redis_client as _redis
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db_session] = AsyncMock
+
+    async def fake_get(key: str):
+        if "deploy-stop:" in str(key):
+            return "1"
+        return json.dumps(state)
+
+    with patch.object(_redis, "get", new=AsyncMock(side_effect=fake_get)):
+        response = client.get(
+            f"/api/v1/compose/deploy/status/{job_id}",
+            headers=auth_header_for(user.id),
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["runtime_state"] == "stopping"
+    assert data["active"] is True
+    assert data["stopped_by_user"] is False
 
 
 def test_deploy_status_stopping_flag(client, app):
@@ -488,3 +589,106 @@ async def test_deploy_status_differentiates_stopped_by_user_vs_self_exit():
     assert result.runtime_state == "exited"
     assert result.stopped_by_user is False
     assert result.can_retry_runtime is False
+
+
+@pytest.mark.asyncio
+async def test_stream_metrics_unhealthy_triggers_teardown_with_images():
+    """When a running container is unhealthy, tear down stack and remove images."""
+    user_id = _uid()
+    job_id = _uid()
+    container_id = "sick1"
+
+    fake_gateway = MagicMock()
+    fake_gateway.inspect_container_state = AsyncMock(return_value={"status": "running"})
+    fake_gateway.inspect_container_metrics = AsyncMock(
+        return_value={
+            "container": {
+                "id": container_id,
+                "name": "web",
+                "status": "running",
+                "health_status": "unhealthy",
+                "image": "nginx:1.27",
+            },
+            "cpu_percent": 1.0,
+        }
+    )
+    fake_gateway.inspect_container_final_state = AsyncMock()
+
+    fake_state: dict[str, Any] = {
+        "project_name": "dqa-proj",
+        "project_dir": "/tmp/proj",
+        "compose_file": "/tmp/proj/docker-compose.yml",
+        "containers": [],
+        "container_ids": [container_id],
+    }
+
+    async def fake_get_state(_uid, _jid):
+        return dict(fake_state)
+
+    async def fake_set_state(_uid, _jid, state):
+        fake_state.update(state)
+
+    teardown_calls: list[dict] = []
+
+    async def fake_teardown(_uid, _jid, **kwargs):
+        teardown_calls.append(kwargs)
+        return True
+
+    with (
+        patch("app.workers.tasks.DockerGateway", return_value=fake_gateway),
+        patch("app.workers.tasks.publish_event", new=AsyncMock()),
+        patch("app.workers.tasks._is_stop_requested", new=AsyncMock(return_value=False)),
+        patch("app.workers.tasks._get_deploy_state", side_effect=fake_get_state),
+        patch("app.workers.tasks._set_deploy_state", side_effect=fake_set_state),
+        patch("app.workers.tasks._teardown_deploy_stack", side_effect=fake_teardown),
+        patch("app.workers.tasks.asyncio.sleep", new=AsyncMock()),
+    ):
+        from app.workers.tasks import _stream_metrics
+
+        await _stream_metrics(user_id, job_id, [container_id])
+
+    assert len(teardown_calls) == 1
+    assert teardown_calls[0]["remove_images"] is True
+    assert teardown_calls[0]["terminal_runtime_state"] == "unhealthy"
+
+
+def test_deploy_status_explicit_unhealthy_is_inactive(client, app):
+    """After unhealthy teardown, deploy status must not report active/live."""
+    from app.api.deps import get_current_user
+    from app.infrastructure.db.session import get_db_session
+    from tests.conftest import auth_header_for, make_user
+
+    user = make_user()
+    job_id = uuid.uuid4()
+    state = {
+        "container_ids": ["c1"],
+        "containers": [{"id": "c1", "status": "exited", "health_status": "unhealthy"}],
+        "explicit_runtime_state": "unhealthy",
+        "runtime_cleanup_done": True,
+        "running_count": 0,
+        "exited_count": 1,
+        "unhealthy_count": 1,
+        "project_name": "dqa-proj",
+    }
+
+    from app.infrastructure.events.bus import redis_client as _redis
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db_session] = AsyncMock
+
+    async def fake_get(key: str):
+        if "deploy-stop:" in str(key):
+            return None
+        return json.dumps(state)
+
+    with patch.object(_redis, "get", new=AsyncMock(side_effect=fake_get)):
+        response = client.get(
+            f"/api/v1/compose/deploy/status/{job_id}",
+            headers=auth_header_for(user.id),
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    data = response.json()
+    assert data["active"] is False
+    assert data["runtime_state"] == "unhealthy"

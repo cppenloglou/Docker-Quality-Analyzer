@@ -71,9 +71,17 @@ async def test_run_compose_deploy_emits_expected_events(monkeypatch: pytest.Monk
     async def fake_compose_ps_ids(_spec):
         return ["web-123"]
 
+    async def fake_stream_logs(_user_id: str, _job_id: str, _container_ids: list[str]):
+        return None
+
+    async def fake_initial_containers(container_ids: list[str]):
+        return [{"id": cid, "status": "running"} for cid in container_ids]
+
     monkeypatch.setattr("app.workers.tasks._compose_up", fake_compose_up)
     monkeypatch.setattr("app.workers.tasks._compose_ps_ids", fake_compose_ps_ids)
     monkeypatch.setattr("app.workers.tasks._stream_metrics", fake_stream)
+    monkeypatch.setattr("app.workers.tasks._stream_logs", fake_stream_logs)
+    monkeypatch.setattr("app.workers.tasks._build_initial_containers", fake_initial_containers)
     monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
 
     result = await run_compose_deploy(
@@ -280,6 +288,12 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
     async def failing_stream_metrics(_user_id: str, _job_id: str, _container_ids: list[str]):
         raise RuntimeError("metrics failed after stack start")
 
+    async def fake_stream_logs(_user_id: str, _job_id: str, _container_ids: list[str]):
+        return None
+
+    async def fake_initial_containers(container_ids: list[str]):
+        return [{"id": cid, "status": "running"} for cid in container_ids]
+
     monkeypatch.setattr("app.workers.tasks.SessionLocal", lambda: FakeSessionContext())
     monkeypatch.setattr("app.workers.tasks.JobRepository", FakeRepo)
     monkeypatch.setattr(
@@ -295,6 +309,8 @@ async def test_run_compose_deploy_cleans_up_when_post_start_work_fails(monkeypat
     monkeypatch.setattr("app.workers.tasks._compose_up", fake_compose_up)
     monkeypatch.setattr("app.workers.tasks._compose_ps_ids", fake_compose_ps_ids)
     monkeypatch.setattr("app.workers.tasks._stream_metrics", failing_stream_metrics)
+    monkeypatch.setattr("app.workers.tasks._stream_logs", fake_stream_logs)
+    monkeypatch.setattr("app.workers.tasks._build_initial_containers", fake_initial_containers)
     monkeypatch.setattr("app.workers.tasks._compose_down", record_down)
     monkeypatch.setattr("app.workers.tasks.publish_event", fake_publish)
 
@@ -350,10 +366,13 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
     monkeypatch.setattr("app.workers.tasks._set_deploy_state", fake_set_deploy)
     monkeypatch.setattr("app.workers.tasks.redis_client.delete", fake_redis_del)
 
-    async def fake_compose_down(_state, _remove_volumes):
-        return None
+    teardown_kwargs: list[dict] = []
 
-    monkeypatch.setattr("app.workers.tasks._compose_down", fake_compose_down)
+    async def fake_teardown(_uid, _jid, **kwargs):
+        teardown_kwargs.append(kwargs)
+        return True
+
+    monkeypatch.setattr("app.workers.tasks._teardown_deploy_stack", fake_teardown)
 
     result = await run_compose_stop(
         None,
@@ -366,18 +385,16 @@ async def test_run_compose_stop_downs_stack_and_emits_event(monkeypatch: pytest.
 
     assert result["status"] == "stopped"
     assert stop_called["value"] is True
-    # First persisted state should immediately carry user-stop intent.
-    assert len(set_state_calls) >= 2
+    assert teardown_kwargs[0]["remove_images"] is False
+    assert teardown_kwargs[0]["remove_volumes"] is True
+    assert teardown_kwargs[0]["terminal_runtime_state"] == "stopped_by_user"
+    # First persisted state should immediately carry user-stop intent before teardown.
+    assert len(set_state_calls) >= 1
     initial_state = set_state_calls[0]
     assert initial_state["stopping"] is True
     assert initial_state["stop_requested_by_user"] is True
-    assert initial_state["stopped_by_user"] is True
+    assert initial_state.get("stopped_by_user") is not True
     assert initial_state["stop_reason"] == "user_requested"
-    # Terminal state must mark stopped_by_user=True
-    terminal_states = [s for s in set_state_calls if s.get("explicit_runtime_state") == "stopped_by_user"]
-    assert len(terminal_states) >= 1
-    assert terminal_states[-1]["stopped_by_user"] is True
-    assert terminal_states[-1]["stop_requested_by_user"] is True
     event_names = [event.event_name for event in emitted_events]
     assert "container.stopped" in event_names
 

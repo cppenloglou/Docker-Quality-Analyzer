@@ -47,3 +47,20 @@ require_cmd() {
 generate_secret() {
   LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48
 }
+
+# Remove host-side upload trees (local uvicorn or leftover bind paths). Dev --wipe only.
+clean_dev_upload_storage() {
+  local rel_paths=(backend/storage/uploads storage/uploads)
+  local upload_dir rel_path
+
+  for rel_path in "${rel_paths[@]}"; do
+    upload_dir="$ROOT_DIR/$rel_path"
+    if [[ ! -d "$upload_dir" ]]; then
+      continue
+    fi
+    if [[ -n "$(find "$upload_dir" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+      echo "[stop] Cleaning dev upload artifacts in $rel_path"
+      find "$upload_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    fi
+  done
+}

@@ -74,6 +74,23 @@ function Require-Command {
   }
 }
 
+function Clear-DevUploadStorage {
+  $relPaths = @("backend/storage/uploads", "storage/uploads")
+
+  foreach ($relPath in $relPaths) {
+    $uploadDir = Join-Path $script:RootDir $relPath
+    if (-not (Test-Path -LiteralPath $uploadDir)) {
+      continue
+    }
+    $children = Get-ChildItem -LiteralPath $uploadDir -Force -ErrorAction SilentlyContinue
+    if ($children.Count -eq 0) {
+      continue
+    }
+    Write-Host "[stop] Cleaning dev upload artifacts in $relPath"
+    $children | Remove-Item -Recurse -Force
+  }
+}
+
 function New-SecretValue {
   param([int]$Length = 48)
 

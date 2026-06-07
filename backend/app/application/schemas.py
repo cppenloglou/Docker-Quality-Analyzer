@@ -234,6 +234,16 @@ class ImageBuildResult(BaseModel):
     error_message: str | None = None
 
 
+class ContainerPortBinding(BaseModel):
+    host_ip: str | None = None
+    host_port: str | None = None
+
+
+class ContainerPortMapping(BaseModel):
+    container_port: str | None = None
+    host_bindings: list[ContainerPortBinding] = []
+
+
 class ContainerStateInfo(BaseModel):
     id: str
     name: str | None = None
@@ -247,4 +257,6 @@ class ContainerStateInfo(BaseModel):
     finished_at: str | None = None
     restart_count: int | None = None
     oom_killed: bool | None = None
+    ip_address: str | None = None
+    ports: list[ContainerPortMapping] = []
     last_logs: list[str] = []

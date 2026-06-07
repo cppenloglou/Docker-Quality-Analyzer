@@ -156,6 +156,16 @@ export interface ProjectGithubUploadRequest {
   ref?: string | null;
 }
 
+export interface ContainerPortBinding {
+  host_ip?: string | null;
+  host_port?: string | null;
+}
+
+export interface ContainerPortMapping {
+  container_port?: string | null;
+  host_bindings?: ContainerPortBinding[];
+}
+
 export interface RuntimeContainerState {
   id: string;
   name?: string | null;
@@ -169,7 +179,16 @@ export interface RuntimeContainerState {
   finished_at?: string | null;
   restart_count?: number | null;
   oom_killed?: boolean | null;
+  ip_address?: string | null;
+  ports?: ContainerPortMapping[];
   last_logs?: string[] | null;
+}
+
+export interface ContainerLogPayload {
+  container_id?: string;
+  line?: string;
+  stream?: "stdout" | "stderr" | "system";
+  timestamp?: string | null;
 }
 
 export type DeployRuntimeState =
@@ -200,6 +219,20 @@ export interface DeployStatusResponse {
 
 export interface DindIpResponse {
   dind_ip: string | null;
+}
+
+export interface PreviewCheckResponse {
+  reachable: boolean;
+  frameable: boolean;
+  proxy_available: boolean;
+  status_code: number | null;
+  reason: string | null;
+  final_url: string | null;
+}
+
+export interface PreviewSessionResponse {
+  session_id: string;
+  proxy_root: string;
 }
 
 export interface ImageBuildResult {
@@ -359,6 +392,16 @@ const UNAUTHORIZED_EVENT = "dpa:unauthorized";
 
 export function getApiBaseUrl(): string {
   return API_BASE_URL;
+}
+
+/** Same-origin path for the preview iframe (uses API proxy; strips X-Frame-Options). */
+export function buildPreviewProxyEmbedUrl(sessionId: string): string {
+  const token = getAccessToken();
+  const base = API_BASE_URL.replace(/\/$/, "");
+  const prefix = base.length > 0 ? base : "";
+  const path = `/api/v1/compose/deploy/preview-proxy/${sessionId}/`;
+  if (!token) return `${prefix}${path}`;
+  return `${prefix}${path}?token=${encodeURIComponent(token)}`;
 }
 
 export function getAccessToken(): string | null {
@@ -647,6 +690,26 @@ export const compose = {
   async dindIp(): Promise<DindIpResponse> {
     return request<DindIpResponse>("/api/v1/compose/deploy/dind-ip");
   },
+  async checkPreview(url: string): Promise<PreviewCheckResponse> {
+    const params = new URLSearchParams({ url });
+    return request<PreviewCheckResponse>(
+      `/api/v1/compose/deploy/preview-check?${params.toString()}`,
+    );
+  },
+  async createPreviewProxySession(
+    url: string,
+    hints?: { user_agent?: string; accept_language?: string },
+  ): Promise<PreviewSessionResponse> {
+    return request<PreviewSessionResponse>("/api/v1/compose/deploy/preview-proxy/session", {
+      method: "POST",
+      body: JSON.stringify({
+        url,
+        user_agent: hints?.user_agent,
+        accept_language: hints?.accept_language,
+      }),
+      credentials: "include",
+    });
+  },
   async stopDeploy(payload: {
     job_id: string;
     remove_volumes?: boolean;
@@ -757,6 +820,12 @@ export const ws = {
       `${wsBase()}/ws/users/${userId}/containers/${containerId}?token=${encodeURIComponent(token)}`,
     );
   },
+  connectUserContainerLogs(userId: string, containerId: string): WebSocket {
+    const token = getAccessToken() ?? "";
+    return new WebSocket(
+      `${wsBase()}/ws/users/${userId}/containers/${containerId}/logs?token=${encodeURIComponent(token)}`,
+    );
+  },
   connectUserEvents(userId: string): WebSocket {
     const token = getAccessToken() ?? "";
     return new WebSocket(
@@ -764,6 +833,45 @@ export const ws = {
     );
   },
 };
+
+/**
+ * Close a WebSocket without triggering the browser's
+ * "WebSocket is closed before the connection is established" warning.
+ *
+ * Never call `close()` while `readyState === CONNECTING` (common under React
+ * StrictMode's dev mount/unmount/mount cycle). Stale connecting sockets are
+ * abandoned until `open`, then closed from a one-shot listener.
+ */
+export function safeCloseSocket(socket: WebSocket | null | undefined): void {
+  if (!socket) return;
+  const state = socket.readyState;
+  if (state === WebSocket.CLOSED || state === WebSocket.CLOSING) {
+    return;
+  }
+  socket.onmessage = null;
+  socket.onerror = null;
+  socket.onclose = null;
+  socket.onopen = null;
+  if (state === WebSocket.CONNECTING) {
+    socket.addEventListener(
+      "open",
+      () => {
+        try {
+          socket.close();
+        } catch {
+          /* noop */
+        }
+      },
+      { once: true },
+    );
+    return;
+  }
+  try {
+    socket.close();
+  } catch {
+    /* noop */
+  }
+}
 
 // ---------- health ----------
 export async function checkHealth(): Promise<{ status: string }> {

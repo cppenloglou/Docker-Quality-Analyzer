@@ -92,14 +92,14 @@ JWT_SECRET_KEY=choose-a-long-random-secret
 ./scripts/status.sh                              # compose + health summary
 docker compose logs -f frontend api worker       # tail live logs
 ./scripts/stop.sh                                # stop stack
-./scripts/stop.sh --wipe                         # stop + wipe volumes
+./scripts/stop.sh --wipe                         # stop + wipe volumes (+ dev upload dir on disk)
 ```
 
 ```powershell
 .\scripts\status.ps1                             # compose + health summary
 docker compose logs -f frontend api worker       # tail live logs
 .\scripts\stop.ps1                               # stop stack
-.\scripts\stop.ps1 --wipe                        # stop + wipe volumes
+.\scripts\stop.ps1 --wipe                        # stop + wipe volumes (+ dev upload dir on disk)
 ```
 
 ### Troubleshooting

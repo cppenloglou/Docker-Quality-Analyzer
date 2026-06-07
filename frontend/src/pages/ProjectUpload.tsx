@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
@@ -8,12 +8,13 @@ import {
   Check,
   ChevronLeft,
   Github,
-  Loader2,
 } from "lucide-react";
 
 import { Layout } from "../components/Layout";
+import { ProgressStep } from "../components/ProgressStep";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { Progress } from "../components/ui/progress";
 import { MotionPage } from "../components/motion";
 import { dragActiveVariants, dragActiveTransition } from "../components/motion/variants";
 import { ApiError, project } from "../utils/api";
@@ -29,6 +30,108 @@ function formatBytes(bytes: number): string {
 
 type Step = "upload" | "uploading";
 type SourceMode = "zip" | "github";
+type ImportPhaseStatus = "pending" | "running" | "complete" | "error";
+
+interface ImportPhase {
+  id: string;
+  label: string;
+  description: string;
+  status: ImportPhaseStatus;
+}
+
+const GITHUB_IMPORT_PHASE_DEFS: Omit<ImportPhase, "status">[] = [
+  {
+    id: "resolve",
+    label: "Resolving repository",
+    description: "Contacting GitHub and resolving the branch or tag",
+  },
+  {
+    id: "download",
+    label: "Downloading archive",
+    description: "Fetching the repository zipball — large repos can take up to a minute",
+  },
+  {
+    id: "extract",
+    label: "Extracting archive",
+    description: "Unpacking files and validating archive safety limits",
+  },
+  {
+    id: "scan",
+    label: "Scanning project",
+    description: "Detecting Dockerfiles, Compose files, and related assets",
+  },
+  {
+    id: "queue",
+    label: "Queueing analysis",
+    description: "Creating the background analysis job",
+  },
+];
+
+const ZIP_IMPORT_PHASE_DEFS: Omit<ImportPhase, "status">[] = [
+  {
+    id: "upload",
+    label: "Uploading archive",
+    description: "Sending the ZIP file to the server",
+  },
+  {
+    id: "extract",
+    label: "Extracting archive",
+    description: "Unpacking files and validating archive safety limits",
+  },
+  {
+    id: "scan",
+    label: "Scanning project",
+    description: "Detecting Dockerfiles, Compose files, and related assets",
+  },
+  {
+    id: "queue",
+    label: "Queueing analysis",
+    description: "Creating the background analysis job",
+  },
+];
+
+/** Estimated phase transitions while the import HTTP request is in flight. */
+const GITHUB_PHASE_ADVANCE_MS = [2_000, 15_000, 24_000, 32_000] as const;
+const ZIP_PHASE_ADVANCE_MS = [800, 2_500, 5_000] as const;
+
+function buildInitialPhases(mode: SourceMode): ImportPhase[] {
+  const defs = mode === "github" ? GITHUB_IMPORT_PHASE_DEFS : ZIP_IMPORT_PHASE_DEFS;
+  return defs.map((phase, index) => ({
+    ...phase,
+    status: index === 0 ? "running" : "pending",
+  }));
+}
+
+function advanceImportPhases(phases: ImportPhase[], activeIndex: number): ImportPhase[] {
+  return phases.map((phase, index) => {
+    if (index < activeIndex) return { ...phase, status: "complete" };
+    if (index === activeIndex) return { ...phase, status: "running" };
+    return { ...phase, status: "pending" };
+  });
+}
+
+function completeImportPhases(phases: ImportPhase[]): ImportPhase[] {
+  return phases.map((phase) => ({ ...phase, status: "complete" }));
+}
+
+function failImportPhases(phases: ImportPhase[]): ImportPhase[] {
+  let failed = false;
+  return phases.map((phase) => {
+    if (failed) return phase;
+    if (phase.status === "running") {
+      failed = true;
+      return { ...phase, status: "error" };
+    }
+    return phase;
+  });
+}
+
+function importProgressValue(phases: ImportPhase[]): number {
+  if (!phases.length) return 0;
+  const completed = phases.filter((p) => p.status === "complete").length;
+  const running = phases.some((p) => p.status === "running") ? 0.35 : 0;
+  return Math.min(100, Math.round(((completed + running) / phases.length) * 100));
+}
 
 export function ProjectUpload() {
   const navigate = useNavigate();
@@ -42,6 +145,36 @@ export function ProjectUpload() {
   const [githubUrl, setGithubUrl] = useState("");
   const [githubRef, setGithubRef] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [importPhases, setImportPhases] = useState<ImportPhase[]>([]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const importStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (step !== "uploading") {
+      importStartedAtRef.current = null;
+      setElapsedSeconds(0);
+      return;
+    }
+
+    importStartedAtRef.current = Date.now();
+    const tick = window.setInterval(() => {
+      if (importStartedAtRef.current) {
+        setElapsedSeconds(Math.floor((Date.now() - importStartedAtRef.current) / 1000));
+      }
+    }, 1000);
+
+    const advances = sourceMode === "github" ? GITHUB_PHASE_ADVANCE_MS : ZIP_PHASE_ADVANCE_MS;
+    const advanceTimers = advances.map((ms, index) =>
+      window.setTimeout(() => {
+        setImportPhases((prev) => advanceImportPhases(prev, index + 1));
+      }, ms),
+    );
+
+    return () => {
+      clearInterval(tick);
+      advanceTimers.forEach(clearTimeout);
+    };
+  }, [step, sourceMode]);
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
@@ -60,16 +193,19 @@ export function ProjectUpload() {
     }
     setError(null);
     setSelectedFile(file);
+    setImportPhases(buildInitialPhases("zip"));
     setStep("uploading");
 
     try {
       const resp = await project.upload(file);
+      setImportPhases((prev) => completeImportPhases(prev));
       sessionStorage.setItem("analysisJobId", resp.job_id);
       sessionStorage.setItem("projectJobId", resp.job_id);
       toast.success("Project queued for analysis!");
       navigate(`/analysis?jobId=${resp.job_id}`);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Upload failed.";
+      setImportPhases((prev) => failImportPhases(prev));
       setError(msg);
       toast.error(msg);
       setStep("upload");
@@ -88,9 +224,11 @@ export function ProjectUpload() {
 
     setError(null);
     setSelectedFile(null);
+    setImportPhases(buildInitialPhases("github"));
     setStep("uploading");
     try {
       const resp = await project.uploadGithub({ url, ref: ref || null });
+      setImportPhases((prev) => completeImportPhases(prev));
       sessionStorage.setItem("analysisJobId", resp.job_id);
       sessionStorage.setItem("projectJobId", resp.job_id);
       toast.success("GitHub repository queued for analysis!");
@@ -102,6 +240,7 @@ export function ProjectUpload() {
           : err instanceof Error
             ? err.message
             : "GitHub import failed.";
+      setImportPhases((prev) => failImportPhases(prev));
       setError(msg);
       toast.error(msg);
       setStep("upload");
@@ -192,7 +331,7 @@ export function ProjectUpload() {
                       <Archive className={`w-8 h-8 ${isDragging ? "text-purple-400" : "text-slate-400"}`} />
                     </motion.div>
                     <h3 className="text-lg font-semibold text-white mb-2">Drop your project archive here</h3>
-                    <p className="text-slate-400 text-sm mb-6">Accepts .zip archives up to 30 MB</p>
+                    <p className="text-slate-400 text-sm mb-6">Accepts .zip archives up to 200 MB</p>
                     <Button
                       onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
                       className="bg-purple-600 hover:bg-purple-700"
@@ -272,7 +411,7 @@ export function ProjectUpload() {
                     </div>
 
                     <p className="text-xs text-slate-500">
-                      Only public GitHub repositories are supported.
+                      Only public GitHub repositories are supported. Large repositories may take up to a minute to download before analysis begins.
                     </p>
 
                     <Button
@@ -294,22 +433,46 @@ export function ProjectUpload() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-center py-16"
+              className="py-6"
             >
-              <Loader2 className="w-12 h-12 text-purple-400 mx-auto mb-4 animate-spin" />
-              <h3 className="text-lg font-semibold text-white mb-2">
-                {sourceMode === "github" ? "Importing and scanning…" : "Uploading and scanning…"}
-              </h3>
-              <p className="text-slate-400 text-sm">
-                {sourceMode === "github"
-                  ? githubRef.trim()
-                    ? `${githubUrl.trim()} @ ${githubRef.trim()}`
-                    : githubUrl.trim() || "Processing repository"
-                  : selectedFile
-                    ? `${selectedFile.name} (${formatBytes(selectedFile.size)})`
-                    : "Processing archive"}
-              </p>
-              <p className="text-slate-500 text-xs mt-2">Analysis will start automatically</p>
+              <Card className="p-6 bg-slate-900 border-slate-800">
+                <div className="text-center mb-6">
+                  <h3 className="text-lg font-semibold text-white mb-2">
+                    {sourceMode === "github" ? "Importing from GitHub" : "Uploading project archive"}
+                  </h3>
+                  <p className="text-slate-400 text-sm">
+                    {sourceMode === "github"
+                      ? githubRef.trim()
+                        ? `${githubUrl.trim()} @ ${githubRef.trim()}`
+                        : githubUrl.trim() || "Processing repository"
+                      : selectedFile
+                        ? `${selectedFile.name} (${formatBytes(selectedFile.size)})`
+                        : "Processing archive"}
+                  </p>
+                  <p className="text-slate-500 text-xs mt-2">
+                    Elapsed {elapsedSeconds}s — analysis will start automatically after import
+                  </p>
+                </div>
+
+                <div className="mb-6">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-slate-400">Import progress</span>
+                    <span className="text-purple-400 font-mono">{importProgressValue(importPhases)}%</span>
+                  </div>
+                  <Progress value={importProgressValue(importPhases)} className="h-2" />
+                </div>
+
+                <div className="space-y-2">
+                  {importPhases.map((phase) => (
+                    <ProgressStep
+                      key={phase.id}
+                      label={phase.label}
+                      description={phase.description}
+                      status={phase.status}
+                    />
+                  ))}
+                </div>
+              </Card>
             </motion.div>
           )}
         </div>

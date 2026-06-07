@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.infrastructure.db.models import JobStatus
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -479,3 +481,57 @@ async def test_successful_project_build_records_base_image(tmp_path):
 
     builds = result.get("image_build_results") or []
     assert builds and builds[0].get("base_image") == "node:22-alpine"
+
+
+@pytest.mark.asyncio
+async def test_run_project_analysis_marks_job_failed_on_unhandled_error(tmp_path):
+    """Unexpected worker errors must fail the job and publish failure events."""
+    payload = _make_payload(
+        tmp_path,
+        build_selected_images=False,
+        dockerfiles=["Dockerfile"],
+        compose_files=["docker-compose.yml"],
+    )
+
+    fake_repo = _make_fake_job_repo()
+    fake_svc = AsyncMock()
+    fake_svc.analyze_content = AsyncMock(return_value={
+        "score": 70,
+        "grade": "B",
+        "errors": [],
+        "warnings": [],
+        "securityIssues": [],
+        "suggestions": [],
+        "meta": {},
+    })
+    publish_mock = AsyncMock()
+
+    def boom(_compose_file, _project_root):
+        raise TypeError("unsupported operand type(s) for /: 'PosixPath' and 'dict'")
+
+    with (
+        patch("app.workers.tasks.SessionLocal") as mock_sl,
+        patch("app.workers.tasks.JobRepository", return_value=fake_repo),
+        patch("app.workers.tasks.AnalysisService", return_value=fake_svc),
+        patch("app.workers.tasks.publish_event", new=publish_mock),
+        patch("app.workers.tasks.map_compose_services", side_effect=boom),
+    ):
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_sl.return_value = session_ctx
+
+        from app.workers.tasks import run_project_analysis
+
+        result = await run_project_analysis(None, payload)
+
+    assert "Project analysis failed" in result["message"]
+    failed_calls = [
+        call
+        for call in fake_repo.update_status.await_args_list
+        if len(call.args) >= 3 and call.args[2] == JobStatus.failed
+    ]
+    assert failed_calls
+    event_names = [call.args[0].event_name for call in publish_mock.await_args_list]
+    assert "project.analysis_failed" in event_names
+    assert "user.analysis.failed" in event_names
