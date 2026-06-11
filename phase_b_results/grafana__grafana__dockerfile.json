@@ -1,0 +1,224 @@
+{
+  "file": "grafana__grafana.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 396 lines with 72 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 2304 MB, CPU: 2880m.",
+        "estimated_layers": 72,
+        "estimated_memory_mb": 2304,
+        "estimated_cpu_millicores": 2880
+      }
+    },
+    "grade": "B",
+    "score": 75,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3029",
+        "line": 19,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3029",
+        "message": "Do not use --platform flag with FROM",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3006",
+        "line": 20,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3029",
+        "line": 22,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3029",
+        "message": "Do not use --platform flag with FROM",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3006",
+        "line": 22,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 31,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3006",
+        "line": 60,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 68,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3006",
+        "line": 128,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3006",
+        "line": 129,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 180,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 226,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 226,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 233,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 248,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 272,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3008",
+        "line": 303,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 310,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 334,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 396,
+    "suggestions": [
+      {
+        "code": "DL3059",
+        "line": 125,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3059",
+        "message": "Multiple consecutive `RUN` instructions. Consider consolidation.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3015",
+        "line": 303,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3015",
+        "message": "Avoid additional packages by specifying `--no-install-recommends`",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 108,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 118,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 201,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 202,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 396,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

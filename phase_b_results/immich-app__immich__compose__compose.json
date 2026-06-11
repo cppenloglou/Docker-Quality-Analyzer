@@ -1,0 +1,177 @@
+{
+  "file": "immich-app__immich__compose.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "immich-server",
+            "image": "ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "immich-machine-learning",
+            "image": "ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "redis",
+            "image": "docker.io/valkey/valkey:9@sha256:4963247afc4cd33c7d3b2d2816b9f7f8eeebab148d29056c2ca4d7cbc966f2d9",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "database",
+            "image": "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 4 service(s). Total estimated memory: 512 MB across all services. Total estimated CPU: 400m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 4,
+        "total_estimated_memory_mb": 512,
+        "total_estimated_cpu_millicores": 400
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": false,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": true,
+          "no_unresolved_env": false,
+          "no_external_resources": true,
+          "explicit_non_latest_images": true,
+          "no_dangerous_runtime_flags": true
+        },
+        "reasons": [
+          "Service 'immich-server' references env_file, which is unavailable standalone.",
+          "Service 'immich-server' uses host bind mount '/etc/localtime', unavailable standalone.",
+          "Service 'immich-machine-learning' references env_file, which is unavailable standalone.",
+          "Compose file contains unresolved ${VAR} interpolation without defaults."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 26,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 25,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"immich-server\" is exporting port \"2283:2283\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 27,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"immich-server\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 15,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"immich-server\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 27,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"immich-server\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 38,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"immich-machine-learning\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 52,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"redis\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 55,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"restart\" in service \"redis\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 59,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"database\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, shm_size.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 68,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"database\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, shm_size.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 71,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"restart\" in service \"database\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, shm_size.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 34,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"immich-machine-learning\" should be before \"immich-server\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 57,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"database\" should be before \"immich-machine-learning\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      }
+    ],
+    "line_count": 76,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 61,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "file": "drone__drone.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 96 lines with 18 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 576 MB, CPU: 720m.",
+        "estimated_layers": 18,
+        "estimated_memory_mb": 576,
+        "estimated_cpu_millicores": 720
+      }
+    },
+    "grade": "D",
+    "score": 57,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 23,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3007",
+        "line": 65,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3007",
+        "message": "Using latest is prone to errors if the image will ever update. Pin the version explicitly to a release tag",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 67,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 96,
+    "suggestions": [
+      {
+        "code": "DL3059",
+        "line": 37,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3059",
+        "message": "Multiple consecutive `RUN` instructions. Consider consolidation.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3047",
+        "line": 50,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3047",
+        "message": "Avoid use of wget without progress bar. Use `wget --progress=dot:giga <url>`. Or consider using `-q` or `-nv` (shorthands for `--quiet` or `--no-verbose`).",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3019",
+        "line": 67,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3019",
+        "message": "Use the `--no-cache` switch to avoid the need to use `--update` and remove `/var/cache/apk/*` when done installing packages",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 56,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 65,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 79,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 80,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 72,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

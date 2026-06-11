@@ -1,0 +1,564 @@
+{
+  "file": "apache__superset__compose.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "nginx",
+            "image": "nginx:latest",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "redis",
+            "image": "redis:7",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "db",
+            "image": "postgres:17",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset-websocket",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset-init",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset-node",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset-worker",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset-worker-beat",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "superset-tests-worker",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 10 service(s). Total estimated memory: 1280 MB across all services. Total estimated CPU: 1000m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 10,
+        "total_estimated_memory_mb": 1280,
+        "total_estimated_cpu_millicores": 1000
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": false,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": false,
+          "no_unresolved_env": true,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": false
+        },
+        "reasons": [
+          "Service 'nginx' image must use a non-latest explicit tag or digest.",
+          "Service 'nginx' references env_file, which is unavailable standalone.",
+          "Service 'nginx' uses host bind mount './docker/nginx/nginx.conf', unavailable standalone.",
+          "Service 'nginx' uses host bind mount './docker/nginx/templates', unavailable standalone.",
+          "Service 'db' references env_file, which is unavailable standalone.",
+          "Service 'db' uses host bind mount './docker/docker-entrypoint-initdb.d', unavailable standalone.",
+          "Service 'superset' uses build context and needs project files.",
+          "Service 'superset' is missing an image reference.",
+          "Service 'superset' references env_file, which is unavailable standalone.",
+          "Service 'superset' uses host bind mount './docker', unavailable standalone.",
+          "Service 'superset' uses host bind mount './superset', unavailable standalone.",
+          "Service 'superset' uses host bind mount './superset-core', unavailable standalone.",
+          "Service 'superset' uses host bind mount './superset-frontend', unavailable standalone.",
+          "Service 'superset' uses host bind mount './tests', unavailable standalone.",
+          "Service 'superset-websocket' uses build context and needs project files.",
+          "Service 'superset-websocket' is missing an image reference.",
+          "Service 'superset-websocket' uses host bind mount './superset-websocket', unavailable standalone.",
+          "Service 'superset-websocket' uses host bind mount '/home/superset-websocket/node_modules', unavailable standalone.",
+          "Service 'superset-websocket' uses host bind mount '/home/superset-websocket/dist', unavailable standalone.",
+          "Service 'superset-websocket' uses host bind mount './docker/superset-websocket/config.example.json', unavailable standalone.",
+          "Service 'superset-init' uses build context and needs project files.",
+          "Service 'superset-init' is missing an image reference.",
+          "Service 'superset-init' references env_file, which is unavailable standalone.",
+          "Service 'superset-init' uses host bind mount './docker', unavailable standalone.",
+          "Service 'superset-init' uses host bind mount './superset', unavailable standalone.",
+          "Service 'superset-init' uses host bind mount './superset-core', unavailable standalone.",
+          "Service 'superset-init' uses host bind mount './superset-frontend', unavailable standalone.",
+          "Service 'superset-init' uses host bind mount './tests', unavailable standalone.",
+          "Service 'superset-node' uses build context and needs project files.",
+          "Service 'superset-node' is missing an image reference.",
+          "Service 'superset-node' references env_file, which is unavailable standalone.",
+          "Service 'superset-node' uses host bind mount './docker', unavailable standalone.",
+          "Service 'superset-node' uses host bind mount './superset', unavailable standalone.",
+          "Service 'superset-node' uses host bind mount './superset-core', unavailable standalone.",
+          "Service 'superset-node' uses host bind mount './superset-frontend', unavailable standalone.",
+          "Service 'superset-node' uses host bind mount './tests', unavailable standalone.",
+          "Service 'superset-worker' uses build context and needs project files.",
+          "Service 'superset-worker' is missing an image reference.",
+          "Service 'superset-worker' references env_file, which is unavailable standalone.",
+          "Service 'superset-worker' uses host bind mount './docker', unavailable standalone.",
+          "Service 'superset-worker' uses host bind mount './superset', unavailable standalone.",
+          "Service 'superset-worker' uses host bind mount './superset-core', unavailable standalone.",
+          "Service 'superset-worker' uses host bind mount './superset-frontend', unavailable standalone.",
+          "Service 'superset-worker' uses host bind mount './tests', unavailable standalone.",
+          "Service 'superset-worker-beat' uses build context and needs project files.",
+          "Service 'superset-worker-beat' is missing an image reference.",
+          "Service 'superset-worker-beat' references env_file, which is unavailable standalone.",
+          "Service 'superset-worker-beat' uses host bind mount './docker', unavailable standalone.",
+          "Service 'superset-worker-beat' uses host bind mount './superset', unavailable standalone.",
+          "Service 'superset-worker-beat' uses host bind mount './superset-core', unavailable standalone.",
+          "Service 'superset-worker-beat' uses host bind mount './superset-frontend', unavailable standalone.",
+          "Service 'superset-worker-beat' uses host bind mount './tests', unavailable standalone.",
+          "Service 'superset-tests-worker' uses build context and needs project files.",
+          "Service 'superset-tests-worker' is missing an image reference.",
+          "Service 'superset-tests-worker' references env_file, which is unavailable standalone.",
+          "Service 'superset-tests-worker' uses host bind mount './docker', unavailable standalone.",
+          "Service 'superset-tests-worker' uses host bind mount './superset', unavailable standalone.",
+          "Service 'superset-tests-worker' uses host bind mount './superset-core', unavailable standalone.",
+          "Service 'superset-tests-worker' uses host bind mount './superset-frontend', unavailable standalone.",
+          "Service 'superset-tests-worker' uses host bind mount './tests', unavailable standalone.",
+          "Service 'superset-tests-worker' uses host network mode."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 26,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 57,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"nginx\" is exporting port \"${NGINX_PORT:-80}:80\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 122,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"superset\" is exporting port \"${SUPERSET_PORT:-8088}:8088\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 122,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"superset\" is exporting port \"${CYPRESS_PORT:-8081}:8081\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 136,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"superset-websocket\" is exporting port \"${WEBSOCKET_PORT:-8080}:8080\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 55,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"nginx\" is using the image \"nginx:latest\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 58,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 94,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 107,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 123,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 125,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 137,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 206,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 55,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"nginx\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 57,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"nginx\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 61,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"nginx\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 93,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"redis\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 95,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"redis\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 104,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"db\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 106,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"db\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 108,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"db\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 118,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"build\" in service \"superset\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 122,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"superset\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 129,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"superset\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 140,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"superset-websocket\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 170,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"env_file\" in service \"superset-init\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 175,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"superset-init\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 180,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"superset-init\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 208,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"env_file\" in service \"superset-node\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 212,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"superset-node\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 219,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"env_file\" in service \"superset-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 224,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"superset-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 227,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"superset-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 230,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"superset-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 244,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"env_file\" in service \"superset-worker-beat\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 250,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"superset-worker-beat\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 252,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"superset-worker-beat\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 261,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"env_file\" in service \"superset-tests-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, profiles.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 268,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"superset-tests-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, profiles.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 276,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"superset-tests-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, profiles.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 279,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"superset-tests-worker\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, profiles.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-ports-alphabetical-order",
+        "line": 122,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-ports-alphabetical-order-rule.md",
+        "message": "Ports in service \"superset\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "The list of ports in a service should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 98,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"db\" should be before \"nginx\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 166,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"superset-init\" should be before \"superset-websocket\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 185,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"superset-node\" should be before \"superset-websocket\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 257,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"superset-tests-worker\" should be before \"superset-websocket\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "top-level-properties-order",
+        "line": 37,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/top-level-properties-order-rule.md",
+        "message": "Property \"x-common-build\" is out of order. Expected order is: x-common-build, x-superset-user, x-superset-volumes, version, name, include, services, networks, volumes, secrets, configs.",
+        "severity": "warning",
+        "suggestion": "Top-level properties should follow a specific order."
+      }
+    ],
+    "line_count": 292,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 27,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 55,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "file": "awesome-compose__apache-php_app.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 22 lines with 3 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 96 MB, CPU: 120m.",
+        "estimated_layers": 3,
+        "estimated_memory_mb": 96,
+        "estimated_cpu_millicores": 120
+      }
+    },
+    "grade": "B",
+    "score": 75,
+    "errors": [
+      {
+        "code": "DL1000",
+        "line": 19,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL1000",
+        "message": "unexpected '#'\nexpecting a new line followed by the next instruction",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "warnings": [],
+    "line_count": 22,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 7,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

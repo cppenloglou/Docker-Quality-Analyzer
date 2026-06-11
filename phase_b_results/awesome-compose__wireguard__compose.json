@@ -1,0 +1,117 @@
+{
+  "file": "awesome-compose__wireguard.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "wireguard",
+            "image": "linuxserver/wireguard",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 1 service(s). Total estimated memory: 128 MB across all services. Total estimated CPU: 100m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 1,
+        "total_estimated_memory_mb": 128,
+        "total_estimated_cpu_millicores": 100
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": true,
+          "no_unresolved_env": false,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": false
+        },
+        "reasons": [
+          "Service 'wireguard' image must use a non-latest explicit tag or digest.",
+          "Service 'wireguard' uses host bind mount '/usr/share/appdata/wireguard/config', unavailable standalone.",
+          "Service 'wireguard' uses host bind mount '/usr/src', unavailable standalone.",
+          "Service 'wireguard' uses host bind mount '/lib/modules', unavailable standalone.",
+          "Service 'wireguard' uses cap_add.",
+          "Compose file contains unresolved ${VAR} interpolation without defaults."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 15,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 23,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"wireguard\" is exporting port \"51820:51820/udp\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-version-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-version-field-rule.md",
+        "message": "The \"version\" field should not be present.",
+        "severity": "error",
+        "suggestion": "The `version` field must be absent in the configuration."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 4,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"wireguard\" is using the image \"linuxserver/wireguard\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 24,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 9,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"wireguard\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 19,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"wireguard\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 27,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"restart\" in service \"wireguard\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      }
+    ],
+    "line_count": 27,
+    "suggestions": [],
+    "securityIssues": []
+  }
+}

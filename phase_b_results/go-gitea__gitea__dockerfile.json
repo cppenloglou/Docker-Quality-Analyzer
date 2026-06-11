@@ -1,0 +1,63 @@
+{
+  "file": "go-gitea__gitea.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 86 lines with 17 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 544 MB, CPU: 680m.",
+        "estimated_layers": 17,
+        "estimated_memory_mb": 544,
+        "estimated_cpu_millicores": 680
+      }
+    },
+    "grade": "C",
+    "score": 68,
+    "errors": [
+      {
+        "code": "DL1000",
+        "line": 8,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL1000",
+        "message": "invalid flag: --exclude",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "warnings": [],
+    "line_count": 86,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 7,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 33,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 37,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 47,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

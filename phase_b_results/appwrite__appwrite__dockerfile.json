@@ -1,0 +1,80 @@
+{
+  "file": "appwrite__appwrite.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 118 lines with 16 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 512 MB, CPU: 640m.",
+        "estimated_layers": 16,
+        "estimated_memory_mb": 512,
+        "estimated_cpu_millicores": 640
+      }
+    },
+    "grade": "B",
+    "score": 82,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 26,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC3014",
+        "line": 26,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC3014",
+        "message": "In POSIX sh, == in place of = is undefined.",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 110,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 118,
+    "suggestions": [
+      {
+        "code": "SC2006",
+        "line": 11,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2006",
+        "message": "Use $(...) notation instead of legacy backticks `...`.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3019",
+        "line": 26,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3019",
+        "message": "Use the `--no-cache` switch to avoid the need to use `--update` and remove `/var/cache/apk/*` when done installing packages",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2015",
+        "line": 95,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2015",
+        "message": "Note that A && B || C is not if-then-else. C may run when A is true.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 105,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

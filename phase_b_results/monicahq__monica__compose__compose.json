@@ -1,0 +1,462 @@
+{
+  "file": "monicahq__monica__compose.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "laravel.test",
+            "image": "sail-8.4/app",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "laravel.queue",
+            "image": "sail-8.4/app",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "laravel.cron",
+            "image": "sail-8.4/app",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "mariadb",
+            "image": "mariadb:10",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "redis",
+            "image": "redis:alpine",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "memcached",
+            "image": "memcached:alpine",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "meilisearch",
+            "image": "getmeili/meilisearch:latest",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "mailpit",
+            "image": "axllent/mailpit:latest",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 8 service(s). Total estimated memory: 1024 MB across all services. Total estimated CPU: 800m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 8,
+        "total_estimated_memory_mb": 1024,
+        "total_estimated_cpu_millicores": 800
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": false,
+          "no_unresolved_env": false,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": true
+        },
+        "reasons": [
+          "Service 'laravel.test' uses build context and needs project files.",
+          "Service 'laravel.test' image must use a non-latest explicit tag or digest.",
+          "Service 'laravel.test' uses host bind mount '.', unavailable standalone.",
+          "Service 'laravel.queue' uses build context and needs project files.",
+          "Service 'laravel.queue' image must use a non-latest explicit tag or digest.",
+          "Service 'laravel.queue' uses host bind mount '.', unavailable standalone.",
+          "Service 'laravel.cron' uses build context and needs project files.",
+          "Service 'laravel.cron' image must use a non-latest explicit tag or digest.",
+          "Service 'laravel.cron' uses host bind mount '.', unavailable standalone.",
+          "Service 'mariadb' uses host bind mount './vendor/laravel/sail/database/mysql/create-testing-database.sh', unavailable standalone.",
+          "Service 'meilisearch' image must use a non-latest explicit tag or digest.",
+          "Service 'mailpit' image must use a non-latest explicit tag or digest.",
+          "Compose file contains unresolved ${VAR} interpolation without defaults."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 0,
+    "errors": [
+      {
+        "code": "no-build-and-image",
+        "line": 3,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-build-and-image-rule.md",
+        "message": "Service \"laravel.test\" is using both \"build\" and \"image\". Use one of them, but not both.",
+        "severity": "error",
+        "suggestion": "Each service must use either `build` or `image`, not both."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 11,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"laravel.test\" is exporting port \"${APP_PORT:-80}:80\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 11,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"laravel.test\" is exporting port \"${VITE_PORT:-5173}:${VITE_PORT:-5173}\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 38,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mariadb\" is exporting port \"${FORWARD_DB_PORT:-3306}:3306\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 62,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"redis\" is exporting port \"${FORWARD_REDIS_PORT:-6379}:6379\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 77,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"memcached\" is exporting port \"${FORWARD_MEMCACHED_PORT:-11211}:11211\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 83,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"meilisearch\" is exporting port \"${FORWARD_MEILISEARCH_PORT:-7700}:7700\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 102,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mailpit\" is exporting port \"${FORWARD_MAILPIT_PORT:-1025}:1025\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 102,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mailpit\" is exporting port \"${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 8,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"laravel.test\" is using the image \"sail-8.4/app\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 82,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"meilisearch\" is using the image \"getmeili/meilisearch:latest\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 101,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"mailpit\" is using the image \"axllent/mailpit:latest\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "no-quotes-in-volumes",
+        "line": 21,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-quotes-in-volumes-rule.md",
+        "message": "Quotes should not be used in volume names.",
+        "severity": "warning",
+        "suggestion": "Values in the `volumes` section should not be enclosed in quotes."
+      },
+      {
+        "code": "no-quotes-in-volumes",
+        "line": 48,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-quotes-in-volumes-rule.md",
+        "message": "Quotes should not be used in volume names.",
+        "severity": "warning",
+        "suggestion": "Values in the `volumes` section should not be enclosed in quotes."
+      },
+      {
+        "code": "no-quotes-in-volumes",
+        "line": 49,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-quotes-in-volumes-rule.md",
+        "message": "Quotes should not be used in volume names.",
+        "severity": "warning",
+        "suggestion": "Values in the `volumes` section should not be enclosed in quotes."
+      },
+      {
+        "code": "no-quotes-in-volumes",
+        "line": 65,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-quotes-in-volumes-rule.md",
+        "message": "Quotes should not be used in volume names.",
+        "severity": "warning",
+        "suggestion": "Values in the `volumes` section should not be enclosed in quotes."
+      },
+      {
+        "code": "no-quotes-in-volumes",
+        "line": 88,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-quotes-in-volumes-rule.md",
+        "message": "Quotes should not be used in volume names.",
+        "severity": "warning",
+        "suggestion": "Values in the `volumes` section should not be enclosed in quotes."
+      },
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 24,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"laravel.test\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 8,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"laravel.test\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 11,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"laravel.test\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 14,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"laravel.test\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 20,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"laravel.test\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 24,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"laravel.test\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 32,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"command\" in service \"laravel.queue\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, <<.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 35,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"command\" in service \"laravel.cron\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, <<.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 40,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"mariadb\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 47,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"mariadb\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 64,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"redis\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 85,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"meilisearch\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 87,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"meilisearch\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-ports-alphabetical-order",
+        "line": 102,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-ports-alphabetical-order-rule.md",
+        "message": "Ports in service \"mailpit\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "The list of ports in a service should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 30,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"laravel.queue\" should be before \"laravel.test\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 33,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"laravel.cron\" should be before \"laravel.queue\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 75,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"memcached\" should be before \"redis\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 81,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"meilisearch\" should be before \"memcached\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 100,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"mailpit\" should be before \"mariadb\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      }
+    ],
+    "line_count": 116,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 41,
+        "doc_url": null,
+        "message": "Potential security smell: root, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 42,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 45,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 46,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 57,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 82,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 101,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

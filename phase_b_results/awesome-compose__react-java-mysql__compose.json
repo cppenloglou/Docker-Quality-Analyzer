@@ -1,0 +1,228 @@
+{
+  "file": "awesome-compose__react-java-mysql.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "backend",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "db",
+            "image": "mariadb:10.6.4-focal",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "frontend",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 3 service(s). Total estimated memory: 384 MB across all services. Total estimated CPU: 300m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 3,
+        "total_estimated_memory_mb": 384,
+        "total_estimated_cpu_millicores": 300
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": false,
+          "no_unresolved_env": true,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": true
+        },
+        "reasons": [
+          "Service 'backend' uses build context and needs project files.",
+          "Service 'backend' is missing an image reference.",
+          "Service 'frontend' uses build context and needs project files.",
+          "Service 'frontend' is missing an image reference.",
+          "Service 'frontend' uses host bind mount './frontend/src', unavailable standalone.",
+          "Service 'frontend' uses host bind mount '/project/node_modules', unavailable standalone."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 0,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 39,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"frontend\" is exporting port \"3000:3000\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 40,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 49,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 50,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 5,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"secrets\" in service \"backend\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 12,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"backend\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 29,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"secrets\" in service \"db\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 31,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"db\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 41,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"frontend\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, expose.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 46,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"frontend\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, expose.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "top-level-properties-order",
+        "line": 9,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/top-level-properties-order-rule.md",
+        "message": "Property \"networks\" is out of order. Expected order is: version, name, include, services, networks, volumes, secrets, configs.",
+        "severity": "warning",
+        "suggestion": "Top-level properties should follow a specific order."
+      }
+    ],
+    "line_count": 58,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 5,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 6,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 22,
+        "doc_url": null,
+        "message": "Potential security smell: root, secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 29,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 30,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 53,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 54,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 55,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

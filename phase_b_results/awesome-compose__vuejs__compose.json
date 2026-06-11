@@ -1,0 +1,83 @@
+{
+  "file": "awesome-compose__vuejs.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "web",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 1 service(s). Total estimated memory: 128 MB across all services. Total estimated CPU: 100m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 1,
+        "total_estimated_memory_mb": 128,
+        "total_estimated_cpu_millicores": 100
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": false,
+          "no_unresolved_env": true,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": true
+        },
+        "reasons": [
+          "Service 'web' uses build context and needs project files.",
+          "Service 'web' is missing an image reference.",
+          "Service 'web' uses host bind mount './vuejs', unavailable standalone.",
+          "Service 'web' uses host bind mount '/project/node_modules', unavailable standalone."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "C",
+    "score": 61,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 6,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"web\" is exporting port \"8080:8080\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 7,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 8,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"web\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      }
+    ],
+    "line_count": 10,
+    "suggestions": [],
+    "securityIssues": []
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "file": "awesome-compose__django.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "web",
+            "image": "",
+            "has_build_context": true,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 1 service(s). Total estimated memory: 128 MB across all services. Total estimated CPU: 100m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 1,
+        "total_estimated_memory_mb": 128,
+        "total_estimated_cpu_millicores": 100
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": true,
+          "no_build_contexts": false,
+          "no_unresolved_env": true,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": true
+        },
+        "reasons": [
+          "Service 'web' uses build context and needs project files.",
+          "Service 'web' is missing an image reference."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "B",
+    "score": 77,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 6,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"web\" is exporting port \"8000:8000\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      }
+    ],
+    "line_count": 7,
+    "suggestions": [],
+    "securityIssues": []
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "file": "paperless-ngx__paperless-ngx.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 255 lines with 12 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 384 MB, CPU: 480m.",
+        "estimated_layers": 12,
+        "estimated_memory_mb": 384,
+        "estimated_cpu_millicores": 480
+      }
+    },
+    "grade": "B",
+    "score": 86,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3008",
+        "line": 55,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3008",
+        "line": 166,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3008",
+        "line": 196,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 255,
+    "suggestions": [
+      {
+        "code": "SC2086",
+        "line": 55,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2086",
+        "message": "Double quote to prevent globbing and word splitting.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2035",
+        "line": 166,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2035",
+        "message": "Use ./*glob* or -- *glob* so names with dashes won't become options.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2035",
+        "line": 196,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2035",
+        "message": "Use ./*glob* or -- *glob* so names with dashes won't become options.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 15,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 84,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 240,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 90,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

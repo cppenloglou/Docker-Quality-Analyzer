@@ -1,0 +1,80 @@
+{
+  "file": "directus__directus.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 74 lines with 12 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 384 MB, CPU: 480m.",
+        "estimated_layers": 12,
+        "estimated_memory_mb": 384,
+        "estimated_cpu_millicores": 480
+      }
+    },
+    "grade": "C",
+    "score": 66,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 14,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3003",
+        "line": 32,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3003",
+        "message": "Use WORKDIR to switch to a directory",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3025",
+        "line": 71,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3025",
+        "message": "Use arguments JSON notation for CMD and ENTRYPOINT arguments",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 74,
+    "suggestions": [
+      {
+        "code": "DL3059",
+        "line": 14,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3059",
+        "message": "Multiple consecutive `RUN` instructions. Consider consolidation.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2016",
+        "line": 32,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2016",
+        "message": "Expressions don't expand in single quotes, use double quotes for that.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 12,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 54,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

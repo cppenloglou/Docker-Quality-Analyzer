@@ -1,0 +1,1109 @@
+{
+  "file": "mailcow__mailcow-dockerized__compose.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "unbound-mailcow",
+            "image": "ghcr.io/mailcow/unbound:1.25.1-1",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "mysql-mailcow",
+            "image": "mariadb:10.11",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "redis-mailcow",
+            "image": "redis:7.4.6-alpine",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "clamd-mailcow",
+            "image": "ghcr.io/mailcow/clamd:1.71",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "rspamd-mailcow",
+            "image": "ghcr.io/mailcow/rspamd:3.14.3-1",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "php-fpm-mailcow",
+            "image": "ghcr.io/mailcow/phpfpm:8.2.29-2",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "sogo-mailcow",
+            "image": "ghcr.io/mailcow/sogo:5.12.8-1",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "dovecot-mailcow",
+            "image": "ghcr.io/mailcow/dovecot:2.3.21.1-2",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "postfix-mailcow",
+            "image": "ghcr.io/mailcow/postfix:3.7.11-2",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "postfix-tlspol-mailcow",
+            "image": "ghcr.io/mailcow/postfix-tlspol:1.8.23",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "memcached-mailcow",
+            "image": "memcached:alpine",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "nginx-mailcow",
+            "image": "ghcr.io/mailcow/nginx:1.30.2-1",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "acme-mailcow",
+            "image": "ghcr.io/mailcow/acme:1.97",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "netfilter-mailcow",
+            "image": "ghcr.io/mailcow/netfilter:1.64",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "watchdog-mailcow",
+            "image": "ghcr.io/mailcow/watchdog:2.11",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "dockerapi-mailcow",
+            "image": "ghcr.io/mailcow/dockerapi:2.12",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "olefy-mailcow",
+            "image": "ghcr.io/mailcow/olefy:1.15",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "ofelia-mailcow",
+            "image": "mcuadros/ofelia:latest",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 18 service(s). Total estimated memory: 2304 MB across all services. Total estimated CPU: 1800m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 18,
+        "total_estimated_memory_mb": 2304,
+        "total_estimated_cpu_millicores": 1800
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": false,
+          "no_build_contexts": true,
+          "no_unresolved_env": false,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": false
+        },
+        "reasons": [
+          "Service 'unbound-mailcow' uses host bind mount './data/hooks/unbound', unavailable standalone.",
+          "Service 'unbound-mailcow' uses host bind mount './data/conf/unbound/unbound.conf', unavailable standalone.",
+          "Service 'mysql-mailcow' uses host bind mount './data/conf/mysql/', unavailable standalone.",
+          "Service 'redis-mailcow' uses host bind mount './data/conf/redis/redis-conf.sh', unavailable standalone.",
+          "Service 'clamd-mailcow' uses host bind mount './data/conf/clamav/', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/hooks/rspamd', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/custom/', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/override.d/', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/local.d/', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/plugins.d/', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/lua/', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/rspamd.conf.local', unavailable standalone.",
+          "Service 'rspamd-mailcow' uses host bind mount './data/conf/rspamd/rspamd.conf.override', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/hooks/phpfpm', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/rspamd/dynmaps', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/rspamd/custom/', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/dovecot/auth/mailcowauth.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web/inc/functions.inc.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web/inc/functions.auth.inc.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web/inc/sessions.inc.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web/inc/functions.mailbox.inc.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web/inc/functions.ratelimit.inc.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/web/inc/functions.acl.inc.php', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/sogo/', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/rspamd/meta_exporter', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/phpfpm/crons', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/phpfpm/sogo-sso/', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/phpfpm/php-fpm.d/pools.conf', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/phpfpm/php-conf.d/opcache-recommended.ini', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/phpfpm/php-conf.d/upload.ini', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/phpfpm/php-conf.d/other.ini', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/dovecot/global_sieve_before', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/dovecot/global_sieve_after', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/assets/templates', unavailable standalone.",
+          "Service 'php-fpm-mailcow' uses host bind mount './data/conf/nginx/', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/hooks/sogo', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/web/inc/init_db.inc.php', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/custom-favicon.ico', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/custom-shortlogo.svg', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/custom-fulllogo.svg', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/custom-fulllogo.png', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/custom-theme.js', unavailable standalone.",
+          "Service 'sogo-mailcow' uses host bind mount './data/conf/sogo/custom-sogo.js', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/hooks/dovecot', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/conf/dovecot', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/assets/ssl', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/conf/sogo/', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/conf/phpfpm/sogo-sso/', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/conf/rspamd/custom/', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses host bind mount './data/assets/templates', unavailable standalone.",
+          "Service 'dovecot-mailcow' uses cap_add.",
+          "Service 'postfix-mailcow' uses host bind mount './data/hooks/postfix', unavailable standalone.",
+          "Service 'postfix-mailcow' uses host bind mount './data/conf/postfix', unavailable standalone.",
+          "Service 'postfix-mailcow' uses host bind mount './data/assets/ssl', unavailable standalone.",
+          "Service 'postfix-mailcow' uses cap_add.",
+          "Service 'nginx-mailcow' uses host bind mount './data/web', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/conf/rspamd/dynmaps', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/assets/ssl/', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/conf/nginx/', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/conf/rspamd/meta_exporter', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/conf/dovecot/auth/mailcowauth.php', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/web/inc/functions.inc.php', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/web/inc/functions.auth.inc.php', unavailable standalone.",
+          "Service 'nginx-mailcow' uses host bind mount './data/web/inc/sessions.inc.php', unavailable standalone.",
+          "Service 'acme-mailcow' uses host bind mount './data/web/.well-known/acme-challenge', unavailable standalone.",
+          "Service 'acme-mailcow' uses host bind mount './data/assets/ssl', unavailable standalone.",
+          "Service 'acme-mailcow' uses host bind mount './data/assets/ssl-example', unavailable standalone.",
+          "Service 'acme-mailcow' uses host bind mount './data/conf/acme', unavailable standalone.",
+          "Service 'netfilter-mailcow' uses host bind mount '/lib/modules', unavailable standalone.",
+          "Service 'netfilter-mailcow' uses privileged mode.",
+          "Service 'netfilter-mailcow' uses host network mode.",
+          "Service 'watchdog-mailcow' uses host bind mount './data/assets/ssl', unavailable standalone.",
+          "Service 'dockerapi-mailcow' uses host bind mount '/var/run/docker.sock', unavailable standalone.",
+          "Service 'ofelia-mailcow' image must use a non-latest explicit tag or digest.",
+          "Service 'ofelia-mailcow' uses host bind mount '/var/run/docker.sock', unavailable standalone.",
+          "Compose file contains unresolved ${VAR} interpolation without defaults."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 29,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 37,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mysql-mailcow\" is exporting port \"${SQL_PORT:-127.0.0.1:13306}:3306\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 53,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"redis-mailcow\" is exporting port \"${REDIS_PORT:-127.0.0.1:7654}:6379\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 302,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"dovecot-mailcow\" is exporting port \"${DOVEADM_PORT:-127.0.0.1:19991}:12345\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 302,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"dovecot-mailcow\" is exporting port \"${IMAP_PORT:-143}:143\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 302,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"dovecot-mailcow\" is exporting port \"${IMAPS_PORT:-993}:993\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 302,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"dovecot-mailcow\" is exporting port \"${POP_PORT:-110}:110\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 302,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"dovecot-mailcow\" is exporting port \"${POPS_PORT:-995}:995\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 302,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"dovecot-mailcow\" is exporting port \"${SIEVE_PORT:-4190}:4190\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 371,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"postfix-mailcow\" is exporting port \"${SMTP_PORT:-25}:25\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 371,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"postfix-mailcow\" is exporting port \"${SMTPS_PORT:-465}:465\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 371,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"postfix-mailcow\" is exporting port \"${SUBMISSION_PORT:-587}:587\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 453,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"nginx-mailcow\" is exporting port \"${HTTPS_BIND:-}:${HTTPS_PORT:-443}:${HTTPS_PORT:-443}\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 453,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"nginx-mailcow\" is exporting port \"${HTTP_BIND:-}:${HTTP_PORT:-80}:${HTTP_PORT:-80}\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 643,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"ofelia-mailcow\" is using the image \"mcuadros/ofelia:latest\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 38,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 54,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 303,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 304,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 305,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 306,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 307,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 308,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 372,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 373,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 374,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 454,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 455,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 21,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"mysql-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 89,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"rspamd-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 343,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"postfix-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 417,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"nginx-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 540,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"watchdog-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-dependencies-alphabetical-order",
+        "line": 649,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-dependencies-alphabetical-order-rule.md",
+        "message": "Services in \"depends_on\" for service \"ofelia-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "Services in the `depends_on` section should be sorted alphabetically."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 8,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"unbound-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, tty.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 13,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"unbound-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, tty.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 25,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"mysql-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 37,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"mysql-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 47,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"redis-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 51,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"redis-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 55,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"redis-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 61,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"redis-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, sysctls.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 70,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"clamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 75,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"clamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 78,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"clamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 89,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"rspamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, hostname, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 100,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"rspamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, hostname, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 112,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"dns\" in service \"rspamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, hostname, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 114,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"rspamd-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, hostname, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 122,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"php-fpm-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 152,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"php-fpm-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 197,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"php-fpm-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 224,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"sogo-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 247,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"restart\" in service \"sogo-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 248,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"sogo-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 262,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"cap_add\" in service \"dovecot-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, dns, tty, ulimits.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 264,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"dovecot-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, dns, tty, ulimits.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 311,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"labels\" in service \"dovecot-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, dns, tty, ulimits.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 335,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"dovecot-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, dns, tty, ulimits.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 371,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"postfix-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 378,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"postfix-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, cap_add, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 401,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"postfix-tlspol-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 409,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"memcached-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 422,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"nginx-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 425,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"nginx-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 442,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"nginx-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 457,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"nginx-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 468,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"image\" in service \"acme-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 471,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"acme-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 496,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"acme-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 503,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"networks\" in service \"acme-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 511,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"restart\" in service \"netfilter-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, privileged, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 513,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"netfilter-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, privileged, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 525,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"netfilter-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, privileged, stop_grace_period.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 534,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"watchdog-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, tmpfs.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 540,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"watchdog-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, tmpfs.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 607,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"restart\" in service \"dockerapi-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 610,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"dockerapi-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 616,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"dockerapi-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, dns, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 626,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"olefy-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 645,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"command\" in service \"ofelia-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 646,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"ofelia-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 649,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"depends_on\" in service \"ofelia-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 656,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"volumes\" in service \"ofelia-mailcow\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, security_opt.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-ports-alphabetical-order",
+        "line": 453,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-ports-alphabetical-order-rule.md",
+        "message": "Ports in service \"nginx-mailcow\" should be in alphabetical order.",
+        "severity": "warning",
+        "suggestion": "The list of ports in a service should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 19,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"mysql-mailcow\" should be before \"unbound-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 44,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"redis-mailcow\" should be before \"unbound-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 67,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"clamd-mailcow\" should be before \"mysql-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 86,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"rspamd-mailcow\" should be before \"unbound-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 119,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"php-fpm-mailcow\" should be before \"redis-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 202,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"sogo-mailcow\" should be before \"unbound-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 254,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"dovecot-mailcow\" should be before \"mysql-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 341,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"postfix-mailcow\" should be before \"redis-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 384,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"postfix-tlspol-mailcow\" should be before \"redis-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 406,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"memcached-mailcow\" should be before \"mysql-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 416,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"nginx-mailcow\" should be before \"php-fpm-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 462,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"acme-mailcow\" should be before \"clamd-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 508,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"netfilter-mailcow\" should be before \"nginx-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 603,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"dockerapi-mailcow\" should be before \"dovecot-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 623,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"olefy-mailcow\" should be before \"php-fpm-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 642,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"ofelia-mailcow\" should be before \"olefy-mailcow\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      }
+    ],
+    "line_count": 687,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 31,
+        "doc_url": null,
+        "message": "Potential security smell: root, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 34,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 216,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 512,
+        "doc_url": null,
+        "message": "Potential security smell: privileged",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 553,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 611,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 643,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

@@ -1,0 +1,625 @@
+{
+  "file": "directus__directus__compose.yml",
+  "type": "compose",
+  "result": {
+    "meta": {
+      "estimate": {
+        "services": [
+          {
+            "name": "postgres",
+            "image": "postgis/postgis:13-3.4-alpine",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "postgres10",
+            "image": "postgis/postgis:10-3.2-alpine",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "mysql",
+            "image": "mysql:8",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "mysql5",
+            "image": "mysql:5",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "maria",
+            "image": "mariadb:11.4",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "mssql",
+            "image": "mcr.microsoft.com/mssql/server:2019-latest",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "oracle",
+            "image": "quillbuilduser/oracle-18-xe-micro-sq",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "cockroachdb",
+            "image": "cockroachdb/cockroach:latest-v24.3",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "redis",
+            "image": "${REDIS_IMAGE:-redis:6-alpine}",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "minio",
+            "image": "minio/minio",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "azure",
+            "image": "mcr.microsoft.com/azure-storage/azurite",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "keycloak",
+            "image": "quay.io/keycloak/keycloak",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          },
+          {
+            "name": "maildev",
+            "image": "maildev/maildev",
+            "has_build_context": false,
+            "estimated_memory_mb": 128,
+            "estimated_cpu_millicores": 100
+          }
+        ],
+        "explanation": "Compose file defines 13 service(s). Total estimated memory: 1664 MB across all services. Total estimated CPU: 1300m. These are baseline estimates — services with explicit resource limits use those values, otherwise 128 MB / 100m CPU per service is assumed.",
+        "service_count": 13,
+        "total_estimated_memory_mb": 1664,
+        "total_estimated_cpu_millicores": 1300
+      },
+      "runnability": {
+        "rules": {
+          "no_env_file": true,
+          "has_services": true,
+          "no_bind_mounts": true,
+          "no_build_contexts": true,
+          "no_unresolved_env": true,
+          "no_external_resources": true,
+          "explicit_non_latest_images": false,
+          "no_dangerous_runtime_flags": true
+        },
+        "reasons": [
+          "Service 'oracle' image must use a non-latest explicit tag or digest.",
+          "Service 'minio' image must use a non-latest explicit tag or digest.",
+          "Service 'azure' image must use a non-latest explicit tag or digest.",
+          "Service 'keycloak' image must use a non-latest explicit tag or digest.",
+          "Service 'maildev' image must use a non-latest explicit tag or digest."
+        ],
+        "runnable": false
+      }
+    },
+    "grade": "F",
+    "score": 0,
+    "errors": [
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 84,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"postgres\" is exporting port \"5100:5432\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 92,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"postgres10\" is exporting port \"5111:5432\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 101,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mysql\" is exporting port \"5101:3306\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 109,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mysql5\" is exporting port \"5108:3306\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 118,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"maria\" is exporting port \"5102:3306\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 126,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"mssql\" is exporting port \"5103:1433\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 131,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"oracle\" is exporting port \"5104:1521\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 141,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"cockroachdb\" is exporting port \"5113:26257\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 146,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"redis\" is exporting port \"5105:6379\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 152,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"minio\" is exporting port \"5106:9000\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 152,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"minio\" is exporting port \"5112:9001\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 158,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"azure\" is exporting port \"5107:10000\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 166,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"keycloak\" is exporting port \"5110:8080\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 173,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"maildev\" is exporting port \"1025:1025\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-unbound-port-interfaces",
+        "line": 173,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-unbound-port-interfaces-rule.md",
+        "message": "Service \"maildev\" is exporting port \"1080:1080\" without specifying the interface to listen on.",
+        "severity": "error",
+        "suggestion": "Exported ports must be bound to specific interfaces to avoid unintentional exposure."
+      },
+      {
+        "code": "no-version-field",
+        "line": 76,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/no-version-field-rule.md",
+        "message": "The \"version\" field should not be present.",
+        "severity": "error",
+        "suggestion": "The `version` field must be absent in the configuration."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 130,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"oracle\" is using the image \"quillbuilduser/oracle-18-xe-micro-sq\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 150,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"minio\" is using the image \"minio/minio\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 157,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"azure\" is using the image \"mcr.microsoft.com/azure-storage/azurite\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 162,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"keycloak\" is using the image \"quay.io/keycloak/keycloak\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      },
+      {
+        "code": "service-image-require-explicit-tag",
+        "line": 172,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-image-require-explicit-tag-rule.md",
+        "message": "Service \"maildev\" is using the image \"maildev/maildev\", which does not have a concrete version tag. Specify a concrete version tag.",
+        "severity": "error",
+        "suggestion": "Services must use a specific image tag instead of \"latest\", \"stable\" or similar or no tag."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "require-project-name-field",
+        "line": 1,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-project-name-field-rule.md",
+        "message": "The \"name\" field should be present.",
+        "severity": "warning",
+        "suggestion": "The `name` field should be included in the configuration."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 85,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 93,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 102,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 110,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 119,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 127,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 132,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 142,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 147,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 153,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 154,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 159,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 167,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 174,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "require-quotes-in-ports",
+        "line": 175,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/require-quotes-in-ports-rule.md",
+        "message": "Ports in `ports` and `expose` sections should be enclosed in quotes.",
+        "severity": "warning",
+        "suggestion": "Ports in `ports` and `expose` sections should be enclosed in quotes."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 98,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"mysql\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 115,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"maria\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 133,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"environment\" in service \"oracle\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation, shm_size.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 141,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"cockroachdb\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "service-keys-order",
+        "line": 152,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/service-keys-order-rule.md",
+        "message": "Key \"ports\" in service \"minio\" is out of order. Expected order is: image, build, container_name, depends_on, volumes, volumes_from, configs, secrets, environment, env_file, ports, networks, network_mode, extra_hosts, command, entrypoint, working_dir, restart, healthcheck, logging, labels, user, isolation.",
+        "severity": "warning",
+        "suggestion": "Keys within each service should follow a specific order."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 95,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"mysql\" should be before \"postgres\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 104,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"mysql5\" should be before \"postgres\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 112,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"maria\" should be before \"mysql\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 121,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"mssql\" should be before \"mysql\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 129,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"oracle\" should be before \"postgres\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 138,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"cockroachdb\" should be before \"maria\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 149,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"minio\" should be before \"mssql\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 156,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"azure\" should be before \"cockroachdb\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 161,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"keycloak\" should be before \"maria\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      },
+      {
+        "code": "services-alphabetical-order",
+        "line": 171,
+        "doc_url": "https://github.com/zavoloklom/docker-compose-linter/blob/main/docs/rules/services-alphabetical-order-rule.md",
+        "message": "Service \"maildev\" should be before \"maria\".",
+        "severity": "warning",
+        "suggestion": "Services should be sorted alphabetically."
+      }
+    ],
+    "line_count": 175,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 82,
+        "doc_url": null,
+        "message": "Potential security smell: secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 90,
+        "doc_url": null,
+        "message": "Potential security smell: secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 99,
+        "doc_url": null,
+        "message": "Potential security smell: root, secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 107,
+        "doc_url": null,
+        "message": "Potential security smell: root, secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 116,
+        "doc_url": null,
+        "message": "Potential security smell: root, secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 122,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 125,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 139,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 165,
+        "doc_url": null,
+        "message": "Potential security smell: secret, password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

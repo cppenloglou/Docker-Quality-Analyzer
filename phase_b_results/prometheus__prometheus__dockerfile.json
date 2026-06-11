@@ -1,0 +1,39 @@
+{
+  "file": "prometheus__prometheus.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 32 lines with 7 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 224 MB, CPU: 280m.",
+        "estimated_layers": 7,
+        "estimated_memory_mb": 224,
+        "estimated_cpu_millicores": 280
+      }
+    },
+    "grade": "B",
+    "score": 82,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3007",
+        "line": 3,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3007",
+        "message": "Using latest is prone to errors if the image will ever update. Pin the version explicitly to a release tag",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 32,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 3,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

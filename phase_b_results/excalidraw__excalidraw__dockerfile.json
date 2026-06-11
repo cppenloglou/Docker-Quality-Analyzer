@@ -1,0 +1,38 @@
+{
+  "file": "excalidraw__excalidraw.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 20 lines with 4 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 128 MB, CPU: 160m.",
+        "estimated_layers": 4,
+        "estimated_memory_mb": 128,
+        "estimated_cpu_millicores": 160
+      }
+    },
+    "grade": "B",
+    "score": 80,
+    "errors": [],
+    "warnings": [],
+    "line_count": 20,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 9,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 16,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

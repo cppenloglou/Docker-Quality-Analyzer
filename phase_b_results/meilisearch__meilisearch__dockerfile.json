@@ -1,0 +1,63 @@
+{
+  "file": "meilisearch__meilisearch.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 46 lines with 7 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 224 MB, CPU: 280m.",
+        "estimated_layers": 7,
+        "estimated_memory_mb": 224,
+        "estimated_cpu_millicores": 280
+      }
+    },
+    "grade": "D",
+    "score": 58,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 4,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2034",
+        "line": 16,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2034",
+        "message": "apkArch appears unused. Verify use (or export if used externally).",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 27,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3025",
+        "line": 46,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3025",
+        "message": "Use arguments JSON notation for CMD and ENTRYPOINT arguments",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 46,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 21,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

@@ -54,7 +54,7 @@ class ComposeRunnabilityPlugin(BasePlugin):
             image = service.get("image")
             if isinstance(image, str):
                 image_text = image.strip()
-                if "@sha256:" not in image_text:
+                if not is_project_context and "@sha256:" not in image_text:
                     if ":" not in image_text or image_text.rsplit(":", 1)[1].lower() == "latest":
                         has_missing_or_latest_tag = True
                         reasons.append(

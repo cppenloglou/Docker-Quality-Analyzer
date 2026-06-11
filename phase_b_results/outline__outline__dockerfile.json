@@ -1,0 +1,80 @@
+{
+  "file": "outline__outline.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 47 lines with 9 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 288 MB, CPU: 360m.",
+        "estimated_layers": 9,
+        "estimated_memory_mb": 288,
+        "estimated_cpu_millicores": 360
+      }
+    },
+    "grade": "F",
+    "score": 41,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3006",
+        "line": 3,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3008",
+        "line": 31,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 47,
+    "suggestions": [
+      {
+        "code": "DL3015",
+        "line": 31,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3015",
+        "message": "Avoid additional packages by specifying `--no-install-recommends`",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 35,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 36,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 37,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 38,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

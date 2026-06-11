@@ -4,6 +4,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.cursor/
 
 # Logs
 *.log
@@ -44,5 +45,5 @@ temp/
 # Project runtime data
 storage/uploads/
 
-# Local transcript archives (Cursor history backups)
-context/transcript-backups/
+# Local context (Cursor history backups, notes)
+context/

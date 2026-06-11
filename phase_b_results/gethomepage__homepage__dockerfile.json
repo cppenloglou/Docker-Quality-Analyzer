@@ -1,0 +1,63 @@
+{
+  "file": "gethomepage__homepage.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 65 lines with 8 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 256 MB, CPU: 320m.",
+        "estimated_layers": 8,
+        "estimated_memory_mb": 256,
+        "estimated_cpu_millicores": 320
+      }
+    },
+    "grade": "C",
+    "score": 65,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 52,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3002",
+        "line": 54,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3002",
+        "message": "Last USER should not be root",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 65,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 19,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 54,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 54,
+        "doc_url": null,
+        "message": "Container explicitly runs as root",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

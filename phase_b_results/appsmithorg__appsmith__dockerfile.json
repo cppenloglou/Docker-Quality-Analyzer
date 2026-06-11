@@ -1,0 +1,55 @@
+{
+  "file": "appsmithorg__appsmith.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 67 lines with 6 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 192 MB, CPU: 240m.",
+        "estimated_layers": 6,
+        "estimated_memory_mb": 192,
+        "estimated_cpu_millicores": 240
+      }
+    },
+    "grade": "B",
+    "score": 75,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3006",
+        "line": 2,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3006",
+        "message": "Always tag the version of an image explicitly",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3045",
+        "line": 33,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3045",
+        "message": "`COPY` to a relative destination without `WORKDIR` set.",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3045",
+        "line": 36,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3045",
+        "message": "`COPY` to a relative destination without `WORKDIR` set.",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 67,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 2,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

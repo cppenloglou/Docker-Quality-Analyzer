@@ -1,0 +1,72 @@
+{
+  "file": "awesome-compose__nginx-flask-mysql_backend.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 35 lines with 6 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 192 MB, CPU: 240m.",
+        "estimated_layers": 6,
+        "estimated_memory_mb": 192,
+        "estimated_cpu_millicores": 240
+      }
+    },
+    "grade": "D",
+    "score": 53,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3042",
+        "line": 6,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3042",
+        "message": "Avoid use of cache directory with pip. Use `pip install --no-cache-dir <package>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 22,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3022",
+        "line": 33,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3022",
+        "message": "`COPY --from` should reference a previously defined `FROM` alias",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 35,
+    "suggestions": [
+      {
+        "code": "DL3019",
+        "line": 22,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3019",
+        "message": "Use the `--no-cache` switch to avoid the need to use `--update` and remove `/var/cache/apk/*` when done installing packages",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 6,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 20,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}
