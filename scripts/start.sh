@@ -153,8 +153,8 @@ ensure_secret_file "secrets/postgres_password.txt" "secrets/postgres_password.tx
 ensure_secret_file "secrets/jwt_secret.txt" "secrets/jwt_secret.txt.example"
 
 log "Starting stack in mode: $MODE"
-log "Building API image and bringing up Postgres (and Redis) before API boot"
-compose_cmd build api
+log "Building images and bringing up Postgres (and Redis) before API boot"
+compose_cmd build api worker frontend
 compose_cmd up -d postgres redis
 
 log "Waiting for Postgres"

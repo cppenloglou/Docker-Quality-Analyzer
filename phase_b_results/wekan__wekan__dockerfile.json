@@ -1,0 +1,128 @@
+{
+  "file": "wekan__wekan.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 233 lines with 1 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 64 MB, CPU: 100m.",
+        "estimated_layers": 1,
+        "estimated_memory_mb": 64,
+        "estimated_cpu_millicores": 100
+      }
+    },
+    "grade": "B",
+    "score": 75,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3003",
+        "line": 161,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3003",
+        "message": "Use WORKDIR to switch to a directory",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3008",
+        "line": 161,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2046",
+        "line": 161,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2046",
+        "message": "Quote this to prevent word splitting.",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 161,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 233,
+    "suggestions": [
+      {
+        "code": "DL3047",
+        "line": 161,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3047",
+        "message": "Avoid use of wget without progress bar. Use `wget --progress=dot:giga <url>`. Or consider using `-q` or `-nv` (shorthands for `--quiet` or `--no-verbose`).",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 63,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 64,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 89,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 90,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 137,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 157,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 158,
+        "doc_url": null,
+        "message": "Potential security smell: password",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 159,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

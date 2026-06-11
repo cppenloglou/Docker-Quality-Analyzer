@@ -1,6 +1,26 @@
 from unittest.mock import AsyncMock
 
-from app.application.services.analysis_service import AnalysisService, _build_analysis_started_payload
+from app.application.services.analysis_service import (
+    AnalysisService,
+    _bucket_issues,
+    _build_analysis_started_payload,
+)
+
+
+def test_bucket_issues_are_disjoint_for_sec_codes():
+    service = AnalysisService(AsyncMock())
+    issues = [
+        service._normalize_issue({"line": 1, "code": "SEC001", "severity": "warning", "message": "smell"}),
+        service._normalize_issue({"line": 2, "code": "SEC002", "severity": "warning", "message": "root"}),
+        service._normalize_issue({"line": 3, "code": "DL3006", "severity": "warning", "message": "tag it"}),
+        service._normalize_issue({"line": 4, "code": "DL3008", "severity": "error", "message": "pin it"}),
+    ]
+    errors, warnings, suggestions, security = _bucket_issues(issues)
+    assert [i.code for i in security] == ["SEC001", "SEC002"]
+    assert [i.code for i in warnings] == ["DL3006"]
+    assert [i.code for i in errors] == ["DL3008"]
+    assert suggestions == []
+    assert len(errors) + len(warnings) + len(suggestions) + len(security) == len(issues)
 
 
 def test_normalize_issue_uses_level_when_severity_missing():

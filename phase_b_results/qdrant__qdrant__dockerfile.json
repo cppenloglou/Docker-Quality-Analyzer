@@ -1,0 +1,39 @@
+{
+  "file": "qdrant__qdrant.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 246 lines with 25 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 800 MB, CPU: 1000m.",
+        "estimated_layers": 25,
+        "estimated_memory_mb": 800,
+        "estimated_cpu_millicores": 1000
+      }
+    },
+    "grade": "A",
+    "score": 95,
+    "errors": [
+      {
+        "code": "DL1000",
+        "line": 166,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL1000",
+        "message": "unexpected ':'\nexpecting '@', '\\', a new line followed by the next instruction, or the image tag",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "warnings": [],
+    "line_count": 246,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 19,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

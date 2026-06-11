@@ -1,0 +1,55 @@
+{
+  "file": "etcd-io__etcd.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 17 lines with 3 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 96 MB, CPU: 120m.",
+        "estimated_layers": 3,
+        "estimated_memory_mb": 96,
+        "estimated_cpu_millicores": 120
+      }
+    },
+    "grade": "D",
+    "score": 45,
+    "errors": [
+      {
+        "code": "DL3020",
+        "line": 7,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3020",
+        "message": "Use COPY instead of ADD for files and folders",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3020",
+        "line": 8,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3020",
+        "message": "Use COPY instead of ADD for files and folders",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3020",
+        "line": 9,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3020",
+        "message": "Use COPY instead of ADD for files and folders",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "warnings": [],
+    "line_count": 17,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 1,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

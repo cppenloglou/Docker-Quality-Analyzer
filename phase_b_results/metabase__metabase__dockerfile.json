@@ -1,0 +1,144 @@
+{
+  "file": "metabase__metabase.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 69 lines with 10 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 320 MB, CPU: 400m.",
+        "estimated_layers": 10,
+        "estimated_memory_mb": 320,
+        "estimated_cpu_millicores": 400
+      }
+    },
+    "grade": "F",
+    "score": 25,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3008",
+        "line": 12,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4001",
+        "line": 12,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4001",
+        "message": "Either use Wget or Curl but not both",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3027",
+        "line": 12,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3027",
+        "message": "Do not use apt as it is meant to be a end-user tool, use apt-get or apt-cache instead",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 12,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3016",
+        "line": 30,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3016",
+        "message": "Pin versions in npm. Instead of `npm install <package>` use `npm install <package>@<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3018",
+        "line": 52,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 69,
+    "suggestions": [
+      {
+        "code": "DL3015",
+        "line": 12,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3015",
+        "message": "Avoid additional packages by specifying `--no-install-recommends`",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3059",
+        "line": 30,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3059",
+        "message": "Multiple consecutive `RUN` instructions. Consider consolidation.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3059",
+        "line": 33,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3059",
+        "message": "Multiple consecutive `RUN` instructions. Consider consolidation.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3059",
+        "line": 35,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3059",
+        "message": "Multiple consecutive `RUN` instructions. Consider consolidation.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3019",
+        "line": 52,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3019",
+        "message": "Use the `--no-cache` switch to avoid the need to use `--update` and remove `/var/cache/apk/*` when done installing packages",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 22,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 49,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 58,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 44,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

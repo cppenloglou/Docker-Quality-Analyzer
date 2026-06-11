@@ -1,0 +1,38 @@
+{
+  "file": "mastodon__mastodon.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 416 lines with 38 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 1216 MB, CPU: 1520m.",
+        "estimated_layers": 38,
+        "estimated_memory_mb": 1216,
+        "estimated_cpu_millicores": 1520
+      }
+    },
+    "grade": "A",
+    "score": 98,
+    "errors": [],
+    "warnings": [],
+    "line_count": 416,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 326,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC001",
+        "line": 368,
+        "doc_url": null,
+        "message": "Potential security smell: secret",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

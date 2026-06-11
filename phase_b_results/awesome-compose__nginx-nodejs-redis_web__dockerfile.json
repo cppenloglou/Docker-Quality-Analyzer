@@ -1,0 +1,30 @@
+{
+  "file": "awesome-compose__nginx-nodejs-redis_web.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 11 lines with 5 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 160 MB, CPU: 200m.",
+        "estimated_layers": 5,
+        "estimated_memory_mb": 160,
+        "estimated_cpu_millicores": 200
+      }
+    },
+    "grade": "A",
+    "score": 90,
+    "errors": [],
+    "warnings": [],
+    "line_count": 11,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 1,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

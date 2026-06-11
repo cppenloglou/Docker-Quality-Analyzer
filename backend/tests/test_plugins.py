@@ -23,6 +23,132 @@ async def test_security_plugin_flags_risky_keywords():
 
 
 @pytest.mark.asyncio
+async def test_security_plugin_ignores_dockerfile_full_line_comment():
+    plugin = SecurityScannerPlugin()
+    dockerfile = "# root, latest stuff\nFROM ubuntu:24.04\nUSER appuser\n"
+    result = await plugin.run({"dockerfile_content": dockerfile})
+    sec001 = [f for f in result["findings"] if f["code"] == "SEC001"]
+    assert not any(f["line"] == 1 for f in sec001)
+
+
+@pytest.mark.asyncio
+async def test_security_plugin_still_flags_latest_tag():
+    plugin = SecurityScannerPlugin()
+    result = await plugin.run({"dockerfile_content": "FROM ubuntu:latest\nUSER appuser\n"})
+    sec001 = [f for f in result["findings"] if f["code"] == "SEC001"]
+    assert len(sec001) == 1
+    assert sec001[0]["line"] == 1
+    assert "latest" in sec001[0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_security_plugin_compose_comments_produce_no_findings():
+    plugin = SecurityScannerPlugin()
+    compose = (
+        "# pinned non-latest tag, no privileged flags\n"
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27-alpine\n"
+    )
+    result = await plugin.run({"compose_content": compose})
+    sec001 = [f for f in result["findings"] if f["code"] == "SEC001"]
+    assert sec001 == []
+
+
+@pytest.mark.asyncio
+async def test_security_plugin_compose_flags_privileged_on_correct_line():
+    plugin = SecurityScannerPlugin()
+    compose = (
+        "# pinned non-latest tag, no privileged flags\n"  # line 1
+        "services:\n"  # line 2
+        "  web:\n"  # line 3
+        "    image: nginx:1.27-alpine\n"  # line 4
+        "    ports:\n"  # line 5
+        "      - '8080:80'\n"  # line 6
+        "  worker:\n"  # line 7
+        "    image: busybox:1.36\n"  # line 8
+        "    privileged: true\n"  # line 9
+    )
+    result = await plugin.run({"compose_content": compose})
+    sec001 = [f for f in result["findings"] if f["code"] == "SEC001"]
+    assert len(sec001) == 1
+    assert sec001[0]["line"] == 9
+    assert "privileged" in sec001[0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_security_plugin_strips_inline_yaml_comment():
+    plugin = SecurityScannerPlugin()
+    compose = "services:\n  cache:\n    image: redis:7.2-alpine  # was latest\n"
+    result = await plugin.run({"compose_content": compose})
+    sec001 = [f for f in result["findings"] if f["code"] == "SEC001"]
+    assert sec001 == []
+
+
+@pytest.mark.asyncio
+async def test_security_plugin_keeps_dockerfile_midline_hash():
+    plugin = SecurityScannerPlugin()
+    dockerfile = "FROM ubuntu:24.04\nRUN echo 'secret#value' > /tmp/x\nUSER appuser\n"
+    result = await plugin.run({"dockerfile_content": dockerfile})
+    sec001 = [f for f in result["findings"] if f["code"] == "SEC001"]
+    assert any(f["line"] == 2 and "secret" in f["message"] for f in sec001)
+
+
+@pytest.mark.asyncio
+async def test_sec002_missing_user_instruction():
+    plugin = SecurityScannerPlugin()
+    dockerfile = "FROM ubuntu:24.04\nRUN apt-get update\nCMD ['bash']\n"
+    result = await plugin.run({"dockerfile_content": dockerfile})
+    sec002 = [f for f in result["findings"] if f["code"] == "SEC002"]
+    assert len(sec002) == 1
+    assert sec002[0]["line"] == 1
+    assert sec002[0]["severity"] == "warning"
+    assert sec002[0]["message"] == "Container runs as root: no USER instruction in final stage"
+
+
+@pytest.mark.asyncio
+async def test_sec002_not_emitted_when_user_set():
+    plugin = SecurityScannerPlugin()
+    dockerfile = "FROM ubuntu:24.04\nRUN useradd appuser\nUSER appuser\nCMD ['bash']\n"
+    result = await plugin.run({"dockerfile_content": dockerfile})
+    assert not any(f["code"] == "SEC002" for f in result["findings"])
+
+
+@pytest.mark.asyncio
+async def test_sec002_multistage_only_final_stage_counts():
+    plugin = SecurityScannerPlugin()
+    dockerfile = (
+        "FROM node:22 AS builder\n"
+        "RUN npm ci\n"
+        "FROM node:22-slim\n"
+        "COPY --from=builder /app /app\n"
+        "USER node\n"
+        "CMD ['node', 'server.js']\n"
+    )
+    result = await plugin.run({"dockerfile_content": dockerfile})
+    assert not any(f["code"] == "SEC002" for f in result["findings"])
+
+
+@pytest.mark.asyncio
+async def test_sec002_explicit_root_user():
+    plugin = SecurityScannerPlugin()
+    dockerfile = "FROM ubuntu:24.04\nUSER appuser\nUSER root\nCMD ['bash']\n"
+    result = await plugin.run({"dockerfile_content": dockerfile})
+    sec002 = [f for f in result["findings"] if f["code"] == "SEC002"]
+    assert len(sec002) == 1
+    assert sec002[0]["line"] == 3
+    assert sec002[0]["message"] == "Container explicitly runs as root"
+
+
+@pytest.mark.asyncio
+async def test_sec002_not_emitted_for_compose_content():
+    plugin = SecurityScannerPlugin()
+    compose = "services:\n  web:\n    image: nginx:1.27-alpine\n"
+    result = await plugin.run({"compose_content": compose})
+    assert not any(f["code"] == "SEC002" for f in result["findings"])
+
+
+@pytest.mark.asyncio
 async def test_compose_validator_writes_rdjson_via_output_file(monkeypatch):
     async def fake_run_command(cmd: list[str], timeout: int = 45, *, allow_empty_stdout: bool = False):
         assert cmd[0] == "dclint"

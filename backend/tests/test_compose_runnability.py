@@ -141,6 +141,61 @@ services:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "compose",
+    [
+        """
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+""",
+        """
+services:
+  web:
+    image: nginx
+    ports:
+      - "8080:80"
+""",
+        """
+services:
+  web:
+    image: nginx:1.27
+    ports:
+      - "8080:80"
+""",
+    ],
+)
+async def test_compose_runnability_plugin_allows_unpinned_images_in_project_context(compose: str):
+    plugin = ComposeRunnabilityPlugin()
+    result = await plugin.run({"compose_content": compose, "project_path": "/tmp/project"})
+    runnability = result["runnability"]
+    assert runnability["runnable"] is True
+    assert runnability["rules"]["explicit_non_latest_images"] is True
+    assert not any("non-latest explicit tag" in reason for reason in runnability["reasons"])
+
+
+@pytest.mark.asyncio
+async def test_compose_runnability_plugin_still_blocks_other_rules_with_latest_in_project_context():
+    plugin = ComposeRunnabilityPlugin()
+    compose = """
+services:
+  api:
+    image: nginx:latest
+    volumes:
+      - ./data:/data
+"""
+    result = await plugin.run({"compose_content": compose, "project_path": "/tmp/project"})
+    runnability = result["runnability"]
+    assert runnability["runnable"] is False
+    assert runnability["rules"]["explicit_non_latest_images"] is True
+    assert runnability["rules"]["no_bind_mounts"] is False
+    assert any("bind mount" in reason.lower() for reason in runnability["reasons"])
+    assert not any("non-latest explicit tag" in reason for reason in runnability["reasons"])
+
+
+@pytest.mark.asyncio
 async def test_deploy_compose_blocks_non_runnable_compose(monkeypatch: pytest.MonkeyPatch):
     user_id = uuid.uuid4()
     job_id = uuid.uuid4()

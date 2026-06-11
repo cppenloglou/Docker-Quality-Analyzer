@@ -1,0 +1,39 @@
+{
+  "file": "awesome-compose__react-java-mysql_backend.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 40 lines with 12 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 384 MB, CPU: 480m.",
+        "estimated_layers": 12,
+        "estimated_memory_mb": 384,
+        "estimated_cpu_millicores": 480
+      }
+    },
+    "grade": "B",
+    "score": 75,
+    "errors": [
+      {
+        "code": "DL1000",
+        "line": 23,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL1000",
+        "message": "unexpected '#'\nexpecting a new line followed by the next instruction",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "warnings": [],
+    "line_count": 40,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 32,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

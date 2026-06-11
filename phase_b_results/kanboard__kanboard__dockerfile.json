@@ -1,0 +1,56 @@
+{
+  "file": "kanboard__kanboard.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 35 lines with 4 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 128 MB, CPU: 160m.",
+        "estimated_layers": 4,
+        "estimated_memory_mb": 128,
+        "estimated_cpu_millicores": 160
+      }
+    },
+    "grade": "D",
+    "score": 52,
+    "errors": [
+      {
+        "code": "DL3020",
+        "line": 26,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3020",
+        "message": "Use COPY instead of ADD for files and folders",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3020",
+        "line": 27,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3020",
+        "message": "Use COPY instead of ADD for files and folders",
+        "severity": "error",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 17,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 35,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 1,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

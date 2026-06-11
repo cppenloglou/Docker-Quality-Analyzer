@@ -1,0 +1,80 @@
+{
+  "file": "getredash__redash.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 122 lines with 19 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 608 MB, CPU: 760m.",
+        "estimated_layers": 19,
+        "estimated_memory_mb": 608,
+        "estimated_cpu_millicores": 760
+      }
+    },
+    "grade": "B",
+    "score": 80,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3008",
+        "line": 49,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL3008",
+        "line": 80,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3008",
+        "message": "Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 80,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "DL4006",
+        "line": 103,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL4006",
+        "message": "Set the SHELL option -o pipefail before RUN with a pipe in it. If you are using /bin/sh in an alpine image or if your shell is symlinked to busybox then consider explicitly setting your SHELL to /bin/ash, or disable this check",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 122,
+    "suggestions": [
+      {
+        "code": "SC2268",
+        "line": 24,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2268",
+        "message": "Avoid x-prefix in comparisons as it no longer serves a purpose.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      },
+      {
+        "code": "SC2268",
+        "line": 32,
+        "doc_url": "https://github.com/koalaman/shellcheck/wiki/SC2268",
+        "message": "Avoid x-prefix in comparisons as it no longer serves a purpose.",
+        "severity": "info",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 110,
+        "doc_url": null,
+        "message": "Potential security smell: root",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      }
+    ]
+  }
+}

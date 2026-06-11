@@ -52,6 +52,20 @@ def _suggestion_from_raw(raw: dict[str, Any]) -> str:
     return "Review related container best practices."
 
 
+def _bucket_issues(issues: list[Issue]) -> tuple[list[Issue], list[Issue], list[Issue], list[Issue]]:
+    """Split issues into disjoint buckets: errors, warnings, suggestions, security.
+
+    SEC-coded issues go exclusively to the security bucket so payloads and
+    scoring never count the same finding twice.
+    """
+    security = [i for i in issues if i.code.startswith("SEC")]
+    non_sec = [i for i in issues if not i.code.startswith("SEC")]
+    errors = [i for i in non_sec if i.severity == "error"]
+    warnings = [i for i in non_sec if i.severity == "warning"]
+    suggestions = [i for i in non_sec if i.severity == "info"]
+    return errors, warnings, suggestions, security
+
+
 def _grade(score: int) -> str:
     if score >= 90:
         return "A"
@@ -128,10 +142,7 @@ class AnalysisService:
                     meta[key] = value
 
         issues = [self._normalize_issue(item) for item in aggregate]
-        errors = [i for i in issues if i.severity == "error"]
-        warnings = [i for i in issues if i.severity == "warning"]
-        suggestions = [i for i in issues if i.severity == "info"]
-        security = [i for i in issues if i.code.startswith("SEC")]
+        errors, warnings, suggestions, security = _bucket_issues(issues)
 
         line_count = max(1, len(content.splitlines()))
         raw_penalty = len(errors) * 15 + len(warnings) * 8 + len(suggestions) * 3 + len(security) * 10
@@ -177,10 +188,7 @@ class AnalysisService:
                         meta[key] = value
 
             issues = [self._normalize_issue(item) for item in aggregate]
-            errors = [i for i in issues if i.severity == "error"]
-            warnings = [i for i in issues if i.severity == "warning"]
-            suggestions = [i for i in issues if i.severity == "info"]
-            security = [i for i in issues if i.code.startswith("SEC")]
+            errors, warnings, suggestions, security = _bucket_issues(issues)
 
             source = context.get("dockerfile_content") or context.get("compose_content") or ""
             line_count = max(1, len(source.splitlines()))

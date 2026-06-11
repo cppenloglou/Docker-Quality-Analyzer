@@ -1,0 +1,39 @@
+{
+  "file": "traefik__traefik.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 12 lines with 2 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 64 MB, CPU: 100m.",
+        "estimated_layers": 2,
+        "estimated_memory_mb": 64,
+        "estimated_cpu_millicores": 100
+      }
+    },
+    "grade": "B",
+    "score": 82,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3018",
+        "line": 4,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3018",
+        "message": "Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 12,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC002",
+        "line": 2,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "file": "minio__minio.Dockerfile",
+  "type": "dockerfile",
+  "result": {
+    "meta": {
+      "estimate": {
+        "explanation": "Dockerfile has 18 lines with 5 layer-creating instructions (RUN/COPY/ADD). Each layer adds build-time memory overhead. Estimated runtime memory: 160 MB, CPU: 200m.",
+        "estimated_layers": 5,
+        "estimated_memory_mb": 160,
+        "estimated_cpu_millicores": 200
+      }
+    },
+    "grade": "C",
+    "score": 72,
+    "errors": [],
+    "warnings": [
+      {
+        "code": "DL3007",
+        "line": 1,
+        "doc_url": "https://github.com/hadolint/hadolint/wiki/DL3007",
+        "message": "Using latest is prone to errors if the image will ever update. Pin the version explicitly to a release tag",
+        "severity": "warning",
+        "suggestion": "Review related container best practices."
+      }
+    ],
+    "line_count": 18,
+    "suggestions": [],
+    "securityIssues": [
+      {
+        "code": "SEC001",
+        "line": 1,
+        "doc_url": null,
+        "message": "Potential security smell: latest",
+        "severity": "warning",
+        "suggestion": "Review principle of least privilege and immutable tags."
+      },
+      {
+        "code": "SEC002",
+        "line": 1,
+        "doc_url": null,
+        "message": "Container runs as root: no USER instruction in final stage",
+        "severity": "warning",
+        "suggestion": "Create a non-privileged user and switch to it with USER before the entrypoint."
+      }
+    ]
+  }
+}

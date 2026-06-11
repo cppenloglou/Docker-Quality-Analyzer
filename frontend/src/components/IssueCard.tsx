@@ -1,27 +1,40 @@
-import { AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { AlertCircle, AlertTriangle, Info, ShieldAlert } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 import type { Issue } from "../utils/api";
 
+function isSecurityIssue(issue: Issue): boolean {
+  return issue.code.startsWith("SEC");
+}
+
 export function IssueCard({ issue }: { issue: Issue }) {
+  const security = isSecurityIssue(issue);
   return (
     <Card className="p-4 bg-slate-900 border-slate-800">
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 mt-1">
-          {issue.severity === "error" && (
-            <div className="p-2 bg-red-500/10 rounded">
-              <AlertCircle className="w-5 h-5 text-red-400" />
+          {security ? (
+            <div className="p-2 bg-purple-500/10 rounded">
+              <ShieldAlert className="w-5 h-5 text-purple-400" />
             </div>
-          )}
-          {issue.severity === "warning" && (
-            <div className="p-2 bg-yellow-500/10 rounded">
-              <AlertTriangle className="w-5 h-5 text-yellow-400" />
-            </div>
-          )}
-          {issue.severity === "info" && (
-            <div className="p-2 bg-blue-500/10 rounded">
-              <Info className="w-5 h-5 text-blue-400" />
-            </div>
+          ) : (
+            <>
+              {issue.severity === "error" && (
+                <div className="p-2 bg-red-500/10 rounded">
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                </div>
+              )}
+              {issue.severity === "warning" && (
+                <div className="p-2 bg-yellow-500/10 rounded">
+                  <AlertTriangle className="w-5 h-5 text-yellow-400" />
+                </div>
+              )}
+              {issue.severity === "info" && (
+                <div className="p-2 bg-blue-500/10 rounded">
+                  <Info className="w-5 h-5 text-blue-400" />
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -35,14 +48,16 @@ export function IssueCard({ issue }: { issue: Issue }) {
             </Badge>
             <Badge
               className={
-                issue.severity === "error"
-                  ? "bg-red-500/20 text-red-400 border-red-500/30"
-                  : issue.severity === "warning"
-                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                    : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                security
+                  ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
+                  : issue.severity === "error"
+                    ? "bg-red-500/20 text-red-400 border-red-500/30"
+                    : issue.severity === "warning"
+                      ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                      : "bg-blue-500/20 text-blue-400 border-blue-500/30"
               }
             >
-              {issue.severity.toUpperCase()}
+              {security ? "SECURITY" : issue.severity.toUpperCase()}
             </Badge>
           </div>
 

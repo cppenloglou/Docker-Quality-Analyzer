@@ -27,8 +27,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_users_email", "users", ["email"], unique=False)
 
-    job_type = sa.Enum("dockerfile", "compose", "project", name="job_type")
-    job_status = sa.Enum("queued", "running", "done", "failed", name="job_status")
+    # create_type=False so op.create_table doesn't re-emit CREATE TYPE (DuplicateObject on fresh DBs)
+    job_type = postgresql.ENUM("dockerfile", "compose", "project", name="job_type", create_type=False)
+    job_status = postgresql.ENUM("queued", "running", "done", "failed", name="job_status", create_type=False)
     job_type.create(op.get_bind(), checkfirst=True)
     job_status.create(op.get_bind(), checkfirst=True)
 
