@@ -3,7 +3,7 @@ import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 import type { Issue } from "../utils/api";
 
-export function isSecurityIssue(issue: Issue): boolean {
+function isSecurityIssue(issue: Issue): boolean {
   return issue.code.startsWith("SEC");
 }
 
